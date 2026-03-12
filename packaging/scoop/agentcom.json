@@ -1,11 +1,11 @@
 {
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Real-time communication CLI for parallel AI coding agents",
   "homepage": "https://github.com/malleus35/agentcom",
   "architecture": {
     "64bit": {
-      "url": "https://github.com/malleus35/agentcom/releases/download/v0.1.0/agentcom_0.1.0_windows_amd64.zip",
-      "hash": "b9848d194a3442082381bcb9119ea75be7934c1861450b8c3cd4e3580b9213cb"
+      "url": "https://github.com/malleus35/agentcom/releases/download/v0.1.1/agentcom_0.1.1_windows_amd64.zip",
+      "hash": "3721df1d035c7551f0042ffa9723907ba1166eeb773e88cf69d4f7fa4732ff4f"
     }
   },
   "bin": "agentcom.exe",
