@@ -29,6 +29,7 @@ Thumbs.db
 
 # agentcom runtime
 .agentcom/
+.agents/MEMORY.md
 
 # Build artifacts
 dist/
