@@ -21,16 +21,59 @@ It uses SQLite in WAL mode as the durable source of truth and Unix Domain Socket
 
 ## Install
 
+Build locally:
+
 ```bash
 make build
 ./bin/agentcom version
 ```
 
-Or install directly:
+Install into your Go bin path:
 
 ```bash
 make install
 agentcom version
+```
+
+## How agentcom works
+
+`agentcom` keeps all durable state in SQLite: registered agents, messages, tasks, and health-related timestamps. Each registered process also opens a Unix Domain Socket server, so direct message delivery tries the socket path first and falls back to SQLite inbox polling if the target socket is unavailable.
+
+The normal lifecycle is:
+
+1. Initialize a local agentcom home directory.
+2. Start one or more long-running registered agent processes.
+3. Use CLI commands or MCP tools to send messages, inspect inboxes, and manage tasks.
+4. Shut agents down cleanly so they deregister automatically.
+
+## Local state and configuration
+
+By default, `agentcom` stores data under `~/.agentcom`.
+
+- SQLite DB: `~/.agentcom/agentcom.db`
+- Socket directory: `~/.agentcom/sockets/`
+
+You can override the base directory with `AGENTCOM_HOME`.
+
+```bash
+export AGENTCOM_HOME=/tmp/agentcom-demo
+agentcom init
+```
+
+This is useful for tests, demos, per-project isolation, or running multiple independent environments on one machine.
+
+## Global flags
+
+Every command supports these global flags:
+
+- `--json` - machine-readable JSON output where supported
+- `-v`, `--verbose` - enable debug logging via `log/slog`
+
+Examples:
+
+```bash
+agentcom --json list
+agentcom --verbose health
 ```
 
 ## Quickstart
@@ -41,7 +84,7 @@ Initialize local state:
 agentcom init
 ```
 
-Generate a project-level usage guide for other agents:
+Generate a project-level `AGENTS.md` in the current directory:
 
 ```bash
 agentcom init --agents-md
@@ -50,8 +93,8 @@ agentcom init --agents-md
 Start two agents in separate terminals:
 
 ```bash
-agentcom register --name alpha --type codex
-agentcom register --name beta --type claude
+agentcom register --name alpha --type codex --cap plan,execute
+agentcom register --name beta --type claude --cap review,test
 ```
 
 Send a direct message:
@@ -66,37 +109,334 @@ Broadcast an update:
 agentcom broadcast --from alpha --topic sync '{"status":"ready"}'
 ```
 
-Create and delegate a task:
+Create, delegate, and update a task:
 
 ```bash
-agentcom task create "Implement MCP tests" --creator alpha
+agentcom task create "Implement MCP tests" --creator alpha --assign beta --priority high
+agentcom task list --assignee beta
 agentcom task delegate <task-id> --to beta
 agentcom task update <task-id> --status in_progress --result "started"
 ```
 
-Inspect inbox and status:
+Inspect inbox and system status:
 
 ```bash
 agentcom inbox --agent beta --unread
 agentcom status
+agentcom health
 ```
 
-## CLI Reference
+## Detailed command usage
 
-- `agentcom init` - initialize local home, DB, and sockets directory
-- `agentcom register --name <name> --type <type>` - register current process as an agent
-- `agentcom deregister <name-or-id> --force` - remove an agent record
-- `agentcom list [--alive]` - list agents
-- `agentcom send --from <sender> <target> <message>` - send one direct message
-- `agentcom broadcast --from <sender> <message>` - send to all alive agents
-- `agentcom inbox --agent <name-or-id> [--unread]` - inspect agent inbox
-- `agentcom task create|list|update|delegate` - manage tasks
-- `agentcom status` - print aggregate counts
-- `agentcom health` - basic health checks
-- `agentcom mcp-server` - start MCP over STDIO
-- `agentcom version` - show build metadata
+### `agentcom init`
 
-Use `--json` on commands that support machine-readable output.
+Initializes the home directory, ensures subdirectories exist, opens the SQLite database, and applies migrations.
+
+Usage:
+
+```bash
+agentcom init
+agentcom init --agents-md
+agentcom --json init
+```
+
+Notes:
+
+- Running it repeatedly is safe.
+- `--agents-md` writes a project-level `AGENTS.md` in the current working directory.
+- JSON output includes `path`, `status`, and `agents_md` when applicable.
+- Because the current implementation prepares the home directory before `init` checks it, `status` may appear as `already_initialized` even for a newly prepared path.
+
+### `agentcom register`
+
+Registers the current process as a live agent, starts heartbeat updates, opens a Unix Domain Socket server, and starts a fallback poller. This command is intentionally long-running: it stays alive until interrupted.
+
+Usage:
+
+```bash
+agentcom register --name alpha --type codex
+agentcom register --name alpha --type codex --cap plan,execute --workdir /path/to/project
+agentcom --json register --name alpha --type codex
+```
+
+Flags:
+
+- `--name` - required unique agent name
+- `--type` - required free-form type string
+- `--cap` - optional comma-separated capability list
+- `--workdir` - optional working directory; defaults to current working directory
+
+Notes:
+
+- The process auto-deregisters on `SIGINT`/`SIGTERM`.
+- `--json` prints registration metadata first, then the process stays running.
+- A registered agent gets an `agt_...` ID and a socket path under the configured sockets directory.
+
+### `agentcom deregister`
+
+Removes an agent by name or ID.
+
+Usage:
+
+```bash
+agentcom deregister alpha
+agentcom deregister agt_xxx --force
+agentcom --json deregister alpha --force
+```
+
+Flags:
+
+- `--force` - skip the interactive confirmation prompt
+
+Notes:
+
+- By default it prompts before deletion.
+- Agent history in messages and tasks remains stored even after deregistration.
+
+### `agentcom list`
+
+Lists registered agents.
+
+Usage:
+
+```bash
+agentcom list
+agentcom list --alive
+agentcom --json list
+```
+
+Flags:
+
+- `--alive` - only show agents currently marked `alive`
+
+### `agentcom send`
+
+Sends a direct message from one registered sender to one target agent.
+
+Usage:
+
+```bash
+agentcom send --from alpha beta '{"text":"hello"}'
+agentcom send --from alpha beta 'plain text message'
+agentcom send --from alpha --type request --topic review beta '{"file":"README.md"}'
+agentcom send --from alpha --correlation-id corr-123 beta '{"step":1}'
+agentcom --json send --from alpha beta '{"text":"hello"}'
+```
+
+Flags:
+
+- `--from` - required sender agent name
+- `--type` - optional message type, default `notification`
+- `--topic` - optional topic string
+- `--correlation-id` - optional correlation ID
+
+Payload behavior:
+
+- If the second argument is valid JSON object/array text, it is stored as-is.
+- Otherwise the command wraps it as `{"text":"..."}`.
+
+### `agentcom broadcast`
+
+Sends one message to all alive agents except the sender.
+
+Usage:
+
+```bash
+agentcom broadcast --from alpha '{"status":"ready"}'
+agentcom broadcast --from alpha --topic sync '{"phase":"wave-9"}'
+agentcom --json broadcast --from alpha '{"status":"ready"}'
+```
+
+Flags:
+
+- `--from` - required sender agent name
+- `--topic` - optional topic string
+
+### `agentcom inbox`
+
+Reads messages for one agent inbox from SQLite.
+
+Usage:
+
+```bash
+agentcom inbox --agent beta
+agentcom inbox --agent beta --unread
+agentcom inbox --agent agt_xxx --from agt_sender_id
+agentcom --json inbox --agent beta --unread
+```
+
+Flags:
+
+- `--agent` - required agent name or ID
+- `--unread` - only show unread messages
+- `--from` - filter by sender agent ID
+
+### `agentcom task`
+
+Task management is split into four subcommands.
+
+Create a task:
+
+```bash
+agentcom task create "Implement docs" --desc "Expand README" --creator alpha --assign beta --priority high
+agentcom task create "Ship release" --blocked-by P7-01,P7-02
+agentcom --json task create "Implement docs" --creator alpha
+```
+
+List tasks:
+
+```bash
+agentcom task list
+agentcom task list --status pending
+agentcom task list --assignee beta
+agentcom --json task list --status in_progress
+```
+
+Update a task:
+
+```bash
+agentcom task update <task-id> --status in_progress --result "started"
+agentcom task update <task-id> --status completed --result "done"
+```
+
+Delegate a task:
+
+```bash
+agentcom task delegate <task-id> --to beta
+agentcom --json task delegate <task-id> --to agt_xxx
+```
+
+Important details:
+
+- `task create` stores new tasks with status `pending`.
+- `--assign` and `--creator` accept agent name or ID.
+- `task list --assignee` tries to resolve names to IDs before querying.
+- `task update` writes status/result directly.
+- `task delegate` updates `assigned_to` to the resolved target agent.
+
+### `agentcom status`
+
+Shows aggregate counts for agents, messages, unread messages, total tasks, and task counts grouped by status.
+
+Usage:
+
+```bash
+agentcom status
+agentcom --json status
+```
+
+### `agentcom health`
+
+Runs a health-oriented view over registered agents.
+
+Usage:
+
+```bash
+agentcom health
+agentcom --json health
+```
+
+Use this when you want a quick check of live agent state instead of full task/message counts.
+
+JSON output is an array of health entries. In an empty environment it returns `[]`.
+
+### `agentcom version`
+
+Prints build metadata.
+
+Usage:
+
+```bash
+agentcom version
+agentcom --json version
+```
+
+### `agentcom mcp-server`
+
+Starts the MCP JSON-RPC server over STDIO.
+
+Usage:
+
+```bash
+agentcom mcp-server
+agentcom mcp-server --register mcp-agent --type mcp
+```
+
+Flags:
+
+- `--register <name>` - optionally register the MCP server as an agent
+- `--type <type>` - agent type used with `--register`
+
+Notes:
+
+- `initialize` must happen before `tools/list` or `tools/call`.
+- The server exposes tools for listing agents, sending messages, broadcasting, creating/delegating tasks, listing tasks, and reading status.
+
+## JSON output examples
+
+Initialize:
+
+```bash
+agentcom --json init
+```
+
+Example shape:
+
+```json
+{
+  "path": "/Users/name/.agentcom",
+  "status": "initialized or already_initialized"
+}
+```
+
+List agents:
+
+```bash
+agentcom --json list
+```
+
+Send message:
+
+```bash
+agentcom --json send --from alpha beta '{"text":"hello"}'
+```
+
+Task list:
+
+```bash
+agentcom --json task list --status pending
+```
+
+## End-to-end example workflow
+
+Terminal 1:
+
+```bash
+export AGENTCOM_HOME=/tmp/agentcom-demo
+agentcom init
+agentcom register --name alpha --type codex --cap plan,execute
+```
+
+Terminal 2:
+
+```bash
+export AGENTCOM_HOME=/tmp/agentcom-demo
+agentcom register --name beta --type claude --cap review,test
+```
+
+Terminal 3:
+
+```bash
+export AGENTCOM_HOME=/tmp/agentcom-demo
+agentcom send --from alpha beta '{"text":"please review README"}'
+agentcom inbox --agent beta --unread
+agentcom task create "Review README" --creator alpha --assign beta --priority high
+agentcom task list --assignee beta
+agentcom status
+agentcom health
+```
+
+Stop the registered processes with `Ctrl+C` when finished.
 
 ## MCP Setup
 
