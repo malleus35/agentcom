@@ -35,7 +35,7 @@ jobs:
             archive: tar.gz
             binary: agentcom
             output: agentcom
-          - runner: macos-13
+          - runner: macos-latest
             goos: darwin
             goarch: amd64
             archive: tar.gz

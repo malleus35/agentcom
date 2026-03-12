@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"syscall"
 	"time"
 
 	gonanoid "github.com/matoous/go-nanoid/v2"
@@ -157,17 +156,4 @@ func (r *Registry) MarkInactive(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-func processAlive(pid int) bool {
-	if pid <= 0 {
-		return false
-	}
-
-	err := syscall.Kill(pid, 0)
-	if err == nil {
-		return true
-	}
-
-	return errors.Is(err, syscall.EPERM)
 }

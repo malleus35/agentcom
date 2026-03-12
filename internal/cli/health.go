@@ -2,10 +2,8 @@ package cli
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
-	"syscall"
 	"text/tabwriter"
 	"time"
 
@@ -94,20 +92,6 @@ func newHealthCmd() *cobra.Command {
 		},
 	}
 }
-
-func processAliveCheck(pid int) bool {
-	if pid <= 0 {
-		return false
-	}
-
-	err := syscall.Kill(pid, 0)
-	if err == nil {
-		return true
-	}
-
-	return errors.Is(err, syscall.EPERM)
-}
-
 func parseTimestamp(raw string) (time.Time, error) {
 	if raw == "" {
 		return time.Time{}, fmt.Errorf("cli.parseTimestamp: empty timestamp")
