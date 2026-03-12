@@ -25,18 +25,20 @@ type Message struct {
 	ReadAt        string
 }
 
-// InsertMessage inserts a new message row and generates a message ID.
+// InsertMessage inserts a new message row and generates a message ID when needed.
 func (d *DB) InsertMessage(ctx context.Context, msg *Message) error {
-	id, err := gonanoid.New()
-	if err != nil {
-		return fmt.Errorf("db.InsertMessage: generate id: %w", err)
+	if msg.ID == "" {
+		id, err := gonanoid.New()
+		if err != nil {
+			return fmt.Errorf("db.InsertMessage: generate id: %w", err)
+		}
+		msg.ID = "msg_" + id
 	}
-	msg.ID = "msg_" + id
 
 	stmt, err := d.PrepareContext(ctx, `
 		INSERT INTO messages (
-			id, from_agent, to_agent, type, topic, payload, correlation_id
-		) VALUES (?, ?, ?, ?, ?, ?, ?)
+			id, from_agent, to_agent, type, topic, payload, correlation_id, created_at, delivered_at, read_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), ?, ?)
 	`)
 	if err != nil {
 		return fmt.Errorf("db.InsertMessage: prepare: %w", err)
@@ -51,6 +53,9 @@ func (d *DB) InsertMessage(ctx context.Context, msg *Message) error {
 		nullableString(msg.Topic),
 		msg.Payload,
 		nullableString(msg.CorrelationID),
+		nullableString(msg.CreatedAt),
+		nullableString(msg.DeliveredAt),
+		nullableString(msg.ReadAt),
 	); err != nil {
 		return fmt.Errorf("db.InsertMessage: exec: %w", err)
 	}
