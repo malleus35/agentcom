@@ -119,7 +119,7 @@ func TestVersionCommandOutputsJSON(t *testing.T) {
 
 func TestRootCommandContainsCoreSubcommands(t *testing.T) {
 	root := NewRootCmd()
-	want := []string{"init", "register", "send", "task", "mcp-server", "version"}
+	want := []string{"init", "skill", "register", "send", "task", "mcp-server", "version"}
 	for _, name := range want {
 		if _, _, err := root.Find([]string{name}); err != nil {
 			t.Fatalf("root.Find(%q) error = %v", name, err)
