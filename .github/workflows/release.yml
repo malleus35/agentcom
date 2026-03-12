@@ -1,0 +1,106 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes \
+            --verify-tag
+
+  build-assets:
+    needs: create-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            archive: tar.gz
+            binary: agentcom
+            output: agentcom
+          - runner: macos-13
+            goos: darwin
+            goarch: amd64
+            archive: tar.gz
+            binary: agentcom
+            output: agentcom
+          - runner: windows-latest
+            goos: windows
+            goarch: amd64
+            archive: zip
+            binary: agentcom.exe
+            output: agentcom.exe
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Setup MinGW (Windows)
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          update: true
+          install: mingw-w64-x86_64-gcc zip
+
+      - name: Add MinGW to PATH (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: echo "C:/msys64/mingw64/bin" >> "$GITHUB_PATH"
+
+      - name: Build binary
+        shell: bash
+        env:
+          CGO_ENABLED: '1'
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          mkdir -p dist
+          go build \
+            -ldflags "-X github.com/malleus35/agentcom/internal/cli.Version=${GITHUB_REF_NAME#v} -X github.com/malleus35/agentcom/internal/cli.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ) -X github.com/malleus35/agentcom/internal/cli.GoVersion=$(go env GOVERSION)" \
+            -o "dist/${{ matrix.output }}" \
+            ./cmd/agentcom
+
+      - name: Package tar.gz (Unix)
+        if: matrix.archive == 'tar.gz'
+        shell: bash
+        run: |
+          archive="agentcom_${GITHUB_REF_NAME#v}_${{ matrix.goos }}_${{ matrix.goarch }}.tar.gz"
+          tar -C dist -czf "$archive" "${{ matrix.binary }}"
+          shasum -a 256 "$archive" > "$archive.sha256"
+
+      - name: Package zip (Windows)
+        if: matrix.archive == 'zip'
+        shell: powershell
+        run: |
+          $archive = "agentcom_$($env:GITHUB_REF_NAME.Substring(1))_${{ matrix.goos }}_${{ matrix.goarch }}.zip"
+          Compress-Archive -Path "dist/${{ matrix.binary }}" -DestinationPath $archive
+          $hash = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLower()
+          "$hash  $archive" | Out-File -Encoding ascii "$archive.sha256"
+
+      - name: Upload release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          asset="agentcom_${GITHUB_REF_NAME#v}_${{ matrix.goos }}_${{ matrix.goarch }}.${{ matrix.archive }}"
+          gh release upload "${GITHUB_REF_NAME}" "$asset" "$asset.sha256" --repo "${GITHUB_REPOSITORY}" --clobber
