@@ -1,5 +1,7 @@
 # agentcom
 
+Translations: [한국어](README.ko.md) | [日本語](README.ja.md) | [中文](README.zh.md)
+
 `agentcom` is a Go CLI for real-time communication between parallel AI coding agent sessions.
 
 It uses SQLite in WAL mode as the durable source of truth and Unix Domain Sockets for low-latency local delivery, with SQLite inbox polling as a fallback path.
@@ -34,6 +36,91 @@ Install into your Go bin path:
 make install
 agentcom version
 ```
+
+Install with Go directly:
+
+```bash
+go install github.com/malleus35/agentcom/cmd/agentcom@latest
+agentcom version
+```
+
+This is the simplest option for Go users, but it requires Go and a working CGO/SQLite build environment on the target machine.
+
+## Cross-platform installation options
+
+If you want the easiest install path across macOS, Linux, and Windows, use one of these approaches.
+
+### 1. GitHub Releases binaries
+
+Recommended for most end users. Release archives can be built for:
+
+- macOS: `darwin/amd64`, `darwin/arm64`
+- Linux: `linux/amd64`, `linux/arm64`
+- Windows: `windows/amd64`, `windows/arm64`
+
+Download the matching archive from GitHub Releases, extract it, and put the binary on your `PATH`.
+
+Typical examples:
+
+```bash
+# macOS / Linux
+tar -xzf agentcom_<version>_darwin_arm64.tar.gz
+chmod +x agentcom
+mv agentcom /usr/local/bin/
+```
+
+```powershell
+# Windows PowerShell
+Expand-Archive .\agentcom_<version>_windows_amd64.zip -DestinationPath .\agentcom
+$env:Path += ";C:\path\to\agentcom"
+```
+
+### 2. Homebrew (configured in this repo)
+
+This repository already includes a `.goreleaser.yml` Homebrew configuration. Once releases are published and the tap is available, macOS and Linux users can install with Homebrew.
+
+Example flow:
+
+```bash
+brew tap malleus35/tap
+brew install agentcom
+```
+
+Use this when you want easy upgrades on systems that already use Homebrew.
+
+### 3. `go install`
+
+Best for Go developers or contributors:
+
+```bash
+go install github.com/malleus35/agentcom/cmd/agentcom@latest
+```
+
+Pros:
+
+- very simple for Go users
+- no manual binary download needed
+
+Trade-offs:
+
+- requires Go to be installed
+- depends on local CGO/SQLite build tooling
+
+### 4. Manual local build
+
+Good when you want full control or are packaging internally:
+
+```bash
+make build
+./bin/agentcom version
+```
+
+### Which option should I choose?
+
+- End users on any OS: GitHub Releases binary
+- macOS/Linux users with Homebrew: Homebrew
+- Go developers: `go install`
+- Internal packaging or local development: `make build`
 
 ## How agentcom works
 
