@@ -1,0 +1,53 @@
+version: 2
+
+project_name: agentcom
+
+before:
+  hooks:
+    - go mod tidy
+    - go test ./...
+
+builds:
+  - id: agentcom
+    main: ./cmd/agentcom
+    binary: agentcom
+    env:
+      - CGO_ENABLED=1
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -X github.com/peanut-cc/agentcom/internal/cli.Version={{ .Version }}
+      - -X github.com/peanut-cc/agentcom/internal/cli.BuildDate={{ .Date }}
+      - -X github.com/peanut-cc/agentcom/internal/cli.GoVersion={{ .Env.GOVERSION }}
+
+archives:
+  - id: default
+    builds:
+      - agentcom
+    format_overrides:
+      - goos: windows
+        format: zip
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  use: git
+
+brews:
+  - name: agentcom
+    repository:
+      owner: peanut-cc
+      name: homebrew-tap
+    homepage: https://github.com/peanut-cc/agentcom
+    description: Real-time communication CLI for parallel AI coding agents
+    test: |
+      system "#{bin}/agentcom", "version"
