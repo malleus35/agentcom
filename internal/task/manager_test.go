@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/peanut-cc/agentcom/internal/db"
+	"github.com/malleus35/agentcom/internal/db"
 )
 
 func setupTaskTestDB(t *testing.T) *db.DB {

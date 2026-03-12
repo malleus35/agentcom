@@ -7,8 +7,8 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/peanut-cc/agentcom/internal/config"
-	"github.com/peanut-cc/agentcom/internal/db"
+	"github.com/malleus35/agentcom/internal/config"
+	"github.com/malleus35/agentcom/internal/db"
 	"github.com/spf13/cobra"
 )
 

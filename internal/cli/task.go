@@ -8,7 +8,7 @@ import (
 	"text/tabwriter"
 
 	gonanoid "github.com/matoous/go-nanoid/v2"
-	"github.com/peanut-cc/agentcom/internal/agent"
+	"github.com/malleus35/agentcom/internal/agent"
 	"github.com/spf13/cobra"
 )
 

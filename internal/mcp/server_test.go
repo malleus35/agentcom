@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/peanut-cc/agentcom/internal/config"
-	"github.com/peanut-cc/agentcom/internal/db"
+	"github.com/malleus35/agentcom/internal/config"
+	"github.com/malleus35/agentcom/internal/db"
 )
 
 func setupMCPTestServer(t *testing.T) (*Server, *db.DB) {

@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/peanut-cc/agentcom/internal/db"
-	"github.com/peanut-cc/agentcom/internal/task"
+	"github.com/malleus35/agentcom/internal/db"
+	"github.com/malleus35/agentcom/internal/task"
 )
 
 func (s *Server) registerTools() {

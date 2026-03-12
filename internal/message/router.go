@@ -7,7 +7,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/peanut-cc/agentcom/internal/db"
+	"github.com/malleus35/agentcom/internal/db"
 )
 
 // AgentFinder locates agents for message routing.

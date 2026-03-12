@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/peanut-cc/agentcom/internal/config"
-	"github.com/peanut-cc/agentcom/internal/db"
+	"github.com/malleus35/agentcom/internal/config"
+	"github.com/malleus35/agentcom/internal/db"
 )
 
 func setupRegistryTest(t *testing.T) (*Registry, *db.DB, *config.Config) {

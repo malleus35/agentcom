@@ -8,7 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/peanut-cc/agentcom/internal/cli"
+	"github.com/malleus35/agentcom/internal/cli"
 )
 
 func main() {

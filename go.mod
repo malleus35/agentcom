@@ -1,4 +1,4 @@
-module github.com/peanut-cc/agentcom
+module github.com/malleus35/agentcom
 
 go 1.26.1
 

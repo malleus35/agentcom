@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/peanut-cc/agentcom/internal/db"
+	"github.com/malleus35/agentcom/internal/db"
 )
 
 // Inbox provides read/query operations for agent inbox messages.

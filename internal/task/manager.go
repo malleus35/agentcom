@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	gonanoid "github.com/matoous/go-nanoid/v2"
-	"github.com/peanut-cc/agentcom/internal/db"
+	"github.com/malleus35/agentcom/internal/db"
 )
 
 // Manager manages task creation, delegation, and status changes.

@@ -21,9 +21,9 @@ builds:
       - amd64
       - arm64
     ldflags:
-      - -X github.com/peanut-cc/agentcom/internal/cli.Version={{ .Version }}
-      - -X github.com/peanut-cc/agentcom/internal/cli.BuildDate={{ .Date }}
-      - -X github.com/peanut-cc/agentcom/internal/cli.GoVersion={{ .Env.GOVERSION }}
+      - -X github.com/malleus35/agentcom/internal/cli.Version={{ .Version }}
+      - -X github.com/malleus35/agentcom/internal/cli.BuildDate={{ .Date }}
+      - -X github.com/malleus35/agentcom/internal/cli.GoVersion={{ .Env.GOVERSION }}
 
 archives:
   - id: default
@@ -45,9 +45,9 @@ changelog:
 brews:
   - name: agentcom
     repository:
-      owner: peanut-cc
+      owner: malleus35
       name: homebrew-tap
-    homepage: https://github.com/peanut-cc/agentcom
+    homepage: https://github.com/malleus35/agentcom
     description: Real-time communication CLI for parallel AI coding agents
     test: |
       system "#{bin}/agentcom", "version"

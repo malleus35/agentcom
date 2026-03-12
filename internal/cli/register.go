@@ -10,8 +10,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/peanut-cc/agentcom/internal/agent"
-	"github.com/peanut-cc/agentcom/internal/transport"
+	"github.com/malleus35/agentcom/internal/agent"
+	"github.com/malleus35/agentcom/internal/transport"
 	"github.com/spf13/cobra"
 )
 

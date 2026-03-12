@@ -7,9 +7,9 @@ BUILD_DATE := $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
 GO_VERSION := $(shell go version | awk '{print $$3}')
 
 LDFLAGS := -ldflags "\
-	-X github.com/peanut-cc/agentcom/internal/cli.Version=$(VERSION) \
-	-X github.com/peanut-cc/agentcom/internal/cli.BuildDate=$(BUILD_DATE) \
-	-X github.com/peanut-cc/agentcom/internal/cli.GoVersion=$(GO_VERSION)"
+	-X github.com/malleus35/agentcom/internal/cli.Version=$(VERSION) \
+	-X github.com/malleus35/agentcom/internal/cli.BuildDate=$(BUILD_DATE) \
+	-X github.com/malleus35/agentcom/internal/cli.GoVersion=$(GO_VERSION)"
 
 .PHONY: build test lint clean install fmt vet
 

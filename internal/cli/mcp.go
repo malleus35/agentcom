@@ -7,8 +7,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/peanut-cc/agentcom/internal/agent"
-	"github.com/peanut-cc/agentcom/internal/mcp"
+	"github.com/malleus35/agentcom/internal/agent"
+	"github.com/malleus35/agentcom/internal/mcp"
 	"github.com/spf13/cobra"
 )
 

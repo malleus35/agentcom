@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/peanut-cc/agentcom/internal/db"
+	"github.com/malleus35/agentcom/internal/db"
 )
 
 func setupTransportTestDB(t *testing.T) *db.DB {

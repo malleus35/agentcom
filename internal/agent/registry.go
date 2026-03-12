@@ -13,8 +13,8 @@ import (
 
 	gonanoid "github.com/matoous/go-nanoid/v2"
 
-	"github.com/peanut-cc/agentcom/internal/config"
-	"github.com/peanut-cc/agentcom/internal/db"
+	"github.com/malleus35/agentcom/internal/config"
+	"github.com/malleus35/agentcom/internal/db"
 )
 
 const heartbeatStaleThreshold = 30 * time.Second

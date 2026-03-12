@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/peanut-cc/agentcom/internal/db"
+	"github.com/malleus35/agentcom/internal/db"
 )
 
 // Poller periodically checks the SQLite inbox for undelivered messages.

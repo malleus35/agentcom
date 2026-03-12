@@ -9,7 +9,7 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/peanut-cc/agentcom/internal/agent"
+	"github.com/malleus35/agentcom/internal/agent"
 	"github.com/spf13/cobra"
 )
 

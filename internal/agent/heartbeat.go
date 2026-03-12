@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/peanut-cc/agentcom/internal/db"
+	"github.com/malleus35/agentcom/internal/db"
 )
 
 const defaultHeartbeatInterval = 10 * time.Second

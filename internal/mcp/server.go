@@ -8,8 +8,8 @@ import (
 	"io"
 	"log/slog"
 
-	"github.com/peanut-cc/agentcom/internal/config"
-	"github.com/peanut-cc/agentcom/internal/db"
+	"github.com/malleus35/agentcom/internal/config"
+	"github.com/malleus35/agentcom/internal/db"
 )
 
 const protocolVersion = "2024-11-05"

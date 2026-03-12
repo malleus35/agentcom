@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"text/tabwriter"
 
-	"github.com/peanut-cc/agentcom/internal/agent"
-	"github.com/peanut-cc/agentcom/internal/db"
+	"github.com/malleus35/agentcom/internal/agent"
+	"github.com/malleus35/agentcom/internal/db"
 	"github.com/spf13/cobra"
 )
 
