@@ -23,6 +23,34 @@ It uses SQLite in WAL mode as the durable source of truth and Unix Domain Socket
 
 ## Install
 
+### Easiest install
+
+If you want the shortest path per platform, use one of these:
+
+```bash
+# macOS / Linux
+curl -fsSL https://raw.githubusercontent.com/malleus35/agentcom/main/scripts/install.sh | sh
+```
+
+```powershell
+# Windows PowerShell
+irm https://raw.githubusercontent.com/malleus35/agentcom/main/scripts/install.ps1 | iex
+```
+
+If you prefer package managers:
+
+```bash
+# macOS / Linux (Homebrew tap)
+brew tap malleus35/tap && brew install agentcom
+```
+
+```powershell
+# Windows (Scoop without bucket add)
+scoop install https://raw.githubusercontent.com/malleus35/agentcom/main/packaging/scoop/agentcom.json
+```
+
+The direct Scoop URL install is officially supported, but it does not give you the normal `scoop update agentcom` workflow because the app is not installed from a registered bucket.
+
 Build locally:
 
 ```bash
@@ -88,6 +116,19 @@ brew install agentcom
 
 Use this when you want easy upgrades on systems that already use Homebrew.
 
+If you want `brew install agentcom` without `brew tap`, the formula would need to be accepted into `homebrew-core`.
+
+### 2a. What would be needed for Homebrew core?
+
+At a high level:
+
+- a stable public release archive and checksum for each supported platform
+- a formula that passes `brew audit` and `brew test`
+- a submission to `homebrew-core`
+- ongoing maintenance in line with Homebrew core policies
+
+Until then, the tap-based command is the practical Homebrew path.
+
 ### 3. `go install`
 
 Best for Go developers or contributors:
@@ -117,8 +158,10 @@ make build
 
 ### Which option should I choose?
 
+- End users on macOS/Linux: install script or Homebrew tap
+- End users on Windows: PowerShell install script or direct Scoop URL
 - End users on any OS: GitHub Releases binary
-- macOS/Linux users with Homebrew: Homebrew
+- macOS/Linux users with Homebrew: Homebrew tap
 - Go developers: `go install`
 - Internal packaging or local development: `make build`
 

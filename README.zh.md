@@ -21,6 +21,34 @@
 
 ## 安装
 
+### 最简单的安装方式
+
+如果你想按平台用最短命令安装，可以直接用下面这些方式。
+
+```bash
+# macOS / Linux
+curl -fsSL https://raw.githubusercontent.com/malleus35/agentcom/main/scripts/install.sh | sh
+```
+
+```powershell
+# Windows PowerShell
+irm https://raw.githubusercontent.com/malleus35/agentcom/main/scripts/install.ps1 | iex
+```
+
+如果你更喜欢包管理器：
+
+```bash
+# macOS / Linux
+brew tap malleus35/tap && brew install agentcom
+```
+
+```powershell
+# Windows（无需 bucket add）
+scoop install https://raw.githubusercontent.com/malleus35/agentcom/main/packaging/scoop/agentcom.json
+```
+
+Scoop 直接从 URL 安装是官方支持的，但因为它不是从已注册 bucket 安装，所以不能享受正常的 `scoop update agentcom` 更新流程。
+
 本地构建：
 
 ```bash
@@ -80,6 +108,19 @@ brew tap malleus35/tap
 brew install agentcom
 ```
 
+如果想做到不需要 `brew tap`、直接 `brew install agentcom`，就需要把 formula 合并进 `homebrew-core`。
+
+### 2a. 进入 Homebrew core 需要什么？
+
+大致需要满足这些前提：
+
+- 为各支持平台提供稳定的公开发布压缩包和校验值
+- formula 能通过 `brew audit` 和 `brew test`
+- 向 `homebrew-core` 提交并被接受
+- 后续持续按照 Homebrew 的要求维护
+
+在那之前，tap 方式仍然是最现实的 Homebrew 安装路径。
+
 ### 3. `go install`
 
 适合 Go 开发者或贡献者：
@@ -99,8 +140,10 @@ make build
 
 ### 如何选择
 
-- 普通用户：GitHub Releases 二进制包
-- 已经使用 Homebrew 的用户：Homebrew
+- macOS/Linux 普通用户：安装脚本或 Homebrew tap
+- Windows 普通用户：PowerShell 安装脚本或 Scoop URL 直接安装
+- 任意系统的手动安装：GitHub Releases 二进制包
+- 已经使用 Homebrew 的用户：Homebrew tap
 - Go 开发者：`go install`
 - 本地开发或内部打包：`make build`
 

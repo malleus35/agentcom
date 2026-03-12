@@ -21,6 +21,34 @@
 
 ## 설치
 
+### 가장 쉬운 설치 방법
+
+플랫폼별로 가장 짧게 설치하려면 아래 방법을 쓰면 됩니다.
+
+```bash
+# macOS / Linux
+curl -fsSL https://raw.githubusercontent.com/malleus35/agentcom/main/scripts/install.sh | sh
+```
+
+```powershell
+# Windows PowerShell
+irm https://raw.githubusercontent.com/malleus35/agentcom/main/scripts/install.ps1 | iex
+```
+
+패키지 매니저를 선호하면:
+
+```bash
+# macOS / Linux (Homebrew tap)
+brew tap malleus35/tap && brew install agentcom
+```
+
+```powershell
+# Windows (bucket add 없이 Scoop 직접 설치)
+scoop install https://raw.githubusercontent.com/malleus35/agentcom/main/packaging/scoop/agentcom.json
+```
+
+Scoop의 URL 직접 설치는 공식적으로 지원되지만, 등록된 bucket에서 설치한 것이 아니므로 일반적인 `scoop update agentcom` 흐름은 제공되지 않습니다.
+
 로컬 빌드:
 
 ```bash
@@ -86,6 +114,19 @@ brew install agentcom
 
 이미 Homebrew를 쓰는 환경에서 업데이트까지 편하게 관리하고 싶다면 이 방식이 좋습니다.
 
+`brew tap` 없이 바로 `brew install agentcom`이 되려면 `homebrew-core`에 formula가 들어가야 합니다.
+
+### 2a. Homebrew core에 들어가려면?
+
+핵심 조건만 정리하면 다음과 같습니다.
+
+- 플랫폼별 안정적인 공개 릴리스 아카이브와 체크섬
+- `brew audit`, `brew test`를 통과하는 formula
+- `homebrew-core` 제출 및 승인
+- Homebrew 정책에 맞는 지속적인 유지보수
+
+그 전까지는 tap 기반 설치가 가장 현실적인 Homebrew 경로입니다.
+
 ### 3. `go install`
 
 Go 개발자나 기여자에게 적합한 방식입니다.
@@ -115,8 +156,10 @@ make build
 
 ### 어떤 방식을 선택하면 좋은가?
 
-- 일반 사용자, 어떤 OS든 편하게: GitHub Releases 바이너리
-- macOS/Linux + Homebrew 사용 중: Homebrew
+- macOS/Linux 일반 사용자: 설치 스크립트 또는 Homebrew tap
+- Windows 일반 사용자: PowerShell 설치 스크립트 또는 Scoop URL 직접 설치
+- 어떤 OS든 수동 설치: GitHub Releases 바이너리
+- macOS/Linux + Homebrew 사용 중: Homebrew tap
 - Go 개발자: `go install`
 - 내부 배포나 로컬 개발: `make build`
 
