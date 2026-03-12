@@ -29,6 +29,8 @@
 - `internal/mcp/server_test.go`: STDIO JSON-RPC handshake + tool roundtrip 테스트 추가
 - `cmd/agentcom/e2e_test.go`: 실제 바이너리 기반 E2E 시나리오 추가
 - `internal/cli/init.go`: `agentcom init --agents-md` 지원 추가
+- `internal/cli/skill.go`: `agentcom skill create` 추가 (`project|user`, `claude|codex|gemini|opencode|all`)
+- `internal/cli/skill_test.go`: skill 이름 검증, 경로 계산, JSON 출력, 파일 생성 테스트 추가
 - `README.md`: 설치, 퀵스타트, CLI/MCP 사용법, 아키텍처 문서화
 - `.goreleaser.yml`: 릴리스 설정 추가
 - `.github/workflows/ci.yml`: lint/test/build CI 추가
@@ -42,6 +44,7 @@
 | 2026-03-12 | MessagePack 대신 JSON 직렬화 | 디버깅 편의성 우선, 성능 차이 무시할 수준 (로컬 IPC) |
 | 2026-03-12 | CGO 사용 (mattn/go-sqlite3) | modernc.org/sqlite도 고려했으나 mattn이 더 성숙하고 WAL 지원 안정적 |
 | 2026-03-12 | message/task 테이블의 agent foreign key 제거 | agent deregister 이후에도 message/task history를 유지하고 E2E 흐름을 막지 않기 위해 |
+| 2026-03-12 | `skill create`는 에이전트별 네이티브 스킬 경로에 직접 생성 | Claude/Codex/Gemini/OpenCode의 실제 로딩 경로를 맞춰 즉시 사용 가능하게 하기 위해 |
 
 ## 발견된 이슈
 
@@ -53,5 +56,6 @@
 - PRD 경로: `.agents/plans/PRD.md`
 - 전체 태스크 수: 62개
 - root 커맨드에 `mcp-server` 등록 완료
+- root 커맨드에 `skill` 등록 완료
 - 전체 테스트 통과: `go test ./...`
 - 전체 빌드 통과: `go build ./...`
