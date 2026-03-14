@@ -12,7 +12,7 @@
 - シンプルな状態遷移に基づくタスク委譲
 - 対応するコーディングエージェント向けに project / user スコープの `SKILL.md` を生成
 - 共通指示と 6 つの役割スキルを含む内蔵マルチエージェントテンプレートを生成
-- `agentcom agents template` で内蔵テンプレートを確認可能
+- `agentcom agents template` で内蔵テンプレートを確認でき、TTY では interactive search も可能
 - STDIO 経由の MCP JSON-RPC サーバー
 - SQLite を唯一の外部依存とする単一マシン向け構成
 
@@ -209,6 +209,8 @@ agentcom agents template company
 agentcom --json agents template oh-my-opencode
 ```
 
+インタラクティブ端末でテンプレート名なしに `agentcom agents template` を実行すると、検索語を入力して番号でテンプレートを選択できます。
+
 別ターミナルで 2 つのエージェントを起動します。
 
 ```bash
@@ -262,7 +264,7 @@ agentcom --json init
 
 - 再実行しても安全です
 - `--agents-md` は現在のディレクトリに `AGENTS.md` を生成します
-- `--template` は `.agentcom/templates/<template>/COMMON.md`、`.agentcom/templates/<template>/template.json`、および 6 つの役割スキル（`frontend`, `backend`, `plan`, `review`, `architect`, `design`）を生成します
+- `--template` は `.agentcom/templates/<template>/COMMON.md`、`.agentcom/templates/<template>/template.json`、各対応 agent 向けの shared `agentcom/SKILL.md`、および `agentcom/<template>-frontend` 形式の 6 つの namespaced role skill を生成します
 - 利用可能なテンプレートは `company` と `oh-my-opencode` です
 - JSON 出力には必要に応じて `path`, `status`, `agents_md`, `template`, `generated_files` が含まれます
 - 現在の実装では事前にホームディレクトリを準備するため、新しいパスでも `status` が `already_initialized` になる場合があります
@@ -403,6 +405,11 @@ agentcom agents template company
 agentcom --json agents template oh-my-opencode
 ```
 
+インタラクティブ動作:
+
+- interactive terminal でテンプレート名なしに実行すると、検索語入力と番号選択のプロンプトが表示されます。
+- non-interactive または `--json` モードでは、既存の一覧/詳細出力を維持します。
+
 内蔵テンプレート:
 
 - `company` - Paperclip の役割構造に着想を得た会社型マルチエージェントワークフロー
@@ -412,8 +419,9 @@ agentcom --json agents template oh-my-opencode
 
 - 共通指示: `.agentcom/templates/<template>/COMMON.md`
 - テンプレートメタデータ: `.agentcom/templates/<template>/template.json`
-- project レベルの役割スキル: `.claude/skills/`、`.agents/skills/`、`.gemini/skills/`、`.opencode/skills/`
-- 各役割スキルには `frontend`、`backend`、`plan`、`review`、`architect`、`design` 間の communication map が含まれます
+- project レベルの shared template skill: `.claude/skills/agentcom/SKILL.md`、`.agents/skills/agentcom/SKILL.md`、`.gemini/skills/agentcom/SKILL.md`、`.opencode/skills/agentcom/SKILL.md`
+- role skill は同じ namespace 配下、たとえば `.agents/skills/agentcom/company-frontend/SKILL.md` 形式で生成されます。
+- 各 role skill はまず shared `../SKILL.md`、次に template `COMMON.md` を参照し、`frontend`、`backend`、`plan`、`review`、`architect`、`design` 間の communication map を含みます。
 
 ### `agentcom health`
 

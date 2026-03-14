@@ -12,7 +12,7 @@
 - 간단한 상태 머신 기반 태스크 위임
 - 지원하는 코딩 에이전트용 프로젝트/사용자 단위 `SKILL.md` 생성
 - 공통 지침과 6개 역할 스킬이 포함된 내장 멀티 에이전트 템플릿 스캐폴드 생성
-- `agentcom agents template`로 내장 템플릿 조회
+- `agentcom agents template`로 내장 템플릿 조회 및 TTY에서 interactive search 지원
 - STDIO 기반 MCP JSON-RPC 서버 제공
 - SQLite만 외부 의존성으로 사용하는 단일 머신용 구조
 
@@ -236,6 +236,8 @@ agentcom agents template company
 agentcom --json agents template oh-my-opencode
 ```
 
+인터랙티브 터미널에서 템플릿 이름 없이 `agentcom agents template`를 실행하면 검색어를 입력한 뒤 번호로 템플릿을 선택할 수 있습니다.
+
 별도 터미널에서 두 개의 에이전트 시작:
 
 ```bash
@@ -298,7 +300,7 @@ agentcom --json init
 
 - 여러 번 실행해도 안전합니다.
 - `--agents-md`는 현재 작업 디렉터리에 프로젝트용 `AGENTS.md`를 작성합니다.
-- `--template`는 `.agentcom/templates/<template>/COMMON.md`, `.agentcom/templates/<template>/template.json`, 그리고 6개 역할 스킬(`frontend`, `backend`, `plan`, `review`, `architect`, `design`)을 생성합니다.
+- `--template`는 `.agentcom/templates/<template>/COMMON.md`, `.agentcom/templates/<template>/template.json`, 각 지원 agent별 shared `agentcom/SKILL.md`, 그리고 `agentcom/<template>-frontend` 형태의 6개 namespaced role skill을 생성합니다.
 - 지원 템플릿은 `company`, `oh-my-opencode` 입니다.
 - JSON 출력에는 상황에 따라 `path`, `status`, `agents_md`, `template`, `generated_files`가 포함됩니다.
 - 현재 구현상 홈 디렉터리를 먼저 준비한 뒤 `init` 상태를 검사하므로, 새 경로에서도 `status`가 `already_initialized`로 보일 수 있습니다.
@@ -524,6 +526,11 @@ agentcom agents template company
 agentcom --json agents template oh-my-opencode
 ```
 
+인터랙티브 동작:
+
+- interactive terminal에서 템플릿 이름 없이 실행하면 검색어 입력 후 번호 선택 프롬프트가 나옵니다.
+- non-interactive 또는 `--json` 모드에서는 기존 목록/상세 출력 동작을 유지합니다.
+
 내장 템플릿:
 
 - `company` - Paperclip 역할 구조에서 영감을 받은 회사형 멀티 에이전트 워크플로우
@@ -533,8 +540,9 @@ agentcom --json agents template oh-my-opencode
 
 - 공통 지침: `.agentcom/templates/<template>/COMMON.md`
 - 템플릿 메타데이터: `.agentcom/templates/<template>/template.json`
-- 프로젝트용 role skill: `.claude/skills/`, `.agents/skills/`, `.gemini/skills/`, `.opencode/skills/`
-- 각 role skill에는 `frontend`, `backend`, `plan`, `review`, `architect`, `design` 간 communication map이 포함됩니다.
+- 프로젝트용 shared template skill: `.claude/skills/agentcom/SKILL.md`, `.agents/skills/agentcom/SKILL.md`, `.gemini/skills/agentcom/SKILL.md`, `.opencode/skills/agentcom/SKILL.md`
+- role skill은 같은 namespace 아래 예를 들어 `.agents/skills/agentcom/company-frontend/SKILL.md` 형태로 생성됩니다.
+- 각 role skill은 먼저 shared `../SKILL.md`, 그다음 template `COMMON.md`를 읽도록 생성되며 `frontend`, `backend`, `plan`, `review`, `architect`, `design` 간 communication map을 포함합니다.
 
 ### `agentcom health`
 

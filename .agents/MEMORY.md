@@ -5,8 +5,8 @@
 ## 현재 상태
 
 - **Phase**: 7 완료
-- **마지막 작업**: Wave 8 테스트 추가 + Wave 9 E2E/README/release/CI 마무리
-- **다음 작업**: 커밋 또는 후속 polish가 필요하면 현재 상태 기준으로 진행
+- **마지막 작업**: `agents template` 인터랙티브 검색/선택 추가, 템플릿 role skill을 `agentcom` 네임스페이스로 재구성해 `develop`에 머지
+- **다음 작업**: 현재 `feature/skill-agent-catalog`에 남아 있는 다중 agent skill 지원 확장 작업 정리 여부 판단
 
 ## 완료된 태스크
 
@@ -38,6 +38,12 @@
 - `README.md`: 설치, 퀵스타트, CLI/MCP 사용법, 아키텍처 문서화
 - `.goreleaser.yml`: 릴리스 설정 추가
 - `.github/workflows/ci.yml`: lint/test/build CI 추가
+- `scripts/install.sh`, `scripts/install.ps1`: 기본 설치 버전을 `v0.1.2`로 상향
+- `packaging/scoop/agentcom.json`: `v0.1.2` Windows asset URL/hash로 갱신
+- GitHub release/tag: `v0.1.2` 생성 후 `main` 최신 커밋으로 태그 재지정
+- Homebrew tap(`malleus35/homebrew-tap`): `Formula/agentcom.rb`를 `0.1.2` asset/hash로 갱신
+- `feature/template-search-select`: `agentcom agents template`에 검색어 입력 + 번호 선택 기반 인터랙티브 템플릿 선택 추가 후 `develop` 머지
+- `feature/agentcom-shared-skills`: 템플릿 role skill을 각 agent의 `agentcom/<template>-<role>/SKILL.md` 구조로 생성하고 shared `agentcom/SKILL.md` 참조 추가 후 `develop` 머지
 
 ## 설계 결정 로그
 
@@ -52,6 +58,9 @@
 | 2026-03-14 | 템플릿 스캐폴딩은 기존 `agentcom init`을 확장 | 홈/DB 초기화 흐름을 유지하면서 프로젝트 템플릿 생성을 한 번에 수행하기 위해 |
 | 2026-03-14 | `agentcom agents template`는 내장 템플릿 조회 전용으로 시작 | 생성 동작은 `init --template`에 두고, `agents template`는 템플릿 탐색/설명 surface로 분리하기 위해 |
 | 2026-03-14 | role skill frontmatter는 `name` + `description`만 사용 | Claude/Codex/Gemini/OpenCode 공통 호환성을 유지하고 OpenCode YAML 파싱 이슈를 피하기 위해 |
+| 2026-03-14 | `v0.1.2` 태그는 최종적으로 `main` 최신 커밋을 가리키도록 재설정 | Scoop manifest 후속 커밋까지 동일 릴리스 태그에 포함하기 위해 |
+| 2026-03-15 | `agents template` 검색/선택은 `openclaw onboard`의 위저드 UX만 차용하고 실제 명령 호출은 하지 않음 | 공식 `openclaw onboard`는 템플릿 검색 기능이 없고, step-based interactive flow만 유사하게 적용하는 편이 안전하기 때문 |
+| 2026-03-15 | 템플릿 role skill은 각 agent의 `agentcom` 네임스페이스 아래 shared `SKILL.md` + role adapter 구조로 생성 | shared/common 지침과 role-specific 지침을 분리해 중복을 줄이고 참조형 구조를 만들기 위해 |
 
 ## 발견된 이슈
 
@@ -66,6 +75,9 @@
 - root 커맨드에 `skill` 등록 완료
 - root 커맨드에 `agents` 등록 완료
 - `agentcom init --template company|oh-my-opencode`는 `.agentcom/templates/<template>/COMMON.md`, `.agentcom/templates/<template>/template.json`, 그리고 6개 role skill을 각 agent CLI 경로에 생성
+- `agentcom agents template`는 interactive tty에서 검색어 기반 템플릿 선택을 지원하고, non-interactive/JSON 모드에서는 기존 목록/상세 출력 동작을 유지
+- 템플릿 role skill 생성 경로는 `.claude/skills/agentcom/<template>-<role>/SKILL.md` 등 각 agent 네임스페이스 구조로 변경됐고, shared file은 `.claude/skills/agentcom/SKILL.md` 형태로 생성
 - CEO 중심 라우팅 vs direct-to-user 응답 모델은 아직 계획 단계이며, 현 구현에는 특수 `user` recipient를 추가하지 않음
+- `develop`, `release/v0.1.2`, `main`, `feature/init-template-scaffold` 브랜치와 `v0.1.2` 태그는 원격 반영 완료
 - 전체 테스트 통과: `go test ./...`
 - 전체 빌드 통과: `go build ./...`

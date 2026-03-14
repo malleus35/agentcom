@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/malleus35/agentcom/internal/config"
+	"github.com/spf13/cobra"
 )
 
 func TestResolveTemplateDefinition(t *testing.T) {
@@ -52,8 +53,8 @@ func TestWriteTemplateScaffold(t *testing.T) {
 	if err != nil {
 		t.Fatalf("writeTemplateScaffold() error = %v", err)
 	}
-	if len(paths) != 26 {
-		t.Fatalf("len(paths) = %d, want 26", len(paths))
+	if len(paths) != 30 {
+		t.Fatalf("len(paths) = %d, want 30", len(paths))
 	}
 
 	commonPath := filepath.Join(projectDir, ".agentcom", "templates", "company", "COMMON.md")
@@ -78,12 +79,24 @@ func TestWriteTemplateScaffold(t *testing.T) {
 		t.Fatalf("manifest.Name = %q, want company", manifest.Name)
 	}
 
-	skillPath := filepath.Join(projectDir, ".agents", "skills", "frontend", "SKILL.md")
+	sharedSkillPath := filepath.Join(projectDir, ".agents", "skills", "agentcom", "SKILL.md")
+	sharedSkillData, err := os.ReadFile(sharedSkillPath)
+	if err != nil {
+		t.Fatalf("ReadFile(shared skill) error = %v", err)
+	}
+	if !strings.Contains(string(sharedSkillData), "Shared agentcom skill instructions") {
+		t.Fatalf("shared skill missing expected content: %s", string(sharedSkillData))
+	}
+
+	skillPath := filepath.Join(projectDir, ".agents", "skills", "agentcom", "company-frontend", "SKILL.md")
 	skillData, err := os.ReadFile(skillPath)
 	if err != nil {
 		t.Fatalf("ReadFile(skill) error = %v", err)
 	}
 	content := string(skillData)
+	if !strings.Contains(content, "Read shared agentcom instructions first: `../SKILL.md`") {
+		t.Fatalf("skill missing shared skill reference: %s", content)
+	}
 	if !strings.Contains(content, "Read common instructions first: `.agentcom/templates/company/COMMON.md`") {
 		t.Fatalf("skill missing common path: %s", content)
 	}
@@ -119,6 +132,40 @@ func TestAgentsTemplateCommandOutputsJSON(t *testing.T) {
 	}
 	if len(got.Roles) != 6 {
 		t.Fatalf("len(got.Roles) = %d, want 6", len(got.Roles))
+	}
+}
+
+func TestAgentsTemplateCommandInteractiveSelection(t *testing.T) {
+	oldSelector := templateSelectionEnabled
+	templateSelectionEnabled = func(cmd *cobra.Command) bool { return true }
+	defer func() { templateSelectionEnabled = oldSelector }()
+
+	oldJSON := jsonOutput
+	jsonOutput = false
+	defer func() { jsonOutput = oldJSON }()
+
+	input := bytes.NewBufferString("open\n1\n")
+	output := &bytes.Buffer{}
+	cmd := newAgentsTemplateCmd()
+	cmd.SetIn(input)
+	cmd.SetOut(output)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("cmd.Execute() error = %v", err)
+	}
+
+	text := output.String()
+	if !strings.Contains(text, "Search templates") {
+		t.Fatalf("interactive output missing search prompt: %s", text)
+	}
+	if !strings.Contains(text, "oh-my-opencode") {
+		t.Fatalf("interactive output missing selected template details: %s", text)
+	}
+	if !strings.Contains(text, "reference: oh-my-opencode") {
+		t.Fatalf("interactive output missing template reference: %s", text)
+	}
+	if strings.Contains(text, "company-style") {
+		t.Fatalf("interactive output should filter non-matching template: %s", text)
 	}
 }
 
@@ -172,8 +219,11 @@ func TestInitCommandGeneratesTemplateScaffold(t *testing.T) {
 		t.Fatalf("generated_files = %#v, want non-empty array", got["generated_files"])
 	}
 
-	if _, err := os.Stat(filepath.Join(projectDir, ".opencode", "skills", "plan", "SKILL.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(projectDir, ".opencode", "skills", "agentcom", "company-plan", "SKILL.md")); err != nil {
 		t.Fatalf("Stat(plan skill) error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(projectDir, ".opencode", "skills", "agentcom", "SKILL.md")); err != nil {
+		t.Fatalf("Stat(shared skill) error = %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(projectDir, ".agentcom", "templates", "company", "template.json")); err != nil {
 		t.Fatalf("Stat(template.json) error = %v", err)
