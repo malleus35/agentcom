@@ -6,6 +6,8 @@
 
 - **Phase**: 7 완료
 - **마지막 작업**: interactive template 선택/`agentcom` namespaced skill 문서화 후 `v0.1.3` 릴리스 및 패키지 매니저 반영 완료
+- **현재 브랜치**: `feature/P8-01-onboard-setup-wizard`
+- **추가 진행 작업**: `agentcom init --setup` 대화형 wizard MVP 구현 및 검증
 - **다음 작업**: 현재 `feature/skill-agent-catalog`에 남아 있는 다중 agent skill 지원 확장 작업 정리 여부 판단
 
 ## 완료된 태스크
@@ -67,6 +69,8 @@
 | 2026-03-15 | `agents template` 검색/선택은 `openclaw onboard`의 위저드 UX만 차용하고 실제 명령 호출은 하지 않음 | 공식 `openclaw onboard`는 템플릿 검색 기능이 없고, step-based interactive flow만 유사하게 적용하는 편이 안전하기 때문 |
 | 2026-03-15 | 템플릿 role skill은 각 agent의 `agentcom` 네임스페이스 아래 shared `SKILL.md` + role adapter 구조로 생성 | shared/common 지침과 role-specific 지침을 분리해 중복을 줄이고 참조형 구조를 만들기 위해 |
 | 2026-03-15 | `v0.1.3` release는 tag 워크플로 자산 + 수동 `darwin/arm64` 업로드 조합으로 마무리 | 현재 GitHub Actions release workflow가 `darwin/arm64`를 자동 생성하지 않기 때문 |
+| 2026-03-15 | onboard/setup UI는 full-screen TUI 대신 `huh` wizard로 구현 | 요구 범위가 초기 설정 단계에 한정되고, 기존 CLI 패턴을 최소 변경으로 유지하기 위해 |
+| 2026-03-15 | `agentcom init --setup`은 기존 root DB 초기화를 우회한 뒤 선택한 home dir 기준으로 별도 apply | 사용자가 wizard에서 홈 경로를 바꾸기 전에 기본 config/db가 먼저 생성되는 부작용을 막기 위해 |
 
 ## 발견된 이슈
 
@@ -76,6 +80,7 @@
 ## 메모
 
 - PRD 경로: `.agents/plans/PRD.md`
+- onboard wizard PRD: `.agents/plans/P8-01-onboard-setup-wizard.md`
 - 전체 태스크 수: 62개
 - root 커맨드에 `mcp-server` 등록 완료
 - root 커맨드에 `skill` 등록 완료
@@ -83,8 +88,15 @@
 - `agentcom init --template company|oh-my-opencode`는 `.agentcom/templates/<template>/COMMON.md`, `.agentcom/templates/<template>/template.json`, 그리고 6개 role skill을 각 agent CLI 경로에 생성
 - `agentcom agents template`는 interactive tty에서 검색어 기반 템플릿 선택을 지원하고, non-interactive/JSON 모드에서는 기존 목록/상세 출력 동작을 유지
 - 템플릿 role skill 생성 경로는 `.claude/skills/agentcom/<template>-<role>/SKILL.md` 등 각 agent 네임스페이스 구조로 변경됐고, shared file은 `.claude/skills/agentcom/SKILL.md` 형태로 생성
+- onboard wizard PRD: `.agents/plans/P8-01-onboard-setup-wizard.md`
 - CEO 중심 라우팅 vs direct-to-user 응답 모델은 아직 계획 단계이며, 현 구현에는 특수 `user` recipient를 추가하지 않음
 - `develop`, `release/v0.1.2`, `main`, `feature/init-template-scaffold` 브랜치와 `v0.1.2` 태그는 원격 반영 완료
 - `release/v0.1.3`, `main`, `develop`, `v0.1.3` 태그는 원격 반영 완료
 - 전체 테스트 통과: `go test ./...`
 - 전체 빌드 통과: `go build ./...`
+
+## 진행 중 작업 체크리스트
+
+- P8-01-01: onboard wizard PRD 작성 완료
+- P8-01-02~09: `init --setup` MVP 구현 및 문서 반영 진행 중
+- 구현 범위는 onboarding wizard, home dir 선택, template/AGENTS.md 선택, 기존 init 동작 보존에 한정
