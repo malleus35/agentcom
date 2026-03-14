@@ -57,6 +57,7 @@ func NewRootCmd() *cobra.Command {
 	// Register subcommands
 	root.AddCommand(
 		newInitCmd(),
+		newAgentsCmd(),
 		newSkillCmd(),
 		newVersionCmd(),
 		newRegisterCmd(),

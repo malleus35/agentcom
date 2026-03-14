@@ -21,6 +21,10 @@
 
 ## 이번 세션에서 마무리한 작업
 
+- `internal/cli/agents.go`: `agentcom agents template` 추가, `company`/`oh-my-opencode` 내장 템플릿 정의, 공통 markdown/manifest/role skill 스캐폴드 로직 추가
+- `internal/cli/init.go`: `agentcom init --template <company|oh-my-opencode>` 지원 추가, 프로젝트 템플릿 파일 및 role skill 생성 결과 출력/JSON 응답 확장
+- `internal/cli/agents_test.go`: 템플릿 해상도, scaffold 생성, JSON 출력, init 연동 테스트 추가
+- `internal/cli/cli_test.go`: root 커맨드에 `agents` 등록 검증 추가
 - `internal/db/agent.go`: `InsertAgent`가 preset ID를 덮어쓰지 않도록 수정
 - `internal/db/*_test.go`: DB CRUD 테스트 추가
 - `internal/agent/registry_test.go`: register/deregister/heartbeat/stale detection 테스트 추가
@@ -45,6 +49,9 @@
 | 2026-03-12 | CGO 사용 (mattn/go-sqlite3) | modernc.org/sqlite도 고려했으나 mattn이 더 성숙하고 WAL 지원 안정적 |
 | 2026-03-12 | message/task 테이블의 agent foreign key 제거 | agent deregister 이후에도 message/task history를 유지하고 E2E 흐름을 막지 않기 위해 |
 | 2026-03-12 | `skill create`는 에이전트별 네이티브 스킬 경로에 직접 생성 | Claude/Codex/Gemini/OpenCode의 실제 로딩 경로를 맞춰 즉시 사용 가능하게 하기 위해 |
+| 2026-03-14 | 템플릿 스캐폴딩은 기존 `agentcom init`을 확장 | 홈/DB 초기화 흐름을 유지하면서 프로젝트 템플릿 생성을 한 번에 수행하기 위해 |
+| 2026-03-14 | `agentcom agents template`는 내장 템플릿 조회 전용으로 시작 | 생성 동작은 `init --template`에 두고, `agents template`는 템플릿 탐색/설명 surface로 분리하기 위해 |
+| 2026-03-14 | role skill frontmatter는 `name` + `description`만 사용 | Claude/Codex/Gemini/OpenCode 공통 호환성을 유지하고 OpenCode YAML 파싱 이슈를 피하기 위해 |
 
 ## 발견된 이슈
 
@@ -57,5 +64,8 @@
 - 전체 태스크 수: 62개
 - root 커맨드에 `mcp-server` 등록 완료
 - root 커맨드에 `skill` 등록 완료
+- root 커맨드에 `agents` 등록 완료
+- `agentcom init --template company|oh-my-opencode`는 `.agentcom/templates/<template>/COMMON.md`, `.agentcom/templates/<template>/template.json`, 그리고 6개 role skill을 각 agent CLI 경로에 생성
+- CEO 중심 라우팅 vs direct-to-user 응답 모델은 아직 계획 단계이며, 현 구현에는 특수 `user` recipient를 추가하지 않음
 - 전체 테스트 통과: `go test ./...`
 - 전체 빌드 통과: `go build ./...`
