@@ -155,17 +155,30 @@ func writeTemplateScaffold(projectDir string, templateName string) ([]string, er
 		return nil, fmt.Errorf("write template manifest: %w", err)
 	}
 
+	sharedTargets, err := resolveSkillTargets("project", "all", "agentcom")
+	if err != nil {
+		return nil, fmt.Errorf("resolve shared agentcom skill targets: %w", err)
+	}
+	sharedContent := renderAgentcomSharedSkillContent()
+	for _, target := range sharedTargets {
+		if err := writeSkillFile(target.Path, sharedContent); err != nil {
+			return nil, fmt.Errorf("write shared %s agentcom skill: %w", target.Agent, err)
+		}
+		generatedPaths = append(generatedPaths, target.Path)
+	}
+
 	commonRelPath, err := filepath.Rel(projectDir, commonPath)
 	if err != nil {
 		return nil, fmt.Errorf("relative common path: %w", err)
 	}
 
 	for _, role := range definition.Roles {
-		targets, err := resolveSkillTargets("project", "all", role.Name)
+		generatedSkillName := templateRoleSkillName(definition.Name, role.Name)
+		targets, err := resolveSkillTargets("project", "all", filepath.Join("agentcom", generatedSkillName))
 		if err != nil {
 			return nil, fmt.Errorf("resolve role skill targets for %s: %w", role.Name, err)
 		}
-		content := renderRoleSkillContent(definition, role, filepath.ToSlash(commonRelPath))
+		content := renderRoleSkillContent(definition, role, generatedSkillName, filepath.ToSlash(commonRelPath))
 		for _, target := range targets {
 			if err := writeSkillFile(target.Path, content); err != nil {
 				return nil, fmt.Errorf("write %s skill for role %s: %w", target.Agent, role.Name, err)
@@ -208,8 +221,22 @@ func renderTemplateCommonContent(definition templateDefinition) string {
 	return fmt.Sprintf("# %s\n\n%s\n", definition.CommonTitle, definition.CommonBody)
 }
 
-func renderRoleSkillContent(definition templateDefinition, role templateRole, commonPath string) string {
-	bodyTitle := titleWords(role.Name)
+func renderAgentcomSharedSkillContent() string {
+	return `---
+name: agentcom
+description: Shared agentcom skill instructions for generated template roles
+---
+
+# Agentcom
+
+- Use this shared skill as the common base for generated agentcom template role skills.
+- Coordinate with ` + "`agentcom send`" + `, ` + "`agentcom inbox`" + `, ` + "`agentcom task create`" + `, and ` + "`agentcom task delegate`" + `.
+- Read the role-specific skill under this directory for template and responsibility details.
+`
+}
+
+func renderRoleSkillContent(definition templateDefinition, role templateRole, generatedSkillName string, commonPath string) string {
+	bodyTitle := titleWords(strings.ReplaceAll(generatedSkillName, "-", " "))
 	return fmt.Sprintf(`---
 name: %s
 description: %s
@@ -217,6 +244,7 @@ description: %s
 
 # %s
 
+- Read shared agentcom instructions first: `+"`../SKILL.md`"+`
 - Read common instructions first: `+"`%s`"+`
 - Template: `+"`%s`"+` (`+"`%s`"+`)
 - Agent identity: `+"`%s`"+` / type `+"`%s`"+`
@@ -231,7 +259,11 @@ description: %s
 - Use `+"`agentcom send --from <sender> <target> <message-or-json>`"+` for direct coordination.
 - Use `+"`agentcom task create`"+`, `+"`agentcom task delegate`"+`, and `+"`agentcom inbox --agent <name>`"+` to coordinate handoffs.
 - Escalate blockers to `+"`plan`"+` and `+"`architect`"+` when requirements or system boundaries change.
-`, role.Name, role.Description, bodyTitle, commonPath, definition.Name, definition.Reference, role.AgentName, role.AgentType, renderResponsibilities(role.Responsibilities), strings.Join(role.CommunicatesWith, ", "))
+`, generatedSkillName, role.Description, bodyTitle, commonPath, definition.Name, definition.Reference, role.AgentName, role.AgentType, renderResponsibilities(role.Responsibilities), strings.Join(role.CommunicatesWith, ", "))
+}
+
+func templateRoleSkillName(templateName string, roleName string) string {
+	return templateName + "-" + roleName
 }
 
 func renderResponsibilities(items []string) string {
