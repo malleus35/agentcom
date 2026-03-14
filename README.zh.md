@@ -12,7 +12,7 @@
 - 基于简单状态机的任务委派
 - 为支持的编码代理生成 project/user 级别的 `SKILL.md`
 - 生成内置多代理模板脚手架，包含共享说明和 6 个角色技能
-- 通过 `agentcom agents template` 查看内置模板
+- 通过 `agentcom agents template` 查看内置模板，并在 TTY 中支持 interactive search
 - 通过 STDIO 暴露 MCP JSON-RPC 服务
 - 仅依赖 SQLite，适合单机使用
 
@@ -209,6 +209,8 @@ agentcom agents template company
 agentcom --json agents template oh-my-opencode
 ```
 
+在交互式终端中不带模板名执行 `agentcom agents template` 时，现在会先输入搜索词，再通过编号选择模板。
+
 在不同终端启动两个代理：
 
 ```bash
@@ -262,7 +264,7 @@ agentcom --json init
 
 - 可重复执行
 - `--agents-md` 会在当前目录生成 `AGENTS.md`
-- `--template` 会生成 `.agentcom/templates/<template>/COMMON.md`、`.agentcom/templates/<template>/template.json`，以及 6 个角色技能：`frontend`、`backend`、`plan`、`review`、`architect`、`design`
+- `--template` 会生成 `.agentcom/templates/<template>/COMMON.md`、`.agentcom/templates/<template>/template.json`、每个支持 agent 的 shared `agentcom/SKILL.md`，以及 `agentcom/<template>-frontend` 形式的 6 个 namespaced role skill
 - 支持的模板为 `company` 和 `oh-my-opencode`
 - JSON 输出在适用时会包含 `path`、`status`、`agents_md`、`template`、`generated_files`
 - 当前实现会先准备 home 目录再检查状态，因此即使是新路径，`status` 也可能显示为 `already_initialized`
@@ -403,6 +405,11 @@ agentcom agents template company
 agentcom --json agents template oh-my-opencode
 ```
 
+交互行为：
+
+- 在 interactive terminal 中不带模板名执行时，会提示输入搜索词并通过编号选择模板。
+- 在 non-interactive 或 `--json` 模式下，保持现有的列表/详情输出行为。
+
 内置模板：
 
 - `company` - 受 Paperclip 角色结构启发的公司式多代理工作流
@@ -412,8 +419,9 @@ agentcom --json agents template oh-my-opencode
 
 - 共享说明：`.agentcom/templates/<template>/COMMON.md`
 - 模板元数据：`.agentcom/templates/<template>/template.json`
-- project 级角色技能：`.claude/skills/`、`.agents/skills/`、`.gemini/skills/`、`.opencode/skills/`
-- 每个角色技能都包含 `frontend`、`backend`、`plan`、`review`、`architect`、`design` 之间的 communication map
+- project 级 shared template skill：`.claude/skills/agentcom/SKILL.md`、`.agents/skills/agentcom/SKILL.md`、`.gemini/skills/agentcom/SKILL.md`、`.opencode/skills/agentcom/SKILL.md`
+- role skill 会生成在同一 namespace 下，例如 `.agents/skills/agentcom/company-frontend/SKILL.md`。
+- 每个 role skill 都会先读取 shared `../SKILL.md`，再读取 template `COMMON.md`，并包含 `frontend`、`backend`、`plan`、`review`、`architect`、`design` 之间的 communication map。
 
 ### `agentcom health`
 
