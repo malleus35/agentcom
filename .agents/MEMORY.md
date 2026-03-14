@@ -5,10 +5,10 @@
 ## 현재 상태
 
 - **Phase**: 7 완료
-- **마지막 작업**: interactive template 선택/`agentcom` namespaced skill 문서화 후 `v0.1.3` 릴리스 및 패키지 매니저 반영 완료
+- **마지막 작업**: `feature/skill-agent-catalog`를 `develop`에 머지했고, `feature/P8-01-onboard-setup-wizard`를 최신 `develop` 기준으로 리베이스 완료
 - **현재 브랜치**: `feature/P8-01-onboard-setup-wizard`
-- **추가 진행 작업**: `agentcom init --setup` 대화형 wizard MVP 구현 및 검증
-- **다음 작업**: 현재 `feature/skill-agent-catalog`에 남아 있는 다중 agent skill 지원 확장 작업 정리 여부 판단
+- **추가 진행 작업**: `agentcom init --setup` 대화형 wizard MVP 구현/검증/커밋 완료
+- **다음 작업**: P8 브랜치를 `develop`에 머지할지 결정하고, 필요 시 localized README에 onboarding 문서 동기화 검토
 
 ## 완료된 태스크
 
@@ -71,6 +71,7 @@
 | 2026-03-15 | `v0.1.3` release는 tag 워크플로 자산 + 수동 `darwin/arm64` 업로드 조합으로 마무리 | 현재 GitHub Actions release workflow가 `darwin/arm64`를 자동 생성하지 않기 때문 |
 | 2026-03-15 | onboard/setup UI는 full-screen TUI 대신 `huh` wizard로 구현 | 요구 범위가 초기 설정 단계에 한정되고, 기존 CLI 패턴을 최소 변경으로 유지하기 위해 |
 | 2026-03-15 | `agentcom init --setup`은 기존 root DB 초기화를 우회한 뒤 선택한 home dir 기준으로 별도 apply | 사용자가 wizard에서 홈 경로를 바꾸기 전에 기본 config/db가 먼저 생성되는 부작용을 막기 위해 |
+| 2026-03-15 | skill agent catalog 확장 후에도 템플릿 scaffold는 core agent 집합만 사용 | `skill create --agent all`의 catalog 확장과 템플릿 scaffold 범위를 분리해 기존 템플릿 생성 기대값을 보존하기 위해 |
 
 ## 발견된 이슈
 
@@ -97,6 +98,6 @@
 
 ## 진행 중 작업 체크리스트
 
-- P8-01-01: onboard wizard PRD 작성 완료
-- P8-01-02~09: `init --setup` MVP 구현 및 문서 반영 진행 중
-- 구현 범위는 onboarding wizard, home dir 선택, template/AGENTS.md 선택, 기존 init 동작 보존에 한정
+- P8-01-01~09: onboard/setup wizard MVP 구현, 검증, 커밋 완료
+- `feature/P8-01-onboard-setup-wizard`는 최신 `develop` 기준으로 리베이스 완료
+- 다음 액션은 P8 브랜치 병합 여부 결정 또는 localized README onboarding 문서 동기화 검토
