@@ -43,6 +43,10 @@ func NewRootCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			if shouldSkipAppInit(cmd) {
+				configureLogging()
+				return nil
+			}
 			return initApp(cmd.Context())
 		},
 		PersistentPostRunE: func(cmd *cobra.Command, args []string) error {
@@ -75,14 +79,25 @@ func NewRootCmd() *cobra.Command {
 	return root
 }
 
-// initApp initializes shared application state.
-func initApp(ctx context.Context) error {
-	// Configure logging
+func shouldSkipAppInit(cmd *cobra.Command) bool {
+	if cmd == nil || cmd.Name() != "init" {
+		return false
+	}
+	setup, err := cmd.Flags().GetBool("setup")
+	return err == nil && setup
+}
+
+func configureLogging() {
 	level := slog.LevelInfo
 	if verbose {
 		level = slog.LevelDebug
 	}
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
+}
+
+// initApp initializes shared application state.
+func initApp(ctx context.Context) error {
+	configureLogging()
 
 	cfg, err := config.Load()
 	if err != nil {

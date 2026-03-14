@@ -2,21 +2,81 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 
+	"github.com/malleus35/agentcom/internal/onboard"
 	"github.com/spf13/cobra"
 )
 
 func newInitCmd() *cobra.Command {
 	var writeAgentsMD bool
 	var templateName string
+	var setup bool
+	var accessible bool
 
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "Initialize agentcom home and database",
+		Short: "Initialize agentcom home and optionally run setup wizard",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if setup {
+				if jsonOutput {
+					return fmt.Errorf("cli.newInitCmd: --json is not supported with --setup")
+				}
+				if !isInteractiveInput(cmd.InOrStdin()) {
+					return fmt.Errorf("cli.newInitCmd: --setup requires an interactive terminal")
+				}
+
+				defaults, err := onboard.DetectDefaults()
+				if err != nil {
+					return fmt.Errorf("cli.newInitCmd: detect onboarding defaults: %w", err)
+				}
+				if writeAgentsMD {
+					defaults.WriteAgentsMD = true
+				}
+				if templateName != "" {
+					defaults.Template = templateName
+				}
+
+				cwd, err := os.Getwd()
+				if err != nil {
+					return fmt.Errorf("cli.newInitCmd: getwd for setup: %w", err)
+				}
+
+				wizard := onboard.NewWizard(
+					newOnboardPrompter(accessible, cmd.InOrStdin(), cmd.OutOrStdout()),
+					newInitSetupExecutor(cwd),
+				)
+				report, err := wizard.Run(cmd.Context(), defaults)
+				if err != nil {
+					if errors.Is(err, onboard.ErrAborted) {
+						return fmt.Errorf("cli.newInitCmd: setup cancelled")
+					}
+					return fmt.Errorf("cli.newInitCmd: run setup wizard: %w", err)
+				}
+
+				for _, path := range report.GeneratedFiles {
+					if path == report.AgentsMDPath {
+						if _, err := fmt.Fprintf(cmd.OutOrStdout(), "generated AGENTS.md at %s\n", path); err != nil {
+							return err
+						}
+						continue
+					}
+					if _, err := fmt.Fprintf(cmd.OutOrStdout(), "generated template file at %s\n", path); err != nil {
+						return err
+					}
+				}
+
+				if report.Status == "already_initialized" {
+					_, err = fmt.Fprintf(cmd.OutOrStdout(), "agentcom already initialized at %s\n", report.HomeDir)
+					return err
+				}
+				_, err = fmt.Fprintf(cmd.OutOrStdout(), "agentcom initialized at %s\n", report.HomeDir)
+				return err
+			}
+
 			info, err := os.Stat(app.cfg.HomeDir)
 			if err != nil && !os.IsNotExist(err) {
 				return fmt.Errorf("cli.newInitCmd: stat home: %w", err)
@@ -92,6 +152,8 @@ func newInitCmd() *cobra.Command {
 		},
 	}
 
+	cmd.Flags().BoolVar(&setup, "setup", false, "Run interactive setup wizard for init")
+	cmd.Flags().BoolVar(&accessible, "accessible", false, "Use accessible text prompts for setup wizard")
 	cmd.Flags().BoolVar(&writeAgentsMD, "agents-md", false, "Generate project AGENTS.md in current directory")
 	cmd.Flags().StringVar(&templateName, "template", "", "Generate built-in project scaffold: company|oh-my-opencode")
 
