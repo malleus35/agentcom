@@ -13,6 +13,8 @@ It uses SQLite in WAL mode as the durable source of truth and Unix Domain Socket
 - Persist messages, tasks, and agent liveness in SQLite
 - Delegate tasks between agents with a simple state machine
 - Generate project-scoped or user-scoped `SKILL.md` files for supported coding agents
+- Scaffold built-in multi-agent templates with shared instructions and six role skills
+- Inspect available built-in templates with `agentcom agents template`
 - Expose an MCP JSON-RPC server over STDIO
 - Run entirely on one machine with SQLite as the only external dependency
 
@@ -221,6 +223,21 @@ Generate a project-level `AGENTS.md` in the current directory:
 agentcom init --agents-md
 ```
 
+Scaffold a built-in project template with shared instructions and six role skills:
+
+```bash
+agentcom init --template company
+agentcom init --template oh-my-opencode
+```
+
+Inspect the built-in templates before generating one:
+
+```bash
+agentcom agents template
+agentcom agents template company
+agentcom --json agents template oh-my-opencode
+```
+
 Start two agents in separate terminals:
 
 ```bash
@@ -274,6 +291,8 @@ Usage:
 ```bash
 agentcom init
 agentcom init --agents-md
+agentcom init --template company
+agentcom init --template oh-my-opencode
 agentcom --json init
 ```
 
@@ -281,7 +300,9 @@ Notes:
 
 - Running it repeatedly is safe.
 - `--agents-md` writes a project-level `AGENTS.md` in the current working directory.
-- JSON output includes `path`, `status`, and `agents_md` when applicable.
+- `--template` writes `.agentcom/templates/<template>/COMMON.md`, `.agentcom/templates/<template>/template.json`, and six role skills: `frontend`, `backend`, `plan`, `review`, `architect`, and `design`.
+- Supported templates are `company` and `oh-my-opencode`.
+- JSON output includes `path`, `status`, `agents_md`, `template`, and `generated_files` when applicable.
 - Because the current implementation prepares the home directory before `init` checks it, `status` may appear as `already_initialized` even for a newly prepared path.
 
 ### `agentcom register`
@@ -481,6 +502,30 @@ Notes:
 - Skill names must use lowercase letters, numbers, and single hyphens only.
 - Existing `SKILL.md` files are never overwritten.
 - `--agent all` writes one file per supported agent and stops on the first write failure.
+
+### `agentcom agents template`
+
+Lists built-in templates or shows one template definition in detail.
+
+Usage:
+
+```bash
+agentcom agents template
+agentcom agents template company
+agentcom --json agents template oh-my-opencode
+```
+
+Built-in templates:
+
+- `company` - company-style multi-agent workflow inspired by Paperclip role structure
+- `oh-my-opencode` - planning-heavy workflow inspired by Prometheus, Momus, Oracle, and Sisyphus-Junior patterns
+
+Generated scaffold details:
+
+- Common instructions live at `.agentcom/templates/<template>/COMMON.md`.
+- Template metadata lives at `.agentcom/templates/<template>/template.json`.
+- Project-level role skills are generated for all supported agent CLIs in `.claude/skills/`, `.agents/skills/`, `.gemini/skills/`, and `.opencode/skills/`.
+- Each role skill contains a communication map for `frontend`, `backend`, `plan`, `review`, `architect`, and `design`.
 
 ### `agentcom status`
 
