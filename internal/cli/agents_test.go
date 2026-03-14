@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/malleus35/agentcom/internal/config"
+	"github.com/spf13/cobra"
 )
 
 func TestResolveTemplateDefinition(t *testing.T) {
@@ -119,6 +120,40 @@ func TestAgentsTemplateCommandOutputsJSON(t *testing.T) {
 	}
 	if len(got.Roles) != 6 {
 		t.Fatalf("len(got.Roles) = %d, want 6", len(got.Roles))
+	}
+}
+
+func TestAgentsTemplateCommandInteractiveSelection(t *testing.T) {
+	oldSelector := templateSelectionEnabled
+	templateSelectionEnabled = func(cmd *cobra.Command) bool { return true }
+	defer func() { templateSelectionEnabled = oldSelector }()
+
+	oldJSON := jsonOutput
+	jsonOutput = false
+	defer func() { jsonOutput = oldJSON }()
+
+	input := bytes.NewBufferString("open\n1\n")
+	output := &bytes.Buffer{}
+	cmd := newAgentsTemplateCmd()
+	cmd.SetIn(input)
+	cmd.SetOut(output)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("cmd.Execute() error = %v", err)
+	}
+
+	text := output.String()
+	if !strings.Contains(text, "Search templates") {
+		t.Fatalf("interactive output missing search prompt: %s", text)
+	}
+	if !strings.Contains(text, "oh-my-opencode") {
+		t.Fatalf("interactive output missing selected template details: %s", text)
+	}
+	if !strings.Contains(text, "reference: oh-my-opencode") {
+		t.Fatalf("interactive output missing template reference: %s", text)
+	}
+	if strings.Contains(text, "company-style") {
+		t.Fatalf("interactive output should filter non-matching template: %s", text)
 	}
 }
 

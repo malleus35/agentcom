@@ -1,11 +1,14 @@
 package cli
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -35,6 +38,8 @@ type templateSummary struct {
 	Roles       []string `json:"roles"`
 }
 
+var templateSelectionEnabled = shouldPromptTemplateSelection
+
 func newAgentsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "agents",
@@ -54,6 +59,17 @@ func newAgentsTemplateCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 {
 				summaries := listTemplateSummaries()
+				if templateSelectionEnabled(cmd) {
+					selectedName, err := selectTemplateSummary(cmd, summaries)
+					if err != nil {
+						return fmt.Errorf("cli.newAgentsTemplateCmd: select template: %w", err)
+					}
+					definition, err := resolveTemplateDefinition(selectedName)
+					if err != nil {
+						return fmt.Errorf("cli.newAgentsTemplateCmd: %w", err)
+					}
+					return writeTemplateDefinition(cmd, definition)
+				}
 				if jsonOutput {
 					enc := json.NewEncoder(cmd.OutOrStdout())
 					enc.SetIndent("", "  ")
@@ -75,27 +91,101 @@ func newAgentsTemplateCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("cli.newAgentsTemplateCmd: %w", err)
 			}
-
-			if jsonOutput {
-				enc := json.NewEncoder(cmd.OutOrStdout())
-				enc.SetIndent("", "  ")
-				return enc.Encode(definition)
-			}
-
-			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s\n%s\nreference: %s\n", definition.Name, definition.Description, definition.Reference); err != nil {
-				return fmt.Errorf("cli.newAgentsTemplateCmd: write template header: %w", err)
-			}
-			for _, role := range definition.Roles {
-				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "- %s (%s): talks to %s\n", role.Name, role.AgentName, strings.Join(role.CommunicatesWith, ", ")); err != nil {
-					return fmt.Errorf("cli.newAgentsTemplateCmd: write template role: %w", err)
-				}
-			}
-
-			return nil
+			return writeTemplateDefinition(cmd, definition)
 		},
 	}
 
 	return cmd
+}
+
+func writeTemplateDefinition(cmd *cobra.Command, definition templateDefinition) error {
+
+	if jsonOutput {
+		enc := json.NewEncoder(cmd.OutOrStdout())
+		enc.SetIndent("", "  ")
+		return enc.Encode(definition)
+	}
+
+	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s\n%s\nreference: %s\n", definition.Name, definition.Description, definition.Reference); err != nil {
+		return fmt.Errorf("cli.newAgentsTemplateCmd: write template header: %w", err)
+	}
+	for _, role := range definition.Roles {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "- %s (%s): talks to %s\n", role.Name, role.AgentName, strings.Join(role.CommunicatesWith, ", ")); err != nil {
+			return fmt.Errorf("cli.newAgentsTemplateCmd: write template role: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func shouldPromptTemplateSelection(cmd *cobra.Command) bool {
+	if jsonOutput {
+		return false
+	}
+	return streamIsInteractive(cmd.InOrStdin())
+}
+
+func streamIsInteractive(r io.Reader) bool {
+	file, ok := r.(*os.File)
+	if !ok {
+		return false
+	}
+	info, err := file.Stat()
+	if err != nil {
+		return false
+	}
+	return (info.Mode() & os.ModeCharDevice) != 0
+}
+
+func selectTemplateSummary(cmd *cobra.Command, summaries []templateSummary) (string, error) {
+	reader := bufio.NewReader(cmd.InOrStdin())
+	if _, err := fmt.Fprint(cmd.OutOrStdout(), "Search templates (blank for all): "); err != nil {
+		return "", fmt.Errorf("prompt search query: %w", err)
+	}
+	query, err := reader.ReadString('\n')
+	if err != nil && err != io.EOF {
+		return "", fmt.Errorf("read search query: %w", err)
+	}
+	query = strings.TrimSpace(strings.ToLower(query))
+
+	filtered := filterTemplateSummaries(summaries, query)
+	if len(filtered) == 0 {
+		return "", fmt.Errorf("no templates matched %q", query)
+	}
+
+	for i, summary := range filtered {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%d. %s - %s\n", i+1, summary.Name, summary.Description); err != nil {
+			return "", fmt.Errorf("write template option: %w", err)
+		}
+	}
+	if _, err := fmt.Fprint(cmd.OutOrStdout(), "Select template number: "); err != nil {
+		return "", fmt.Errorf("prompt selection: %w", err)
+	}
+	selection, err := reader.ReadString('\n')
+	if err != nil && err != io.EOF {
+		return "", fmt.Errorf("read selection: %w", err)
+	}
+	selection = strings.TrimSpace(selection)
+	index, err := strconv.Atoi(selection)
+	if err != nil || index < 1 || index > len(filtered) {
+		return "", fmt.Errorf("invalid selection %q", selection)
+	}
+
+	return filtered[index-1].Name, nil
+}
+
+func filterTemplateSummaries(summaries []templateSummary, query string) []templateSummary {
+	if query == "" {
+		return summaries
+	}
+	filtered := make([]templateSummary, 0, len(summaries))
+	for _, summary := range summaries {
+		haystack := strings.ToLower(summary.Name + " " + summary.Description + " " + strings.Join(summary.Roles, " "))
+		if strings.Contains(haystack, query) {
+			filtered = append(filtered, summary)
+		}
+	}
+	return filtered
 }
 
 func listTemplateSummaries() []templateSummary {
