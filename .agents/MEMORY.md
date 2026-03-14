@@ -5,8 +5,8 @@
 ## 현재 상태
 
 - **Phase**: 7 완료
-- **마지막 작업**: Wave 8 테스트 추가 + Wave 9 E2E/README/release/CI 마무리
-- **다음 작업**: 커밋 또는 후속 polish가 필요하면 현재 상태 기준으로 진행
+- **마지막 작업**: 템플릿 init/agents 명령 추가, README 다국어 갱신, `v0.1.2` release/tag/package-manager 반영 마무리
+- **다음 작업**: `skill create`의 지원 agent 범위를 외부 카탈로그 기준으로 확장 검토 및 구현
 
 ## 완료된 태스크
 
@@ -38,6 +38,10 @@
 - `README.md`: 설치, 퀵스타트, CLI/MCP 사용법, 아키텍처 문서화
 - `.goreleaser.yml`: 릴리스 설정 추가
 - `.github/workflows/ci.yml`: lint/test/build CI 추가
+- `scripts/install.sh`, `scripts/install.ps1`: 기본 설치 버전을 `v0.1.2`로 상향
+- `packaging/scoop/agentcom.json`: `v0.1.2` Windows asset URL/hash로 갱신
+- GitHub release/tag: `v0.1.2` 생성 후 `main` 최신 커밋으로 태그 재지정
+- Homebrew tap(`malleus35/homebrew-tap`): `Formula/agentcom.rb`를 `0.1.2` asset/hash로 갱신
 
 ## 설계 결정 로그
 
@@ -52,6 +56,7 @@
 | 2026-03-14 | 템플릿 스캐폴딩은 기존 `agentcom init`을 확장 | 홈/DB 초기화 흐름을 유지하면서 프로젝트 템플릿 생성을 한 번에 수행하기 위해 |
 | 2026-03-14 | `agentcom agents template`는 내장 템플릿 조회 전용으로 시작 | 생성 동작은 `init --template`에 두고, `agents template`는 템플릿 탐색/설명 surface로 분리하기 위해 |
 | 2026-03-14 | role skill frontmatter는 `name` + `description`만 사용 | Claude/Codex/Gemini/OpenCode 공통 호환성을 유지하고 OpenCode YAML 파싱 이슈를 피하기 위해 |
+| 2026-03-14 | `v0.1.2` 태그는 최종적으로 `main` 최신 커밋을 가리키도록 재설정 | Scoop manifest 후속 커밋까지 동일 릴리스 태그에 포함하기 위해 |
 
 ## 발견된 이슈
 
@@ -67,5 +72,6 @@
 - root 커맨드에 `agents` 등록 완료
 - `agentcom init --template company|oh-my-opencode`는 `.agentcom/templates/<template>/COMMON.md`, `.agentcom/templates/<template>/template.json`, 그리고 6개 role skill을 각 agent CLI 경로에 생성
 - CEO 중심 라우팅 vs direct-to-user 응답 모델은 아직 계획 단계이며, 현 구현에는 특수 `user` recipient를 추가하지 않음
+- `develop`, `release/v0.1.2`, `main`, `feature/init-template-scaffold` 브랜치와 `v0.1.2` 태그는 원격 반영 완료
 - 전체 테스트 통과: `go test ./...`
 - 전체 빌드 통과: `go build ./...`
