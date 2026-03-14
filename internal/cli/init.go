@@ -11,6 +11,7 @@ import (
 
 func newInitCmd() *cobra.Command {
 	var writeAgentsMD bool
+	var templateName string
 
 	cmd := &cobra.Command{
 		Use:   "init",
@@ -27,6 +28,7 @@ func newInitCmd() *cobra.Command {
 			}
 
 			agentsMDPath := ""
+			generatedFiles := []string{}
 			if writeAgentsMD {
 				cwd, err := os.Getwd()
 				if err != nil {
@@ -38,16 +40,31 @@ func newInitCmd() *cobra.Command {
 				}
 			}
 
+			if templateName != "" {
+				cwd, err := os.Getwd()
+				if err != nil {
+					return fmt.Errorf("cli.newInitCmd: getwd for template scaffold: %w", err)
+				}
+				generatedFiles, err = writeTemplateScaffold(cwd, templateName)
+				if err != nil {
+					return fmt.Errorf("cli.newInitCmd: write template scaffold: %w", err)
+				}
+			}
+
 			if jsonOutput {
 				enc := json.NewEncoder(cmd.OutOrStdout())
 				enc.SetIndent("", "  ")
 
-				payload := map[string]string{
+				payload := map[string]any{
 					"path":   app.cfg.HomeDir,
 					"status": status,
 				}
 				if agentsMDPath != "" {
 					payload["agents_md"] = agentsMDPath
+				}
+				if templateName != "" {
+					payload["template"] = templateName
+					payload["generated_files"] = generatedFiles
 				}
 
 				return enc.Encode(payload)
@@ -55,6 +72,12 @@ func newInitCmd() *cobra.Command {
 
 			if agentsMDPath != "" {
 				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "generated AGENTS.md at %s\n", agentsMDPath); err != nil {
+					return err
+				}
+			}
+
+			for _, path := range generatedFiles {
+				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "generated template file at %s\n", path); err != nil {
 					return err
 				}
 			}
@@ -70,6 +93,7 @@ func newInitCmd() *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&writeAgentsMD, "agents-md", false, "Generate project AGENTS.md in current directory")
+	cmd.Flags().StringVar(&templateName, "template", "", "Generate built-in project scaffold: company|oh-my-opencode")
 
 	return cmd
 }
