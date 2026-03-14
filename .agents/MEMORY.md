@@ -5,7 +5,7 @@
 ## 현재 상태
 
 - **Phase**: 7 완료
-- **마지막 작업**: `agents template` 인터랙티브 검색/선택 추가, 템플릿 role skill을 `agentcom` 네임스페이스로 재구성해 `develop`에 머지
+- **마지막 작업**: interactive template 선택/`agentcom` namespaced skill 문서화 후 `v0.1.3` 릴리스 및 패키지 매니저 반영 완료
 - **다음 작업**: 현재 `feature/skill-agent-catalog`에 남아 있는 다중 agent skill 지원 확장 작업 정리 여부 판단
 
 ## 완료된 태스크
@@ -44,6 +44,11 @@
 - Homebrew tap(`malleus35/homebrew-tap`): `Formula/agentcom.rb`를 `0.1.2` asset/hash로 갱신
 - `feature/template-search-select`: `agentcom agents template`에 검색어 입력 + 번호 선택 기반 인터랙티브 템플릿 선택 추가 후 `develop` 머지
 - `feature/agentcom-shared-skills`: 템플릿 role skill을 각 agent의 `agentcom/<template>-<role>/SKILL.md` 구조로 생성하고 shared `agentcom/SKILL.md` 참조 추가 후 `develop` 머지
+- `README*.md`: interactive template selection과 `agentcom` namespace scaffold 구조 문서화
+- `scripts/install.sh`, `scripts/install.ps1`: 기본 설치 버전을 `v0.1.3`으로 상향
+- `v0.1.3` release/tag 생성 및 GitHub release asset 업로드 완료
+- `packaging/scoop/agentcom.json`: `v0.1.3` Windows asset URL/hash로 갱신
+- Homebrew tap(`malleus35/homebrew-tap`): `Formula/agentcom.rb`를 `0.1.3` asset/hash로 갱신
 
 ## 설계 결정 로그
 
@@ -61,6 +66,7 @@
 | 2026-03-14 | `v0.1.2` 태그는 최종적으로 `main` 최신 커밋을 가리키도록 재설정 | Scoop manifest 후속 커밋까지 동일 릴리스 태그에 포함하기 위해 |
 | 2026-03-15 | `agents template` 검색/선택은 `openclaw onboard`의 위저드 UX만 차용하고 실제 명령 호출은 하지 않음 | 공식 `openclaw onboard`는 템플릿 검색 기능이 없고, step-based interactive flow만 유사하게 적용하는 편이 안전하기 때문 |
 | 2026-03-15 | 템플릿 role skill은 각 agent의 `agentcom` 네임스페이스 아래 shared `SKILL.md` + role adapter 구조로 생성 | shared/common 지침과 role-specific 지침을 분리해 중복을 줄이고 참조형 구조를 만들기 위해 |
+| 2026-03-15 | `v0.1.3` release는 tag 워크플로 자산 + 수동 `darwin/arm64` 업로드 조합으로 마무리 | 현재 GitHub Actions release workflow가 `darwin/arm64`를 자동 생성하지 않기 때문 |
 
 ## 발견된 이슈
 
@@ -79,5 +85,6 @@
 - 템플릿 role skill 생성 경로는 `.claude/skills/agentcom/<template>-<role>/SKILL.md` 등 각 agent 네임스페이스 구조로 변경됐고, shared file은 `.claude/skills/agentcom/SKILL.md` 형태로 생성
 - CEO 중심 라우팅 vs direct-to-user 응답 모델은 아직 계획 단계이며, 현 구현에는 특수 `user` recipient를 추가하지 않음
 - `develop`, `release/v0.1.2`, `main`, `feature/init-template-scaffold` 브랜치와 `v0.1.2` 태그는 원격 반영 완료
+- `release/v0.1.3`, `main`, `develop`, `v0.1.3` 태그는 원격 반영 완료
 - 전체 테스트 통과: `go test ./...`
 - 전체 빌드 통과: `go build ./...`
