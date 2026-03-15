@@ -26,6 +26,7 @@ func NewHuhPrompter(accessible bool, input io.Reader, output io.Writer) *HuhProm
 // Run displays the onboarding wizard and returns the collected answers.
 func (p *HuhPrompter) Run(ctx context.Context, defaults Result) (Result, error) {
 	homeDir := defaults.HomeDir
+	projectName := defaults.Project
 	templateChoice := defaults.Template
 	if templateChoice == "" {
 		templateChoice = "none"
@@ -42,7 +43,10 @@ func (p *HuhPrompter) Run(ctx context.Context, defaults Result) (Result, error) 
 		if writeAgentsMD {
 			agentsMD = "yes"
 		}
-		return fmt.Sprintf("home: %s\ntemplate: %s\nwrite AGENTS.md: %s", homeDir, templateLabel, agentsMD)
+		if projectName == "" {
+			projectName = "(legacy)"
+		}
+		return fmt.Sprintf("home: %s\nproject: %s\ntemplate: %s\nwrite AGENTS.md: %s", homeDir, projectName, templateLabel, agentsMD)
 	}
 
 	form := huh.NewForm(
@@ -61,6 +65,10 @@ func (p *HuhPrompter) Run(ctx context.Context, defaults Result) (Result, error) 
 					}
 					return nil
 				}),
+			huh.NewInput().
+				Title("Project name").
+				Placeholder(projectName).
+				Value(&projectName),
 		).Title("Step 1: Environment"),
 		huh.NewGroup(
 			huh.NewSelect[string]().
@@ -78,7 +86,7 @@ func (p *HuhPrompter) Run(ctx context.Context, defaults Result) (Result, error) 
 				Value(&writeAgentsMD),
 		).Title("Step 2: Project scaffold"),
 		huh.NewGroup(
-			huh.NewNote().Title("Review selections").DescriptionFunc(summary, []any{&homeDir, &templateChoice, &writeAgentsMD}),
+			huh.NewNote().Title("Review selections").DescriptionFunc(summary, []any{&homeDir, &projectName, &templateChoice, &writeAgentsMD}),
 			huh.NewConfirm().
 				Title("Apply these settings?").
 				Affirmative("Apply").
@@ -99,6 +107,7 @@ func (p *HuhPrompter) Run(ctx context.Context, defaults Result) (Result, error) 
 
 	result := Result{
 		HomeDir:       homeDir,
+		Project:       strings.TrimSpace(projectName),
 		Template:      templateChoice,
 		WriteAgentsMD: writeAgentsMD,
 		Confirmed:     confirmed,

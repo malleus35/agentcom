@@ -17,6 +17,7 @@ func AllTools() []ToolDef {
 				"type": "object",
 				"properties": map[string]interface{}{
 					"alive_only": map[string]interface{}{"type": "boolean"},
+					"project":    map[string]interface{}{"type": "string"},
 				},
 				"additionalProperties": false,
 			},
@@ -29,6 +30,7 @@ func AllTools() []ToolDef {
 				"properties": map[string]interface{}{
 					"from":    map[string]interface{}{"type": "string"},
 					"to":      map[string]interface{}{"type": "string"},
+					"project": map[string]interface{}{"type": "string"},
 					"type":    map[string]interface{}{"type": "string"},
 					"topic":   map[string]interface{}{"type": "string"},
 					"payload": map[string]interface{}{"type": "object"},
@@ -44,6 +46,7 @@ func AllTools() []ToolDef {
 				"type": "object",
 				"properties": map[string]interface{}{
 					"from":    map[string]interface{}{"type": "string"},
+					"project": map[string]interface{}{"type": "string"},
 					"topic":   map[string]interface{}{"type": "string"},
 					"payload": map[string]interface{}{"type": "object"},
 				},
@@ -59,6 +62,7 @@ func AllTools() []ToolDef {
 				"properties": map[string]interface{}{
 					"title":       map[string]interface{}{"type": "string"},
 					"description": map[string]interface{}{"type": "string"},
+					"project":     map[string]interface{}{"type": "string"},
 					"priority":    map[string]interface{}{"type": "string"},
 					"assigned_to": map[string]interface{}{"type": "string"},
 					"created_by":  map[string]interface{}{"type": "string"},
@@ -79,6 +83,7 @@ func AllTools() []ToolDef {
 				"properties": map[string]interface{}{
 					"task_id": map[string]interface{}{"type": "string"},
 					"to":      map[string]interface{}{"type": "string"},
+					"project": map[string]interface{}{"type": "string"},
 				},
 				"required":             []string{"task_id", "to"},
 				"additionalProperties": false,
@@ -92,6 +97,7 @@ func AllTools() []ToolDef {
 				"properties": map[string]interface{}{
 					"status":   map[string]interface{}{"type": "string"},
 					"assignee": map[string]interface{}{"type": "string"},
+					"project":  map[string]interface{}{"type": "string"},
 				},
 				"additionalProperties": false,
 			},
@@ -100,8 +106,10 @@ func AllTools() []ToolDef {
 			Name:        "get_status",
 			Description: "Get system status summary counts.",
 			InputSchema: map[string]interface{}{
-				"type":                 "object",
-				"properties":           map[string]interface{}{},
+				"type": "object",
+				"properties": map[string]interface{}{
+					"project": map[string]interface{}{"type": "string"},
+				},
 				"additionalProperties": false,
 			},
 		},

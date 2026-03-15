@@ -38,7 +38,7 @@ func NewRegistry(database *db.DB, cfg *config.Config) *Registry {
 }
 
 // Register registers a new agent and persists it in SQLite.
-func (r *Registry) Register(ctx context.Context, name, agentType string, capabilities []string, workdir string) (*db.Agent, error) {
+func (r *Registry) Register(ctx context.Context, name, agentType string, capabilities []string, workdir string, project string) (*db.Agent, error) {
 	rawID, err := gonanoid.New()
 	if err != nil {
 		return nil, fmt.Errorf("agent.Register: %w", err)
@@ -58,6 +58,7 @@ func (r *Registry) Register(ctx context.Context, name, agentType string, capabil
 		SocketPath:    filepath.Join(r.cfg.SocketsPath, "agt_"+rawID+".sock"),
 		Capabilities:  string(capabilitiesJSON),
 		WorkDir:       workdir,
+		Project:       project,
 		Status:        "alive",
 		RegisteredAt:  now,
 		LastHeartbeat: now,
@@ -73,8 +74,8 @@ func (r *Registry) Register(ctx context.Context, name, agentType string, capabil
 }
 
 // Deregister removes an agent by name or ID.
-func (r *Registry) Deregister(ctx context.Context, nameOrID string) error {
-	agent, err := r.db.FindAgentByName(ctx, nameOrID)
+func (r *Registry) Deregister(ctx context.Context, nameOrID string, project string) error {
+	agent, err := r.db.FindAgentByNameAndProject(ctx, nameOrID, project)
 	if err != nil {
 		agent, err = r.db.FindAgentByID(ctx, nameOrID)
 		if err != nil {
@@ -96,8 +97,8 @@ func (r *Registry) Deregister(ctx context.Context, nameOrID string) error {
 }
 
 // FindByName finds an agent by unique name.
-func (r *Registry) FindByName(ctx context.Context, name string) (*db.Agent, error) {
-	agent, err := r.db.FindAgentByName(ctx, name)
+func (r *Registry) FindByName(ctx context.Context, name string, project string) (*db.Agent, error) {
+	agent, err := r.db.FindAgentByNameAndProject(ctx, name, project)
 	if err != nil {
 		return nil, fmt.Errorf("agent.FindByName: %w", err)
 	}
@@ -114,8 +115,8 @@ func (r *Registry) FindByID(ctx context.Context, id string) (*db.Agent, error) {
 }
 
 // ListAll lists all registered agents.
-func (r *Registry) ListAll(ctx context.Context) ([]*db.Agent, error) {
-	agents, err := r.db.ListAllAgents(ctx)
+func (r *Registry) ListAll(ctx context.Context, project string) ([]*db.Agent, error) {
+	agents, err := r.db.ListAgentsByProject(ctx, project)
 	if err != nil {
 		return nil, fmt.Errorf("agent.ListAll: %w", err)
 	}
@@ -123,8 +124,8 @@ func (r *Registry) ListAll(ctx context.Context) ([]*db.Agent, error) {
 }
 
 // ListAlive lists agents currently marked as alive.
-func (r *Registry) ListAlive(ctx context.Context) ([]*db.Agent, error) {
-	agents, err := r.db.ListAliveAgents(ctx)
+func (r *Registry) ListAlive(ctx context.Context, project string) ([]*db.Agent, error) {
+	agents, err := r.db.ListAliveAgentsByProject(ctx, project)
 	if err != nil {
 		return nil, fmt.Errorf("agent.ListAlive: %w", err)
 	}

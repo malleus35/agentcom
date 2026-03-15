@@ -126,3 +126,13 @@ func TestRootCommandContainsCoreSubcommands(t *testing.T) {
 		}
 	}
 }
+
+func TestRootCommandContainsProjectFlags(t *testing.T) {
+	root := NewRootCmd()
+	if root.PersistentFlags().Lookup("project") == nil {
+		t.Fatal("missing --project persistent flag")
+	}
+	if root.PersistentFlags().Lookup("all-projects") == nil {
+		t.Fatal("missing --all-projects persistent flag")
+	}
+}

@@ -4,11 +4,12 @@
 
 ## 현재 상태
 
-- **Phase**: 7 완료
-- **마지막 작업**: `feature/skill-agent-catalog`를 `develop`에 머지했고, `feature/P8-01-onboard-setup-wizard`를 최신 `develop` 기준으로 리베이스 완료
-- **현재 브랜치**: `feature/P8-01-onboard-setup-wizard`
-- **추가 진행 작업**: `agentcom init --setup` 대화형 wizard MVP 구현/검증/커밋 완료
-- **다음 작업**: P8 브랜치를 `develop`에 머지할지 결정하고, 필요 시 localized README에 onboarding 문서 동기화 검토
+- **Phase**: 10 진행 중
+- **마지막 작업**: `agents.project` 컬럼 추가와 project-scoped CLI/MCP 흐름 구현
+- **현재 브랜치**: `feature/P10-add-project-column-plan-prd`
+- **현재 버전**: v0.1.4 (Homebrew/Scoop/GitHub Release 배포 완료)
+- **추가 진행 작업**: P9 init overhaul 구현 및 검증 진행 중
+- **다음 작업**: P10 변경사항 커밋 및 `develop` 머지
 
 ## 완료된 태스크
 
@@ -20,6 +21,8 @@
 - P5-01~P5-03 완료
 - P6-01~P6-12 완료
 - P7-01~P7-04 완료
+- P8-01-01~09 완료 (onboard/setup wizard MVP)
+- P10 project column 핵심 구현 완료
 
 ## 이번 세션에서 마무리한 작업
 
@@ -51,6 +54,27 @@
 - `v0.1.3` release/tag 생성 및 GitHub release asset 업로드 완료
 - `packaging/scoop/agentcom.json`: `v0.1.3` Windows asset URL/hash로 갱신
 - Homebrew tap(`malleus35/homebrew-tap`): `Formula/agentcom.rb`를 `0.1.3` asset/hash로 갱신
+- `internal/cli/instruction.go`: agent별 instruction/memory 파일 레지스트리, 렌더링, 쓰기 로직 추가
+- `internal/cli/init.go`, `internal/cli/init_setup.go`, `internal/cli/init_prompter.go`: `--setup` 제거, `--batch` 추가, interactive wizard 기본화, agent 선택/ instruction/memory / custom template 흐름 통합
+- `internal/cli/template_store.go`: custom template 저장/로드/병합 로직 추가
+- `internal/cli/agents.go`: built-in + custom template 통합 조회와 custom template 삭제 지원 추가
+- `internal/cli/*_test.go`, `internal/onboard/result_test.go`: instruction, batch mode, custom template, wizard 통합 시나리오 TDD 테스트 추가
+- `README*.md`: 새 `init` UX와 `--agents-md`/`--template custom`/`agents template --delete` 문서 반영
+- `feature/skill-agent-catalog`: 추가 agent identifier/alias(`cursor`, `github-copilot`, `gemini-cli`, `droid` 등)와 agent별 파일 확장자 지원 추가 후 `develop` 머지
+- `feature/P8-01-onboard-setup-wizard`: `agentcom init --setup` + `--accessible` 기반 onboarding wizard 구현 후 `develop`/`main` 반영
+- `v0.1.4` release/tag 생성 및 GitHub release asset 업로드 완료
+- `v0.1.4` release에는 누락됐던 `darwin/arm64` asset을 수동 빌드/업로드로 추가 완료
+- `packaging/scoop/agentcom.json`: `v0.1.4` Windows asset URL/hash로 갱신
+- Homebrew tap(`malleus35/homebrew-tap`): `Formula/agentcom.rb`를 `0.1.4` asset/hash로 갱신하고 macOS arm64 분기 복원
+- 로컬 Homebrew 설치에서 `agentcom` formula가 `pinned at 0.1.3` 상태였고, `brew unpin agentcom && brew upgrade agentcom`으로 `0.1.4` 업그레이드 확인
+- `internal/db/migrations.go`, `internal/db/migrations_test.go`: `PRAGMA user_version` 기반 schema versioning과 `agents.project` 재생성 마이그레이션 추가
+- `internal/db/agent.go`, `internal/db/agent_test.go`: `Agent.Project` 필드, project-aware CRUD/query/list, 동일 이름의 cross-project 등록 테스트 추가
+- `internal/config/project.go`, `internal/config/project_test.go`: `.agentcom.json` 읽기/쓰기/상위 탐색/프로젝트명 검증/우선순위 해석 추가
+- `internal/agent/registry.go`, `internal/agent/registry_test.go`: register/find/list/deregister에 project 컨텍스트 반영
+- `internal/cli/root.go`, `internal/cli/init.go`, `internal/cli/init_setup.go`, `internal/cli/*_test.go`: `--project`/`--all-projects`, init project config 생성, project-scoped list/send/broadcast/inbox/status/health 반영
+- `internal/message/router.go`, `internal/message/router_test.go`: router에 project 컨텍스트 추가
+- `internal/mcp/server.go`, `internal/mcp/handler.go`, `internal/mcp/tools.go`, `internal/mcp/server_test.go`: MCP 기본 project와 tool-level `project` 파라미터 반영
+- `README.md`: project scope, `.agentcom.json`, 새 global flags 문서화
 
 ## 설계 결정 로그
 
@@ -72,17 +96,31 @@
 | 2026-03-15 | onboard/setup UI는 full-screen TUI 대신 `huh` wizard로 구현 | 요구 범위가 초기 설정 단계에 한정되고, 기존 CLI 패턴을 최소 변경으로 유지하기 위해 |
 | 2026-03-15 | `agentcom init --setup`은 기존 root DB 초기화를 우회한 뒤 선택한 home dir 기준으로 별도 apply | 사용자가 wizard에서 홈 경로를 바꾸기 전에 기본 config/db가 먼저 생성되는 부작용을 막기 위해 |
 | 2026-03-15 | skill agent catalog 확장 후에도 템플릿 scaffold는 core agent 집합만 사용 | `skill create --agent all`의 catalog 확장과 템플릿 scaffold 범위를 분리해 기존 템플릿 생성 기대값을 보존하기 위해 |
+| 2026-03-15 | `agentcom init`은 interactive TTY에서 wizard를 기본 실행하고 `--batch`/`--json`에서만 비대화형으로 동작 | `--setup`을 제거하고 온보딩을 기본 UX로 만들기 위해 |
+| 2026-03-15 | `--agents-md`는 bool 대신 string으로 바꾸고 agent별 instruction 파일 생성을 기본으로 하되 `--batch --agents-md` 무값 호출은 legacy `AGENTS.md`를 유지 | 확장된 instruction 파일 생성과 기존 배치 스크립트 호환성을 동시에 만족시키기 위해 |
+| 2026-03-15 | custom template는 `.agentcom/templates/<name>/COMMON.md` + `template.json` 저장소 모델을 사용하고 built-in과 함께 해석한다 | init wizard, template inspect, scaffold가 같은 템플릿 원본을 공유하도록 하기 위해 |
+| 2026-03-15 | `v0.1.4` release도 `darwin/arm64` asset은 수동 업로드로 보강 | 현재 GitHub release workflow가 `darwin/arm64` build matrix를 포함하지 않아 Homebrew arm64 formula 지원을 위해 별도 업로드가 필요했기 때문 |
+| 2026-03-15 | P9 `init` 개편: wizard를 기본 UI로, `--setup` 제거, `--batch` 추가 | 대부분의 사용자가 인터랙티브 환경에서 init 실행 — wizard가 기본이어야 함 |
+| 2026-03-15 | P9 `--agents-md`: agent별 고유 instruction 파일 생성으로 확장 | AGENTS.md 단일 파일 대신 CLAUDE.md, .cursorrules 등 agent별 파일 생성 필요 |
+| 2026-03-15 | P9 `--template custom`: 사용자 정의 템플릿 생성 wizard 추가 | built-in 템플릿만으로는 다양한 팀 구조를 커버할 수 없음 |
+| 2026-03-15 | AGENTS.md는 크로스 툴 표준 (AAIF, 15+ agent, 60K+ 저장소) | instruction 파일 생성 시 AGENTS.md를 Priority 1으로, 나머지는 agent별 고유 파일로 |
+| 2026-03-15 | 작업 우선순위는 P9 init-overhaul 먼저, P10 project column은 후속으로 진행 | project column 계획이 init wizard 구조를 전제로 일부 단계를 얹는 형태라 P9 이후가 재작업이 적음 |
+| 2026-03-15 | `agents` schema는 `PRAGMA user_version` 기반 순차 마이그레이션으로 관리하고 `UNIQUE(name, project)` 전환은 테이블 재생성으로 처리 | SQLite에서 기존 UNIQUE 제약을 직접 변경할 수 없고, 재실행 안전성과 기존 DB 호환을 함께 확보해야 했기 때문 |
+| 2026-03-15 | CLI/MCP 기본 project scope는 `.agentcom.json` 또는 `--project`에서 해석하고, `--all-projects`일 때만 필터를 우회 | 기존 글로벌 동작과 프로젝트 격리를 동시에 지원하면서 명시적 override를 유지하기 위해 |
 
 ## 발견된 이슈
 
 - 기존 메모의 PRD 경로 표기는 `.agents/plan/PRD.md`였지만 실제 경로는 `.agents/plans/PRD.md`
 - agent 삭제 시 message/task 외래 키가 deregister를 막는 문제를 확인했고, 초기 스키마에서 제약 제거로 수정 완료
+- Homebrew는 remote tap이 최신이어도 local tap checkout이 stale하거나 formula가 pin 되어 있으면 `brew upgrade agentcom`이 새 릴리스를 보지 못할 수 있음
 
 ## 메모
 
 - PRD 경로: `.agents/plans/PRD.md`
 - onboard wizard PRD: `.agents/plans/P8-01-onboard-setup-wizard.md`
-- 전체 태스크 수: 62개
+- **init 개편 PRD: `.agents/plans/P9-init-overhaul.md`** (7 tasks, 43 subtasks)
+- **project column PRD: `.agents/plans/P10-add-project-column-plan-prd.md`** (renumber 완료)
+- 전체 태스크 수: 62개 (P0-P7) + 9개 (P8) + 43개 (P9) + 63개(+3 sub) (P10) = 177개(+3 sub)
 - root 커맨드에 `mcp-server` 등록 완료
 - root 커맨드에 `skill` 등록 완료
 - root 커맨드에 `agents` 등록 완료
@@ -93,11 +131,13 @@
 - CEO 중심 라우팅 vs direct-to-user 응답 모델은 아직 계획 단계이며, 현 구현에는 특수 `user` recipient를 추가하지 않음
 - `develop`, `release/v0.1.2`, `main`, `feature/init-template-scaffold` 브랜치와 `v0.1.2` 태그는 원격 반영 완료
 - `release/v0.1.3`, `main`, `develop`, `v0.1.3` 태그는 원격 반영 완료
+- `main`, `develop`, `v0.1.4` 태그와 GitHub release는 원격 반영 완료
 - 전체 테스트 통과: `go test ./...`
 - 전체 빌드 통과: `go build ./...`
+- P9 주요 구현 파일: `internal/cli/instruction.go`, `internal/cli/init_prompter.go`, `internal/cli/template_store.go`
+- P10 주요 구현 파일: `internal/db/migrations.go`, `internal/config/project.go`, `internal/cli/root.go`, `internal/mcp/handler.go`
+- 수동 QA 완료: `agentcom init --batch --project`, project별 `list`, `--all-projects list`, project-scoped `send`/`inbox`/`status`
 
 ## 진행 중 작업 체크리스트
 
-- P8-01-01~09: onboard/setup wizard MVP 구현, 검증, 커밋 완료
-- `feature/P8-01-onboard-setup-wizard`는 최신 `develop` 기준으로 리베이스 완료
-- 다음 액션은 P8 브랜치 병합 여부 결정 또는 localized README onboarding 문서 동기화 검토
+- P10 project scope 구현 완료, 커밋/merge 대기

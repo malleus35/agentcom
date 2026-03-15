@@ -4,7 +4,7 @@ set -eu
 
 OWNER="malleus35"
 REPO="agentcom"
-VERSION="${VERSION:-v0.1.4}"
+VERSION="${VERSION:-v0.1.5}"
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
 
 OS="$(uname -s)"

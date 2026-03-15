@@ -21,6 +21,7 @@ func TestInsertAgent(t *testing.T) {
 				Type:         "worker",
 				SocketPath:   "/tmp/alpha.sock",
 				Capabilities: `["send"]`,
+				Project:      "project-a",
 				Status:       "alive",
 			},
 			check: func(t *testing.T, got *Agent) {
@@ -38,6 +39,7 @@ func TestInsertAgent(t *testing.T) {
 				Type:         "worker",
 				SocketPath:   "/tmp/beta.sock",
 				Capabilities: `["recv"]`,
+				Project:      "project-b",
 				Status:       "alive",
 			},
 			check: func(t *testing.T, got *Agent) {
@@ -74,6 +76,9 @@ func TestInsertAgent(t *testing.T) {
 			if got.SocketPath != agent.SocketPath {
 				t.Fatalf("SocketPath = %q, want %q", got.SocketPath, agent.SocketPath)
 			}
+			if got.Project != agent.Project {
+				t.Fatalf("Project = %q, want %q", got.Project, agent.Project)
+			}
 			if tt.check != nil {
 				tt.check(t, got)
 			}
@@ -85,53 +90,62 @@ func TestAgentCRUD(t *testing.T) {
 	database := setupTestDB(t)
 	ctx := context.Background()
 
-	first := &Agent{Name: "alpha", Type: "worker", Status: "alive"}
+	first := &Agent{Name: "alpha", Type: "worker", Project: "project-a", Status: "alive"}
 	if err := database.InsertAgent(ctx, first); err != nil {
 		t.Fatalf("InsertAgent(first) error = %v", err)
 	}
 
-	duplicate := &Agent{Name: "alpha", Type: "worker", Status: "alive"}
+	duplicate := &Agent{Name: "alpha", Type: "worker", Project: "project-a", Status: "alive"}
 	if err := database.InsertAgent(ctx, duplicate); !errors.Is(err, ErrDuplicateName) {
 		t.Fatalf("InsertAgent(duplicate) error = %v, want %v", err, ErrDuplicateName)
 	}
 
+	crossProject := &Agent{Name: "alpha", Type: "worker", Project: "project-b", Status: "alive"}
+	if err := database.InsertAgent(ctx, crossProject); err != nil {
+		t.Fatalf("InsertAgent(cross project) error = %v", err)
+	}
+
 	first.WorkDir = "/workspace/project"
+	first.Project = "project-a-renamed"
 	first.Status = "dead"
 	if err := database.UpdateAgent(ctx, first); err != nil {
 		t.Fatalf("UpdateAgent() error = %v", err)
 	}
 
-	byName, err := database.FindAgentByName(ctx, first.Name)
+	byName, err := database.FindAgentByNameAndProject(ctx, first.Name, first.Project)
 	if err != nil {
-		t.Fatalf("FindAgentByName() error = %v", err)
+		t.Fatalf("FindAgentByNameAndProject() error = %v", err)
 	}
 	if byName.WorkDir != first.WorkDir {
 		t.Fatalf("WorkDir = %q, want %q", byName.WorkDir, first.WorkDir)
 	}
+	if byName.Project != first.Project {
+		t.Fatalf("Project = %q, want %q", byName.Project, first.Project)
+	}
 
-	second := &Agent{Name: "beta", Type: "reviewer", Status: "alive"}
+	second := &Agent{Name: "beta", Type: "reviewer", Project: "project-a-renamed", Status: "alive"}
 	if err := database.InsertAgent(ctx, second); err != nil {
 		t.Fatalf("InsertAgent(second) error = %v", err)
 	}
 
-	alive, err := database.ListAliveAgents(ctx)
+	alive, err := database.ListAliveAgentsByProject(ctx, first.Project)
 	if err != nil {
-		t.Fatalf("ListAliveAgents() error = %v", err)
+		t.Fatalf("ListAliveAgentsByProject() error = %v", err)
 	}
 	if len(alive) != 1 || alive[0].ID != second.ID {
-		t.Fatalf("ListAliveAgents() = %+v, want only %q", alive, second.ID)
+		t.Fatalf("ListAliveAgentsByProject() = %+v, want only %q", alive, second.ID)
 	}
 
 	if err := database.UpdateHeartbeat(ctx, second.ID); err != nil {
 		t.Fatalf("UpdateHeartbeat() error = %v", err)
 	}
 
-	all, err := database.ListAllAgents(ctx)
+	all, err := database.ListAgentsByProject(ctx, first.Project)
 	if err != nil {
-		t.Fatalf("ListAllAgents() error = %v", err)
+		t.Fatalf("ListAgentsByProject() error = %v", err)
 	}
 	if len(all) != 2 {
-		t.Fatalf("len(ListAllAgents()) = %d, want 2", len(all))
+		t.Fatalf("len(ListAgentsByProject()) = %d, want 2", len(all))
 	}
 
 	if err := database.DeleteAgent(ctx, first.ID); err != nil {

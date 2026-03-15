@@ -22,7 +22,8 @@ func (s *Server) registerTools() {
 
 func (s *Server) handleListAgents(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	type listAgentsParams struct {
-		AliveOnly bool `json:"alive_only"`
+		AliveOnly bool   `json:"alive_only"`
+		Project   string `json:"project"`
 	}
 
 	var p listAgentsParams
@@ -32,14 +33,15 @@ func (s *Server) handleListAgents(ctx context.Context, params json.RawMessage) (
 		}
 	}
 
+	project := s.requestedProject(p.Project)
 	var (
 		agents []*db.Agent
 		err    error
 	)
 	if p.AliveOnly {
-		agents, err = s.db.ListAliveAgents(ctx)
+		agents, err = s.db.ListAliveAgentsByProject(ctx, project)
 	} else {
-		agents, err = s.db.ListAllAgents(ctx)
+		agents, err = s.db.ListAgentsByProject(ctx, project)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("mcp.handleListAgents: %w", err)
@@ -55,6 +57,7 @@ func (s *Server) handleSendMessage(ctx context.Context, params json.RawMessage) 
 	type sendMessageParams struct {
 		From    string          `json:"from"`
 		To      string          `json:"to"`
+		Project string          `json:"project"`
 		Type    string          `json:"type"`
 		Topic   string          `json:"topic"`
 		Payload json.RawMessage `json:"payload"`
@@ -68,6 +71,7 @@ func (s *Server) handleSendMessage(ctx context.Context, params json.RawMessage) 
 		return nil, fmt.Errorf("mcp.handleSendMessage: from and to are required")
 	}
 
+	project := s.requestedProject(p.Project)
 	msgType := strings.TrimSpace(p.Type)
 	if msgType == "" {
 		msgType = "notification"
@@ -77,13 +81,18 @@ func (s *Server) handleSendMessage(ctx context.Context, params json.RawMessage) 
 		payload = json.RawMessage(`{}`)
 	}
 
-	targetAgent, err := s.resolveAgentByNameOrID(ctx, p.To)
+	senderAgent, err := s.resolveAgentByNameOrID(ctx, p.From, project)
+	if err != nil {
+		return nil, fmt.Errorf("mcp.handleSendMessage: %w", err)
+	}
+
+	targetAgent, err := s.resolveAgentByNameOrID(ctx, p.To, project)
 	if err != nil {
 		return nil, fmt.Errorf("mcp.handleSendMessage: %w", err)
 	}
 
 	msg := &db.Message{
-		FromAgent: p.From,
+		FromAgent: senderAgent.ID,
 		ToAgent:   targetAgent.ID,
 		Type:      msgType,
 		Topic:     p.Topic,
@@ -102,6 +111,7 @@ func (s *Server) handleSendMessage(ctx context.Context, params json.RawMessage) 
 func (s *Server) handleBroadcast(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	type broadcastParams struct {
 		From    string          `json:"from"`
+		Project string          `json:"project"`
 		Topic   string          `json:"topic"`
 		Payload json.RawMessage `json:"payload"`
 	}
@@ -114,12 +124,18 @@ func (s *Server) handleBroadcast(ctx context.Context, params json.RawMessage) (i
 		return nil, fmt.Errorf("mcp.handleBroadcast: from is required")
 	}
 
+	project := s.requestedProject(p.Project)
 	payload := p.Payload
 	if len(payload) == 0 {
 		payload = json.RawMessage(`{}`)
 	}
 
-	agents, err := s.db.ListAliveAgents(ctx)
+	senderAgent, err := s.resolveAgentByNameOrID(ctx, p.From, project)
+	if err != nil {
+		return nil, fmt.Errorf("mcp.handleBroadcast: %w", err)
+	}
+
+	agents, err := s.db.ListAliveAgentsByProject(ctx, project)
 	if err != nil {
 		return nil, fmt.Errorf("mcp.handleBroadcast: %w", err)
 	}
@@ -127,12 +143,12 @@ func (s *Server) handleBroadcast(ctx context.Context, params json.RawMessage) (i
 	messageIDs := make([]string, 0, len(agents))
 	recipients := 0
 	for _, a := range agents {
-		if a.ID == p.From || a.Name == p.From {
+		if a.ID == senderAgent.ID {
 			continue
 		}
 
 		msg := &db.Message{
-			FromAgent: p.From,
+			FromAgent: senderAgent.ID,
 			ToAgent:   a.ID,
 			Type:      "broadcast",
 			Topic:     p.Topic,
@@ -156,6 +172,7 @@ func (s *Server) handleCreateTask(ctx context.Context, params json.RawMessage) (
 	type createTaskParams struct {
 		Title       string   `json:"title"`
 		Description string   `json:"description"`
+		Project     string   `json:"project"`
 		Priority    string   `json:"priority"`
 		AssignedTo  string   `json:"assigned_to"`
 		CreatedBy   string   `json:"created_by"`
@@ -170,6 +187,7 @@ func (s *Server) handleCreateTask(ctx context.Context, params json.RawMessage) (
 		return nil, fmt.Errorf("mcp.handleCreateTask: title is required")
 	}
 
+	project := s.requestedProject(p.Project)
 	priority := strings.TrimSpace(p.Priority)
 	if priority == "" {
 		priority = "medium"
@@ -179,13 +197,28 @@ func (s *Server) handleCreateTask(ctx context.Context, params json.RawMessage) (
 		return nil, fmt.Errorf("mcp.handleCreateTask: %w", err)
 	}
 
+	assignedTo := strings.TrimSpace(p.AssignedTo)
+	if assignedTo != "" {
+		agentRecord, err := s.resolveAgentByNameOrID(ctx, assignedTo, project)
+		if err == nil {
+			assignedTo = agentRecord.ID
+		}
+	}
+	createdBy := strings.TrimSpace(p.CreatedBy)
+	if createdBy != "" {
+		agentRecord, err := s.resolveAgentByNameOrID(ctx, createdBy, project)
+		if err == nil {
+			createdBy = agentRecord.ID
+		}
+	}
+
 	t := &db.Task{
 		Title:       p.Title,
 		Description: p.Description,
 		Status:      "pending",
 		Priority:    priority,
-		AssignedTo:  p.AssignedTo,
-		CreatedBy:   p.CreatedBy,
+		AssignedTo:  assignedTo,
+		CreatedBy:   createdBy,
 		BlockedBy:   string(blockedByJSON),
 	}
 	if err := s.db.InsertTask(ctx, t); err != nil {
@@ -200,8 +233,9 @@ func (s *Server) handleCreateTask(ctx context.Context, params json.RawMessage) (
 
 func (s *Server) handleDelegateTask(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	type delegateTaskParams struct {
-		TaskID string `json:"task_id"`
-		To     string `json:"to"`
+		TaskID  string `json:"task_id"`
+		To      string `json:"to"`
+		Project string `json:"project"`
 	}
 
 	var p delegateTaskParams
@@ -212,6 +246,7 @@ func (s *Server) handleDelegateTask(ctx context.Context, params json.RawMessage)
 		return nil, fmt.Errorf("mcp.handleDelegateTask: task_id and to are required")
 	}
 
+	project := s.requestedProject(p.Project)
 	t, err := s.db.FindTaskByID(ctx, p.TaskID)
 	if err != nil {
 		return nil, fmt.Errorf("mcp.handleDelegateTask: %w", err)
@@ -220,7 +255,7 @@ func (s *Server) handleDelegateTask(ctx context.Context, params json.RawMessage)
 		return nil, fmt.Errorf("mcp.handleDelegateTask: %w", err)
 	}
 
-	agentRecord, err := s.resolveAgentByNameOrID(ctx, p.To)
+	agentRecord, err := s.resolveAgentByNameOrID(ctx, p.To, project)
 	if err != nil {
 		return nil, fmt.Errorf("mcp.handleDelegateTask: %w", err)
 	}
@@ -242,6 +277,7 @@ func (s *Server) handleListTasks(ctx context.Context, params json.RawMessage) (i
 	type listTasksParams struct {
 		Status   string `json:"status"`
 		Assignee string `json:"assignee"`
+		Project  string `json:"project"`
 	}
 
 	var p listTasksParams
@@ -253,6 +289,7 @@ func (s *Server) handleListTasks(ctx context.Context, params json.RawMessage) (i
 
 	status := strings.TrimSpace(p.Status)
 	assignee := strings.TrimSpace(p.Assignee)
+	project := s.requestedProject(p.Project)
 
 	var (
 		tasks []*db.Task
@@ -262,7 +299,7 @@ func (s *Server) handleListTasks(ctx context.Context, params json.RawMessage) (i
 	case status != "":
 		tasks, err = s.db.ListTasksByStatus(ctx, status)
 	case assignee != "":
-		resolvedAssignee, resolveErr := s.resolveAssigneeID(ctx, assignee)
+		resolvedAssignee, resolveErr := s.resolveAssigneeID(ctx, assignee, project)
 		if resolveErr != nil {
 			return nil, fmt.Errorf("mcp.handleListTasks: %w", resolveErr)
 		}
@@ -275,7 +312,7 @@ func (s *Server) handleListTasks(ctx context.Context, params json.RawMessage) (i
 	}
 
 	if status != "" && assignee != "" {
-		resolvedAssignee, resolveErr := s.resolveAssigneeID(ctx, assignee)
+		resolvedAssignee, resolveErr := s.resolveAssigneeID(ctx, assignee, project)
 		if resolveErr != nil {
 			return nil, fmt.Errorf("mcp.handleListTasks: %w", resolveErr)
 		}
@@ -294,18 +331,43 @@ func (s *Server) handleListTasks(ctx context.Context, params json.RawMessage) (i
 	}, nil
 }
 
-func (s *Server) handleGetStatus(ctx context.Context, _ json.RawMessage) (interface{}, error) {
+func (s *Server) handleGetStatus(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	type getStatusParams struct {
+		Project string `json:"project"`
+	}
+
+	var p getStatusParams
+	if len(params) > 0 {
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, fmt.Errorf("mcp.handleGetStatus: %w", err)
+		}
+	}
+	project := s.requestedProject(p.Project)
+
 	var agentCount int
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM agents`).Scan(&agentCount); err != nil {
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM agents WHERE (? = '' OR project = ?)`, project, project).Scan(&agentCount); err != nil {
 		return nil, fmt.Errorf("mcp.handleGetStatus: %w", err)
 	}
 
 	var messageCount int
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM messages`).Scan(&messageCount); err != nil {
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM messages m
+		LEFT JOIN agents sender ON sender.id = m.from_agent
+		LEFT JOIN agents recipient ON recipient.id = m.to_agent
+		WHERE (? = '' OR sender.project = ? OR recipient.project = ?)
+	`, project, project, project).Scan(&messageCount); err != nil {
 		return nil, fmt.Errorf("mcp.handleGetStatus: %w", err)
 	}
 
-	rows, err := s.db.QueryContext(ctx, `SELECT status, COUNT(*) FROM tasks GROUP BY status`)
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT tasks.status, COUNT(*)
+		FROM tasks
+		LEFT JOIN agents assigned ON assigned.id = tasks.assigned_to
+		LEFT JOIN agents created ON created.id = tasks.created_by
+		WHERE (? = '' OR assigned.project = ? OR created.project = ?)
+		GROUP BY tasks.status
+	`, project, project, project)
 	if err != nil {
 		return nil, fmt.Errorf("mcp.handleGetStatus: %w", err)
 	}
@@ -335,8 +397,8 @@ func (s *Server) handleGetStatus(ctx context.Context, _ json.RawMessage) (interf
 	}, nil
 }
 
-func (s *Server) resolveAgentByNameOrID(ctx context.Context, nameOrID string) (*db.Agent, error) {
-	agentRecord, err := s.db.FindAgentByName(ctx, nameOrID)
+func (s *Server) resolveAgentByNameOrID(ctx context.Context, nameOrID string, project string) (*db.Agent, error) {
+	agentRecord, err := s.db.FindAgentByNameAndProject(ctx, nameOrID, project)
 	if err == nil {
 		return agentRecord, nil
 	}
@@ -349,11 +411,19 @@ func (s *Server) resolveAgentByNameOrID(ctx context.Context, nameOrID string) (*
 	return agentRecord, nil
 }
 
-func (s *Server) resolveAssigneeID(ctx context.Context, assignee string) (string, error) {
-	agentRecord, err := s.resolveAgentByNameOrID(ctx, assignee)
+func (s *Server) resolveAssigneeID(ctx context.Context, assignee string, project string) (string, error) {
+	agentRecord, err := s.resolveAgentByNameOrID(ctx, assignee, project)
 	if err == nil {
 		return agentRecord.ID, nil
 	}
 
 	return assignee, nil
+}
+
+func (s *Server) requestedProject(project string) string {
+	project = strings.TrimSpace(project)
+	if project != "" {
+		return project
+	}
+	return s.project
 }

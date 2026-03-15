@@ -52,14 +52,24 @@ func newAgentsCmd() *cobra.Command {
 }
 
 func newAgentsTemplateCmd() *cobra.Command {
+	var listFlag bool
+	var deleteName string
+
 	cmd := &cobra.Command{
 		Use:   "template [name]",
-		Short: "List or inspect built-in agent templates",
+		Short: "List or inspect built-in and custom agent templates",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) == 0 {
+			if deleteName != "" {
+				if len(args) > 0 || listFlag {
+					return fmt.Errorf("cli.newAgentsTemplateCmd: --delete cannot be combined with template name or --list")
+				}
+				return deleteCustomTemplate(cmd, deleteName)
+			}
+
+			if listFlag || len(args) == 0 {
 				summaries := listTemplateSummaries()
-				if templateSelectionEnabled(cmd) {
+				if !listFlag && templateSelectionEnabled(cmd) {
 					selectedName, err := selectTemplateSummary(cmd, summaries)
 					if err != nil {
 						return fmt.Errorf("cli.newAgentsTemplateCmd: select template: %w", err)
@@ -94,6 +104,9 @@ func newAgentsTemplateCmd() *cobra.Command {
 			return writeTemplateDefinition(cmd, definition)
 		},
 	}
+
+	cmd.Flags().BoolVar(&listFlag, "list", false, "List built-in and custom templates")
+	cmd.Flags().StringVar(&deleteName, "delete", "", "Delete a custom template by name")
 
 	return cmd
 }
@@ -190,6 +203,11 @@ func filterTemplateSummaries(summaries []templateSummary, query string) []templa
 
 func listTemplateSummaries() []templateSummary {
 	definitions := builtInTemplateDefinitions()
+	if cwd, err := os.Getwd(); err == nil {
+		if resolved, resolveErr := allTemplateDefinitions(cwd); resolveErr == nil {
+			definitions = resolved
+		}
+	}
 	summaries := make([]templateSummary, 0, len(definitions))
 	for _, definition := range definitions {
 		roles := make([]string, 0, len(definition.Roles))
@@ -206,14 +224,21 @@ func listTemplateSummaries() []templateSummary {
 }
 
 func resolveTemplateDefinition(name string) (templateDefinition, error) {
-	for _, definition := range builtInTemplateDefinitions() {
+	definitions := builtInTemplateDefinitions()
+	if cwd, err := os.Getwd(); err == nil {
+		if resolved, resolveErr := allTemplateDefinitions(cwd); resolveErr == nil {
+			definitions = resolved
+		}
+	}
+
+	for _, definition := range definitions {
 		if definition.Name == name {
 			return definition, nil
 		}
 	}
 
-	available := make([]string, 0, len(builtInTemplateDefinitions()))
-	for _, definition := range builtInTemplateDefinitions() {
+	available := make([]string, 0, len(definitions))
+	for _, definition := range definitions {
 		available = append(available, definition.Name)
 	}
 	sort.Strings(available)
@@ -501,4 +526,52 @@ func builtInTemplateDefinitions() []templateDefinition {
 			},
 		},
 	}
+}
+
+func deleteCustomTemplate(cmd *cobra.Command, name string) error {
+	for _, definition := range builtInTemplateDefinitions() {
+		if definition.Name == name {
+			return fmt.Errorf("cli.deleteCustomTemplate: cannot delete built-in template %q", name)
+		}
+	}
+
+	projectDir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("cli.deleteCustomTemplate: getwd: %w", err)
+	}
+	templatePath := filepath.Join(projectDir, ".agentcom", "templates", name)
+	if _, err := os.Stat(templatePath); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("cli.deleteCustomTemplate: custom template %q not found", name)
+		}
+		return fmt.Errorf("cli.deleteCustomTemplate: stat template: %w", err)
+	}
+
+	if !jsonOutput {
+		reader := bufio.NewReader(cmd.InOrStdin())
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Delete custom template %s? [y/N]: ", name); err != nil {
+			return fmt.Errorf("cli.deleteCustomTemplate: prompt confirmation: %w", err)
+		}
+		response, err := reader.ReadString('\n')
+		if err != nil && err != io.EOF {
+			return fmt.Errorf("cli.deleteCustomTemplate: read confirmation: %w", err)
+		}
+		response = strings.TrimSpace(strings.ToLower(response))
+		if response != "y" && response != "yes" {
+			return fmt.Errorf("cli.deleteCustomTemplate: delete cancelled")
+		}
+	}
+
+	if err := os.RemoveAll(templatePath); err != nil {
+		return fmt.Errorf("cli.deleteCustomTemplate: remove template: %w", err)
+	}
+
+	if jsonOutput {
+		enc := json.NewEncoder(cmd.OutOrStdout())
+		enc.SetIndent("", "  ")
+		return enc.Encode(map[string]any{"deleted": name, "path": templatePath})
+	}
+
+	_, err = fmt.Fprintf(cmd.OutOrStdout(), "deleted custom template %s\n", name)
+	return err
 }

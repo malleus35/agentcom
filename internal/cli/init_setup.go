@@ -11,10 +11,11 @@ import (
 	"github.com/malleus35/agentcom/internal/config"
 	"github.com/malleus35/agentcom/internal/db"
 	"github.com/malleus35/agentcom/internal/onboard"
+	"github.com/spf13/cobra"
 )
 
 var newOnboardPrompter = func(accessible bool, input io.Reader, output io.Writer) onboard.Prompter {
-	return onboard.NewHuhPrompter(accessible, input, output)
+	return newInitPrompter(accessible, input, output)
 }
 
 var isInteractiveInput = func(input io.Reader) bool {
@@ -27,6 +28,20 @@ var isInteractiveInput = func(input io.Reader) bool {
 		return false
 	}
 	return info.Mode()&os.ModeCharDevice != 0
+}
+
+func shouldRunWizard(cmd *cobra.Command) bool {
+	if cmd == nil || cmd.Name() != "init" {
+		return false
+	}
+	if jsonOutput {
+		return false
+	}
+	batch, err := cmd.Flags().GetBool("batch")
+	if err == nil && batch {
+		return false
+	}
+	return isInteractiveInput(cmd.InOrStdin())
 }
 
 type initSetupExecutor struct {
@@ -68,16 +83,58 @@ func (e *initSetupExecutor) Apply(ctx context.Context, result onboard.Result) (o
 		HomeDir:  cfg.HomeDir,
 		DBPath:   cfg.DBPath,
 		Status:   status,
+		Project:  result.Project,
 		Template: result.Template,
 	}
 
-	if result.WriteAgentsMD {
-		agentsMDPath := filepath.Join(e.projectDir, "AGENTS.md")
-		if err := writeProjectAgentsMD(agentsMDPath); err != nil {
-			return onboard.ApplyReport{}, fmt.Errorf("cli.initSetupExecutor.Apply: write AGENTS.md: %w", err)
+	if result.Project != "" {
+		path, err := config.WriteProjectConfig(e.projectDir, result.Project)
+		if err != nil {
+			return onboard.ApplyReport{}, fmt.Errorf("cli.initSetupExecutor.Apply: write project config: %w", err)
 		}
-		report.AgentsMDPath = agentsMDPath
-		report.GeneratedFiles = append(report.GeneratedFiles, agentsMDPath)
+		report.ProjectConfigPath = path
+		report.GeneratedFiles = append(report.GeneratedFiles, path)
+	}
+
+	if result.CustomTemplate != nil {
+		customTemplatePath, err := saveCustomTemplate(e.projectDir, templateDefinitionFromOnboard(*result.CustomTemplate))
+		if err != nil {
+			return onboard.ApplyReport{}, fmt.Errorf("cli.initSetupExecutor.Apply: save custom template: %w", err)
+		}
+		report.CustomTemplatePath = customTemplatePath
+		report.GeneratedFiles = append(report.GeneratedFiles,
+			filepath.Join(customTemplatePath, "COMMON.md"),
+			filepath.Join(customTemplatePath, "template.json"),
+		)
+	}
+
+	if result.WriteInstructions || result.WriteAgentsMD {
+		selectedAgents := append([]string(nil), result.SelectedAgents...)
+		if len(selectedAgents) == 0 && result.WriteAgentsMD {
+			selectedAgents = []string{"codex"}
+		}
+
+		instructionFiles, err := writeAgentInstructions(e.projectDir, selectedAgents)
+		if err != nil {
+			return onboard.ApplyReport{}, fmt.Errorf("cli.initSetupExecutor.Apply: write instruction files: %w", err)
+		}
+		report.InstructionFiles = append(report.InstructionFiles, instructionFiles...)
+		report.GeneratedFiles = append(report.GeneratedFiles, instructionFiles...)
+		for _, path := range instructionFiles {
+			if filepath.Base(path) == "AGENTS.md" {
+				report.AgentsMDPath = path
+				break
+			}
+		}
+	}
+
+	if result.WriteMemory {
+		memoryFiles, err := writeAgentMemoryFiles(e.projectDir, result.SelectedAgents)
+		if err != nil {
+			return onboard.ApplyReport{}, fmt.Errorf("cli.initSetupExecutor.Apply: write memory files: %w", err)
+		}
+		report.MemoryFiles = append(report.MemoryFiles, memoryFiles...)
+		report.GeneratedFiles = append(report.GeneratedFiles, memoryFiles...)
 	}
 
 	if result.Template != "" {

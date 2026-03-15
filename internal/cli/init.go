@@ -6,43 +6,63 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
+	"github.com/malleus35/agentcom/internal/config"
 	"github.com/malleus35/agentcom/internal/onboard"
 	"github.com/spf13/cobra"
 )
 
+const (
+	promptInstructionSelection = "__prompt__"
+	promptTemplateSelection    = "__prompt__"
+)
+
 func newInitCmd() *cobra.Command {
-	var writeAgentsMD bool
+	var batch bool
+	var agentsValue string
 	var templateName string
-	var setup bool
 	var accessible bool
+	var force bool
 
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "Initialize agentcom home and optionally run setup wizard",
+		Short: "Initialize agentcom home and optionally run onboarding wizard",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if setup {
-				if jsonOutput {
-					return fmt.Errorf("cli.newInitCmd: --json is not supported with --setup")
-				}
-				if !isInteractiveInput(cmd.InOrStdin()) {
-					return fmt.Errorf("cli.newInitCmd: --setup requires an interactive terminal")
-				}
+			agentsSelection, templateSelection, remainingArgs := consumeInitOptionalValues(agentsValue, templateName, args)
+			if len(remainingArgs) > 0 {
+				return fmt.Errorf("cli.newInitCmd: unexpected arguments: %s", strings.Join(remainingArgs, ", "))
+			}
 
+			if shouldRunWizard(cmd) {
 				defaults, err := onboard.DetectDefaults()
 				if err != nil {
 					return fmt.Errorf("cli.newInitCmd: detect onboarding defaults: %w", err)
 				}
-				if writeAgentsMD {
+
+				if agentsSelection != "" {
 					defaults.WriteAgentsMD = true
 				}
-				if templateName != "" {
-					defaults.Template = templateName
+				if agentsSelection != "" && agentsSelection != promptInstructionSelection {
+					defaults.SelectedAgents, err = resolveInstructionAgents(agentsSelection)
+					if err != nil {
+						return fmt.Errorf("cli.newInitCmd: resolve instruction agents: %w", err)
+					}
+				}
+				if templateSelection != "" && templateSelection != promptTemplateSelection {
+					defaults.Template = templateSelection
 				}
 
 				cwd, err := os.Getwd()
 				if err != nil {
 					return fmt.Errorf("cli.newInitCmd: getwd for setup: %w", err)
+				}
+				defaults.Project, err = defaultInitProject(cwd)
+				if err != nil {
+					return fmt.Errorf("cli.newInitCmd: default project: %w", err)
+				}
+				if projectFlag != "" {
+					defaults.Project = projectFlag
 				}
 
 				wizard := onboard.NewWizard(
@@ -57,24 +77,7 @@ func newInitCmd() *cobra.Command {
 					return fmt.Errorf("cli.newInitCmd: run setup wizard: %w", err)
 				}
 
-				for _, path := range report.GeneratedFiles {
-					if path == report.AgentsMDPath {
-						if _, err := fmt.Fprintf(cmd.OutOrStdout(), "generated AGENTS.md at %s\n", path); err != nil {
-							return err
-						}
-						continue
-					}
-					if _, err := fmt.Fprintf(cmd.OutOrStdout(), "generated template file at %s\n", path); err != nil {
-						return err
-					}
-				}
-
-				if report.Status == "already_initialized" {
-					_, err = fmt.Fprintf(cmd.OutOrStdout(), "agentcom already initialized at %s\n", report.HomeDir)
-					return err
-				}
-				_, err = fmt.Fprintf(cmd.OutOrStdout(), "agentcom initialized at %s\n", report.HomeDir)
-				return err
+				return writeInitReport(cmd, report)
 			}
 
 			info, err := os.Stat(app.cfg.HomeDir)
@@ -87,28 +90,52 @@ func newInitCmd() *cobra.Command {
 				status = "already_initialized"
 			}
 
+			instructionFiles := []string{}
 			agentsMDPath := ""
 			generatedFiles := []string{}
-			if writeAgentsMD {
+			if agentsSelection != "" {
 				cwd, err := os.Getwd()
 				if err != nil {
 					return fmt.Errorf("cli.newInitCmd: getwd: %w", err)
 				}
-				agentsMDPath = filepath.Join(cwd, "AGENTS.md")
-				if err := writeProjectAgentsMD(agentsMDPath); err != nil {
-					return fmt.Errorf("cli.newInitCmd: write AGENTS.md: %w", err)
+
+				selectedAgents := []string{"codex"}
+				if agentsSelection != promptInstructionSelection {
+					selectedAgents, err = resolveInstructionAgents(agentsSelection)
+					if err != nil {
+						return fmt.Errorf("cli.newInitCmd: resolve instruction agents: %w", err)
+					}
+				}
+				instructionFiles, err = writeAgentInstructions(cwd, selectedAgents)
+				if err != nil {
+					return fmt.Errorf("cli.newInitCmd: write instruction files: %w", err)
+				}
+				for _, path := range instructionFiles {
+					if filepath.Base(path) == "AGENTS.md" {
+						agentsMDPath = path
+						break
+					}
 				}
 			}
 
-			if templateName != "" {
+			if templateSelection != "" && templateSelection != promptTemplateSelection {
 				cwd, err := os.Getwd()
 				if err != nil {
 					return fmt.Errorf("cli.newInitCmd: getwd for template scaffold: %w", err)
 				}
-				generatedFiles, err = writeTemplateScaffold(cwd, templateName)
+				generatedFiles, err = writeTemplateScaffold(cwd, templateSelection)
 				if err != nil {
 					return fmt.Errorf("cli.newInitCmd: write template scaffold: %w", err)
 				}
+			}
+
+			cwd, err := os.Getwd()
+			if err != nil {
+				return fmt.Errorf("cli.newInitCmd: getwd for project config: %w", err)
+			}
+			projectConfigPath, projectValue, err := ensureInitProjectConfig(cwd, force)
+			if err != nil {
+				return fmt.Errorf("cli.newInitCmd: ensure project config: %w", err)
 			}
 
 			if jsonOutput {
@@ -119,25 +146,43 @@ func newInitCmd() *cobra.Command {
 					"path":   app.cfg.HomeDir,
 					"status": status,
 				}
+				if len(instructionFiles) > 0 {
+					payload["instruction_files"] = instructionFiles
+				}
 				if agentsMDPath != "" {
 					payload["agents_md"] = agentsMDPath
 				}
-				if templateName != "" {
-					payload["template"] = templateName
+				if templateSelection != "" && templateSelection != promptTemplateSelection {
+					payload["template"] = templateSelection
 					payload["generated_files"] = generatedFiles
+				}
+				if projectValue != "" {
+					payload["project"] = projectValue
+				}
+				if projectConfigPath != "" {
+					payload["project_config_path"] = projectConfigPath
 				}
 
 				return enc.Encode(payload)
 			}
 
-			if agentsMDPath != "" {
-				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "generated AGENTS.md at %s\n", agentsMDPath); err != nil {
+			for _, path := range instructionFiles {
+				label := "instruction file"
+				if filepath.Base(path) == "AGENTS.md" {
+					label = "AGENTS.md"
+				}
+				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "generated %s at %s\n", label, path); err != nil {
 					return err
 				}
 			}
 
 			for _, path := range generatedFiles {
 				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "generated template file at %s\n", path); err != nil {
+					return err
+				}
+			}
+			if projectConfigPath != "" {
+				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "generated project config at %s\n", projectConfigPath); err != nil {
 					return err
 				}
 			}
@@ -152,44 +197,172 @@ func newInitCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().BoolVar(&setup, "setup", false, "Run interactive setup wizard for init")
+	cmd.Flags().BoolVar(&batch, "batch", false, "Run init without the onboarding wizard")
 	cmd.Flags().BoolVar(&accessible, "accessible", false, "Use accessible text prompts for setup wizard")
-	cmd.Flags().BoolVar(&writeAgentsMD, "agents-md", false, "Generate project AGENTS.md in current directory")
-	cmd.Flags().StringVar(&templateName, "template", "", "Generate built-in project scaffold: company|oh-my-opencode")
+	cmd.Flags().BoolVar(&force, "force", false, "Overwrite project configuration if it already exists")
+	cmd.Flags().StringVar(&agentsValue, "agents-md", "", "Generate agent instruction files in the current directory")
+	cmd.Flags().StringVar(&templateName, "template", "", "Generate a project scaffold: company|oh-my-opencode|custom")
+	if flag := cmd.Flags().Lookup("agents-md"); flag != nil {
+		flag.NoOptDefVal = promptInstructionSelection
+	}
+	if flag := cmd.Flags().Lookup("template"); flag != nil {
+		flag.NoOptDefVal = promptTemplateSelection
+	}
 
 	return cmd
 }
 
-func writeProjectAgentsMD(path string) error {
-	if _, err := os.Stat(path); err == nil {
-		return fmt.Errorf("AGENTS.md already exists: %s", path)
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("stat AGENTS.md: %w", err)
+func writeInitReport(cmd *cobra.Command, report onboard.ApplyReport) error {
+	if jsonOutput {
+		enc := json.NewEncoder(cmd.OutOrStdout())
+		enc.SetIndent("", "  ")
+
+		payload := map[string]any{
+			"path":   report.HomeDir,
+			"status": report.Status,
+		}
+		if len(report.InstructionFiles) > 0 {
+			payload["instruction_files"] = report.InstructionFiles
+		}
+		if report.AgentsMDPath != "" {
+			payload["agents_md"] = report.AgentsMDPath
+		}
+		if report.Template != "" {
+			payload["template"] = report.Template
+		}
+		if report.Project != "" {
+			payload["project"] = report.Project
+		}
+		if report.ProjectConfigPath != "" {
+			payload["project_config_path"] = report.ProjectConfigPath
+		}
+		if len(report.GeneratedFiles) > 0 {
+			payload["generated_files"] = report.GeneratedFiles
+		}
+		if len(report.MemoryFiles) > 0 {
+			payload["memory_files"] = report.MemoryFiles
+		}
+		if report.CustomTemplatePath != "" {
+			payload["custom_template_path"] = report.CustomTemplatePath
+		}
+
+		return enc.Encode(payload)
 	}
 
-	content := `# AGENTS.md
-
-## agentcom Workflow
-
-- Run ` + "`agentcom init`" + ` once per machine to create the local SQLite database and socket directories.
-- Register each long-running agent session with ` + "`agentcom register --name <name> --type <type>`" + `.
-- Send direct messages with ` + "`agentcom send --from <sender> <target> <message-or-json>`" + `.
-- Broadcast updates with ` + "`agentcom broadcast --from <sender> <message-or-json>`" + `.
-- Create and delegate tasks with ` + "`agentcom task create`" + ` and ` + "`agentcom task delegate`" + `.
-- Check inbox/status with ` + "`agentcom inbox`" + ` and ` + "`agentcom status`" + `.
-- Start MCP mode with ` + "`agentcom mcp-server`" + ` for tool-based integrations.
-
-## Recommended Conventions
-
-- Use stable agent names per worktree or terminal session.
-- Keep one registered process per agent name.
-- Prefer JSON payloads for structured messages between agents.
-- Deregister agents cleanly on shutdown, or let ` + "`register`" + ` auto-clean up on signal.
-`
-
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		return fmt.Errorf("write AGENTS.md: %w", err)
+	for _, path := range report.InstructionFiles {
+		label := "instruction file"
+		if filepath.Base(path) == "AGENTS.md" {
+			label = "AGENTS.md"
+		}
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "generated %s at %s\n", label, path); err != nil {
+			return err
+		}
+	}
+	for _, path := range report.MemoryFiles {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "generated memory file at %s\n", path); err != nil {
+			return err
+		}
+	}
+	if report.CustomTemplatePath != "" {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "saved custom template at %s\n", report.CustomTemplatePath); err != nil {
+			return err
+		}
+	}
+	if report.ProjectConfigPath != "" {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "generated project config at %s\n", report.ProjectConfigPath); err != nil {
+			return err
+		}
+	}
+	for _, path := range report.GeneratedFiles {
+		if isAlreadyListedInitPath(path, report) {
+			continue
+		}
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "generated template file at %s\n", path); err != nil {
+			return err
+		}
 	}
 
-	return nil
+	message := "agentcom initialized at %s\n"
+	if report.Status == "already_initialized" {
+		message = "agentcom already initialized at %s\n"
+	}
+	_, err := fmt.Fprintf(cmd.OutOrStdout(), message, report.HomeDir)
+	return err
+}
+
+func isAlreadyListedInitPath(path string, report onboard.ApplyReport) bool {
+	for _, listed := range report.InstructionFiles {
+		if listed == path {
+			return true
+		}
+	}
+	for _, listed := range report.MemoryFiles {
+		if listed == path {
+			return true
+		}
+	}
+	return false
+}
+
+func consumeInitOptionalValues(agentsValue, templateValue string, args []string) (string, string, []string) {
+	remaining := append([]string(nil), args...)
+	agentsSelection := agentsValue
+	templateSelection := templateValue
+
+	if agentsSelection == promptInstructionSelection && len(remaining) > 0 && !strings.HasPrefix(remaining[0], "-") {
+		agentsSelection = remaining[0]
+		remaining = remaining[1:]
+	}
+	if templateSelection == promptTemplateSelection && len(remaining) > 0 && !strings.HasPrefix(remaining[0], "-") {
+		templateSelection = remaining[0]
+		remaining = remaining[1:]
+	}
+
+	return agentsSelection, templateSelection, remaining
+}
+
+func defaultInitProject(projectDir string) (string, error) {
+	if projectFlag != "" {
+		return projectFlag, nil
+	}
+	project, err := config.ResolveProject("", projectDir)
+	if err != nil {
+		return "", fmt.Errorf("cli.defaultInitProject: %w", err)
+	}
+	if project != "" {
+		return project, nil
+	}
+
+	suggested := strings.ToLower(filepath.Base(projectDir))
+	if err := config.ValidateProjectName(suggested); err != nil {
+		return "", nil
+	}
+	return suggested, nil
+}
+
+func ensureInitProjectConfig(projectDir string, force bool) (string, string, error) {
+	if strings.TrimSpace(projectFlag) == "" {
+		cfg, path, err := config.LoadProjectConfig(projectDir)
+		if err != nil {
+			return "", "", fmt.Errorf("cli.ensureInitProjectConfig: %w", err)
+		}
+		return path, cfg.Project, nil
+	}
+
+	path := filepath.Join(projectDir, config.ProjectConfigFileName)
+	if force {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return "", "", fmt.Errorf("cli.ensureInitProjectConfig: remove existing: %w", err)
+		}
+	}
+
+	writtenPath, err := config.WriteProjectConfig(projectDir, projectFlag)
+	if err != nil {
+		cfg, existingPath, loadErr := config.LoadProjectConfig(projectDir)
+		if loadErr == nil && existingPath != "" {
+			return existingPath, cfg.Project, nil
+		}
+		return "", "", fmt.Errorf("cli.ensureInitProjectConfig: %w", err)
+	}
+	return writtenPath, projectFlag, nil
 }

@@ -35,7 +35,7 @@ func newMCPServerCmd() *cobra.Command {
 				}
 
 				registry = agent.NewRegistry(app.db, app.cfg)
-				agentRecord, err := registry.Register(ctx, registerName, registerType, []string{"mcp", "tools"}, "")
+				agentRecord, err := registry.Register(ctx, registerName, registerType, []string{"mcp", "tools"}, "", app.project)
 				if err != nil {
 					return fmt.Errorf("cli.newMCPServerCmd: register: %w", err)
 				}
@@ -50,13 +50,13 @@ func newMCPServerCmd() *cobra.Command {
 					deregisterCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 					defer cancel()
 
-					if err := registry.Deregister(deregisterCtx, registeredID); err != nil {
+					if err := registry.Deregister(deregisterCtx, registeredID, app.project); err != nil {
 						slog.Error("failed to deregister mcp server agent", "agent_id", registeredID, "error", err)
 					}
 				}()
 			}
 
-			server := mcp.NewServer(app.db, app.cfg)
+			server := mcp.NewServer(app.db, app.cfg, currentProjectFilter())
 			if err := server.Run(ctx, os.Stdin, os.Stdout); err != nil {
 				if registered {
 					slog.Debug("mcp server stopped with registered agent", "agent_id", registeredID, "error", err)

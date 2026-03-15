@@ -29,6 +29,7 @@ type ToolHandler func(ctx context.Context, params json.RawMessage) (interface{},
 type Server struct {
 	db          *db.DB
 	cfg         *config.Config
+	project     string
 	tools       map[string]ToolHandler
 	initialized bool
 }
@@ -57,11 +58,12 @@ type RPCError struct {
 }
 
 // NewServer creates a new MCP server instance.
-func NewServer(database *db.DB, cfg *config.Config) *Server {
+func NewServer(database *db.DB, cfg *config.Config, project string) *Server {
 	s := &Server{
-		db:    database,
-		cfg:   cfg,
-		tools: make(map[string]ToolHandler),
+		db:      database,
+		cfg:     cfg,
+		project: project,
+		tools:   make(map[string]ToolHandler),
 	}
 	s.registerTools()
 	return s
