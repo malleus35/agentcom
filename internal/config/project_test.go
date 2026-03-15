@@ -31,6 +31,37 @@ func TestWriteProjectConfig(t *testing.T) {
 	}
 }
 
+func TestSaveProjectConfigPreservesTemplateActive(t *testing.T) {
+	dir := t.TempDir()
+
+	path, err := SaveProjectConfig(dir, ProjectConfig{
+		Project: "sample_app",
+		Template: ProjectTemplateConfig{
+			Active: "company",
+		},
+	})
+	if err != nil {
+		t.Fatalf("SaveProjectConfig() error = %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	text := string(data)
+	if !strings.Contains(text, `"active": "company"`) {
+		t.Fatalf("config file = %q, want template.active entry", text)
+	}
+
+	cfg, _, err := LoadProjectConfig(dir)
+	if err != nil {
+		t.Fatalf("LoadProjectConfig() error = %v", err)
+	}
+	if cfg.Template.Active != "company" {
+		t.Fatalf("Template.Active = %q, want company", cfg.Template.Active)
+	}
+}
+
 func TestLoadProjectConfig(t *testing.T) {
 	root := t.TempDir()
 	nested := filepath.Join(root, "a", "b", "c")
