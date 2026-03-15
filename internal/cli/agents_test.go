@@ -65,6 +65,12 @@ func TestWriteTemplateScaffold(t *testing.T) {
 	if !strings.Contains(string(commonData), "frontend, backend, plan, review, architect, and design") {
 		t.Fatalf("common markdown missing expected roles: %s", string(commonData))
 	}
+	if !strings.Contains(string(commonData), "`agentcom up`") || !strings.Contains(string(commonData), "`agentcom down`") {
+		t.Fatalf("common markdown missing managed lifecycle guidance: %s", string(commonData))
+	}
+	if !strings.Contains(string(commonData), "low-level manual runs of a single standalone role") {
+		t.Fatalf("common markdown missing standalone register guidance: %s", string(commonData))
+	}
 
 	manifestPath := filepath.Join(projectDir, ".agentcom", "templates", "company", "template.json")
 	manifestData, err := os.ReadFile(manifestPath)
@@ -87,6 +93,12 @@ func TestWriteTemplateScaffold(t *testing.T) {
 	if !strings.Contains(string(sharedSkillData), "Shared agentcom skill instructions") {
 		t.Fatalf("shared skill missing expected content: %s", string(sharedSkillData))
 	}
+	if !strings.Contains(string(sharedSkillData), "Default template lifecycle") {
+		t.Fatalf("shared skill missing default lifecycle guidance: %s", string(sharedSkillData))
+	}
+	if !strings.Contains(string(sharedSkillData), "low-level path for manually running one standalone agent session") {
+		t.Fatalf("shared skill missing register guidance: %s", string(sharedSkillData))
+	}
 
 	skillPath := filepath.Join(projectDir, ".agents", "skills", "agentcom", "company-frontend", "SKILL.md")
 	skillData, err := os.ReadFile(skillPath)
@@ -102,6 +114,12 @@ func TestWriteTemplateScaffold(t *testing.T) {
 	}
 	if !strings.Contains(content, "Primary contacts: design, backend, review, architect") {
 		t.Fatalf("skill missing communication map: %s", content)
+	}
+	if !strings.Contains(content, "For template-based teams, use `agentcom up` and `agentcom down` as the default lifecycle") {
+		t.Fatalf("skill missing lifecycle guidance: %s", content)
+	}
+	if !strings.Contains(content, "keep `agentcom register` for advanced standalone sessions") {
+		t.Fatalf("skill missing standalone register guidance: %s", content)
 	}
 
 	if _, err := writeTemplateScaffold(projectDir, "company"); err == nil {
