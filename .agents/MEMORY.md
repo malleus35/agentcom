@@ -4,12 +4,14 @@
 
 ## 현재 상태
 
-- **Phase**: 10 진행 중
-- **마지막 작업**: `agents.project` 컬럼 추가와 project-scoped CLI/MCP 흐름 구현
-- **현재 브랜치**: `feature/P10-add-project-column-plan-prd`
+- **Phase**: P11 계획 작성 완료 (구현 미착수)
+- **마지막 작업**: P11 `up`/`down` 에이전트 일괄 라이프사이클 계획 문서 작성
+- **현재 브랜치**: `feature/P10-add-project-column-plan-prd` (develop 위에 리베이스 완료)
 - **현재 버전**: v0.1.4 (Homebrew/Scoop/GitHub Release 배포 완료)
-- **추가 진행 작업**: P9 init overhaul 구현 및 검증 진행 중
-- **다음 작업**: P10 변경사항 커밋 및 `develop` 머지
+- **P10 상태**: 구현 완료, develop 리베이스 완료, 커밋/머지 대기
+- **P11 상태**: `.agents/plans/P11-up-down-agent-lifecycle.md` 계획 문서 작성 완료, 구현 미착수
+- **다음 작업**: P10 develop 머지 → P11 설계 결정 확정 → P11 구현
+- **워킹트리**: stale worktree 4개 정리 완료 (메인 worktree만 남음)
 
 ## 완료된 태스크
 
@@ -25,6 +27,17 @@
 - P10 project column 핵심 구현 완료
 
 ## 이번 세션에서 마무리한 작업
+
+- P11 `up`/`down` 에이전트 라이프사이클 계획 문서 작성: `.agents/plans/P11-up-down-agent-lifecycle.md`
+  - 업계 CLI 패턴 벤치마크 (Docker Compose, Terraform, Dapr, PM2, systemd, k8s)
+  - Oracle 아키텍처 상담 결과 반영
+  - 3가지 설계 옵션 (A: init=플랫폼/up=런타임, B: up이 init 흡수, C: 선언적 yaml)
+  - 프로세스 관리 방식 (supervisor 패턴), 런타임 상태 파일, 명령 시그니처
+  - 직관성 평가 매트릭스, 미결 사항 8개, 태스크 분해 13개
+- P10 feature 브랜치를 develop 위에 리베이스 완료 (충돌 없음, 빌드/테스트 전체 통과)
+- stale worktree 4개 정리 (agentcom-agentcom-skills, agentcom-main-release, agentcom-template-search, agentcom-v014-tag)
+
+### 이전 세션 작업 (참고)
 
 - `internal/cli/agents.go`: `agentcom agents template` 추가, `company`/`oh-my-opencode` 내장 템플릿 정의, 공통 markdown/manifest/role skill 스캐폴드 로직 추가
 - `internal/cli/init.go`: `agentcom init --template <company|oh-my-opencode>` 지원 추가, 프로젝트 템플릿 파일 및 role skill 생성 결과 출력/JSON 응답 확장
@@ -108,6 +121,10 @@
 | 2026-03-15 | `agents` schema는 `PRAGMA user_version` 기반 순차 마이그레이션으로 관리하고 `UNIQUE(name, project)` 전환은 테이블 재생성으로 처리 | SQLite에서 기존 UNIQUE 제약을 직접 변경할 수 없고, 재실행 안전성과 기존 DB 호환을 함께 확보해야 했기 때문 |
 | 2026-03-15 | CLI/MCP 기본 project scope는 `.agentcom.json` 또는 `--project`에서 해석하고, `--all-projects`일 때만 필터를 우회 | 기존 글로벌 동작과 프로젝트 격리를 동시에 지원하면서 명시적 override를 유지하기 위해 |
 
+| 2026-03-15 | P11 `up`/`down` 계획: 옵션 A(init=플랫폼, up=런타임)를 기본 방향으로, 옵션 B(up이 init 흡수) 요소도 검토 | Oracle 상담 + 업계 CLI 벤치마크 결과. init→up 레이어 분리가 Terraform/Dapr 패턴과 일치하고 기존 코드 변경 최소 |
+| 2026-03-15 | `up`은 .agentcom.json의 template.active를 읽고, template.json에서 역할 목록을 로드하여 subprocess supervisor로 일괄 register | register가 블로킹이므로 supervisor가 자식 프로세스로 각 register를 fork하는 구조가 자연스러움 |
+| 2026-03-15 | 런타임 상태는 .agentcom/run/up.json에 PID/socket/role 매핑으로 기록 | SQLite는 진실의 원천이지만 프로세스 종료는 PID 없이 정확히 못 하므로 별도 런타임 파일 필요 |
+
 ## 발견된 이슈
 
 - 기존 메모의 PRD 경로 표기는 `.agents/plan/PRD.md`였지만 실제 경로는 `.agents/plans/PRD.md`
@@ -120,7 +137,8 @@
 - onboard wizard PRD: `.agents/plans/P8-01-onboard-setup-wizard.md`
 - **init 개편 PRD: `.agents/plans/P9-init-overhaul.md`** (7 tasks, 43 subtasks)
 - **project column PRD: `.agents/plans/P10-add-project-column-plan-prd.md`** (renumber 완료)
-- 전체 태스크 수: 62개 (P0-P7) + 9개 (P8) + 43개 (P9) + 63개(+3 sub) (P10) = 177개(+3 sub)
+- **P11 up/down 계획**: `.agents/plans/P11-up-down-agent-lifecycle.md` (3 옵션, 13 태스크, 8 미결 사항)
+- 전체 태스크 수: 62개 (P0-P7) + 9개 (P8) + 43개 (P9) + 63개(+3 sub) (P10) + 13개 (P11) = 190개(+3 sub)
 - root 커맨드에 `mcp-server` 등록 완료
 - root 커맨드에 `skill` 등록 완료
 - root 커맨드에 `agents` 등록 완료
@@ -140,4 +158,5 @@
 
 ## 진행 중 작업 체크리스트
 
-- P10 project scope 구현 완료, 커밋/merge 대기
+- P10 project scope 구현 완료, develop 리베이스 완료, 커밋/merge 대기
+- P11 up/down 계획 문서 작성 완료, 설계 결정 확정 및 구현 대기
