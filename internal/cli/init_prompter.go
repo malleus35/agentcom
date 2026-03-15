@@ -20,6 +20,19 @@ type initPrompter struct {
 	output     io.Writer
 }
 
+const (
+	agentToolsTitle       = "Agent tools"
+	agentToolsDescription = "Select the agents you want to generate project instructions for. Space to select, Enter to continue."
+	agentToolsError       = "select at least one agent tool to continue"
+)
+
+func validateAgentToolsSelection(value []string) error {
+	if len(value) == 0 {
+		return errors.New(agentToolsError)
+	}
+	return nil
+}
+
 func newInitPrompter(accessible bool, input io.Reader, output io.Writer) onboard.Prompter {
 	return &initPrompter{accessible: accessible, input: input, output: output}
 }
@@ -80,9 +93,10 @@ func (p *initPrompter) Run(ctx context.Context, defaults onboard.Result) (onboar
 		).Title("Step 1: Environment"),
 		huh.NewGroup(
 			huh.NewMultiSelect[string]().
-				Title("Agent tools").
-				Description("Select the agents you want to generate project instructions for.").
+				Title(agentToolsTitle).
+				Description(agentToolsDescription).
 				Options(initInstructionOptions(selectedAgents)...).
+				Validate(validateAgentToolsSelection).
 				Value(&selectedAgents),
 		).Title("Step 2: Agent Tools"),
 		huh.NewGroup(
