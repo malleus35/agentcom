@@ -215,13 +215,14 @@ Initialize local state:
 
 ```bash
 agentcom init
-agentcom init --setup
+agentcom init --batch
 ```
 
-Generate a project-level `AGENTS.md` in the current directory:
+Generate agent-specific instruction files in the current directory:
 
 ```bash
 agentcom init --agents-md
+agentcom init --batch --agents-md claude,codex
 ```
 
 Scaffold a built-in project template with shared instructions and six role skills:
@@ -229,6 +230,7 @@ Scaffold a built-in project template with shared instructions and six role skill
 ```bash
 agentcom init --template company
 agentcom init --template oh-my-opencode
+agentcom init --template custom
 ```
 
 Inspect the built-in templates before generating one:
@@ -293,23 +295,26 @@ Usage:
 
 ```bash
 agentcom init
-agentcom init --setup
+agentcom init --batch
 agentcom init --agents-md
+agentcom init --batch --agents-md claude,codex
 agentcom init --template company
 agentcom init --template oh-my-opencode
+agentcom init --template custom
 agentcom --json init
 ```
 
 Notes:
 
 - Running it repeatedly is safe.
-- `--setup` runs a small interactive wizard for choosing the home directory, optional project template, and optional `AGENTS.md` generation.
-- `--setup` requires an interactive terminal and does not support `--json`.
+- On an interactive terminal, `agentcom init` now runs the onboarding wizard by default.
+- `--batch` forces the legacy non-interactive flow and is also implied by `--json`.
 - `--accessible` switches the setup wizard to accessible text prompts.
-- `--agents-md` writes a project-level `AGENTS.md` in the current working directory.
+- `--agents-md` now accepts `all` or a comma-separated agent list such as `claude,codex,cursor`; `agentcom init --batch --agents-md` without a value keeps the legacy `AGENTS.md` behavior.
 - `--template` writes `.agentcom/templates/<template>/COMMON.md`, `.agentcom/templates/<template>/template.json`, a shared `agentcom/SKILL.md` per supported agent, and six namespaced role skills: `agentcom/<template>-frontend`, `agentcom/<template>-backend`, `agentcom/<template>-plan`, `agentcom/<template>-review`, `agentcom/<template>-architect`, and `agentcom/<template>-design`.
-- Supported templates are `company` and `oh-my-opencode`.
-- JSON output includes `path`, `status`, `agents_md`, `template`, and `generated_files` when applicable.
+- Supported built-in templates are `company` and `oh-my-opencode`; `custom` launches a template-creation wizard in interactive mode.
+- `agentcom agents template --list` shows built-in and custom templates, and `agentcom agents template --delete <name>` removes a custom template after confirmation.
+- JSON output includes `path`, `status`, `instruction_files`, `agents_md`, `memory_files`, `template`, `custom_template_path`, and `generated_files` when applicable.
 - Because the current implementation prepares the home directory before `init` checks it, `status` may appear as `already_initialized` even for a newly prepared path.
 
 ### `agentcom register`

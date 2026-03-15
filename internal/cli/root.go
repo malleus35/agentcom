@@ -80,11 +80,7 @@ func NewRootCmd() *cobra.Command {
 }
 
 func shouldSkipAppInit(cmd *cobra.Command) bool {
-	if cmd == nil || cmd.Name() != "init" {
-		return false
-	}
-	setup, err := cmd.Flags().GetBool("setup")
-	return err == nil && setup
+	return shouldRunWizard(cmd)
 }
 
 func configureLogging() {
