@@ -8,6 +8,7 @@ It uses SQLite in WAL mode as the durable source of truth and Unix Domain Socket
 
 ## Features
 
+- Start and stop all template-defined agents with `agentcom up` and `agentcom down`
 - Register and deregister long-running agent sessions
 - Send direct messages and broadcasts between agents
 - Persist messages, tasks, and agent liveness in SQLite
@@ -174,10 +175,11 @@ make build
 
 The normal lifecycle is:
 
-1. Initialize a local agentcom home directory.
-2. Start one or more long-running registered agent processes.
+1. Run `agentcom init` once per project to initialize local state, choose a project scope, and optionally scaffold a template.
+2. Run `agentcom up` to start all roles defined by the active template as detached managed processes.
 3. Use CLI commands or MCP tools to send messages, inspect inboxes, and manage tasks.
-4. Shut agents down cleanly so they deregister automatically.
+4. Run `agentcom down` to stop the managed template session cleanly.
+5. Use `agentcom register` only when you want one low-level standalone agent process.
 
 ## Local state and configuration
 
@@ -185,6 +187,12 @@ By default, `agentcom` stores data under `~/.agentcom`.
 
 - SQLite DB: `~/.agentcom/agentcom.db`
 - Socket directory: `~/.agentcom/sockets/`
+
+Per project, `agentcom` also uses local metadata files:
+
+- Project config: `.agentcom.json`
+- Template scaffold: `.agentcom/templates/<template>/COMMON.md` and `.agentcom/templates/<template>/template.json`
+- Runtime state for `up`: `.agentcom/run/up.json`
 
 You can override the base directory with `AGENTCOM_HOME`.
 
@@ -214,15 +222,14 @@ agentcom --project myapp list
 
 ## Quickstart
 
-Initialize local state:
+Initialize a project and choose an active template:
 
 ```bash
-agentcom init
-agentcom init --batch
-agentcom init --batch --project myapp
+agentcom init --project myapp --template company
+agentcom --json init --project myapp --template company
 ```
 
-Project-scoped commands read `.agentcom.json` from the current directory or any parent directory. `agentcom init --project myapp` writes that file so later commands automatically scope agent lookup and listing to `myapp`.
+Project-scoped commands read `.agentcom.json` from the current directory or any parent directory. `agentcom init --project myapp --template company` writes the project name and `template.active`, so later commands automatically scope agent lookup and `up`/`down` to that project.
 
 Generate agent-specific instruction files in the current directory:
 
@@ -249,17 +256,34 @@ agentcom --json agents template oh-my-opencode
 
 When run on an interactive terminal without a template name, `agentcom agents template` now prompts for a search term and lets you select a matching template by number.
 
-Start two agents in separate terminals:
+Start all template-defined agents:
 
 ```bash
-agentcom register --name alpha --type codex --cap plan,execute
-agentcom register --name beta --type claude --cap review,test
+agentcom up
+agentcom up --only frontend,plan
+agentcom --json up
 ```
 
-Send a direct message:
+The default `up` mode detaches immediately and writes runtime metadata to `.agentcom/run/up.json`. Use `agentcom down` to stop the session:
 
 ```bash
-agentcom send --from alpha beta '{"text":"hello"}'
+agentcom down
+agentcom down --only plan
+agentcom down --timeout 15
+agentcom --json down
+```
+
+Inspect the managed agents:
+
+```bash
+agentcom list
+agentcom health
+```
+
+Send a direct message between managed agents:
+
+```bash
+agentcom send --from frontend plan '{"text":"hello"}'
 ```
 
 Broadcast an update:
@@ -271,18 +295,17 @@ agentcom broadcast --from alpha --topic sync '{"status":"ready"}'
 Create, delegate, and update a task:
 
 ```bash
-agentcom task create "Implement MCP tests" --creator alpha --assign beta --priority high
-agentcom task list --assignee beta
-agentcom task delegate <task-id> --to beta
+agentcom task create "Implement MCP tests" --creator frontend --assign plan --priority high
+agentcom task list --assignee plan
+agentcom task delegate <task-id> --to plan
 agentcom task update <task-id> --status in_progress --result "started"
 ```
 
 Inspect inbox and system status:
 
 ```bash
-agentcom inbox --agent beta --unread
+agentcom inbox --agent plan --unread
 agentcom status
-agentcom health
 ```
 
 Generate a project-level skill for all supported agent CLIs:
@@ -321,14 +344,69 @@ Notes:
 - `--accessible` switches the setup wizard to accessible text prompts.
 - `--agents-md` now accepts `all` or a comma-separated agent list such as `claude,codex,cursor`; `agentcom init --batch --agents-md` without a value keeps the legacy `AGENTS.md` behavior.
 - `--template` writes `.agentcom/templates/<template>/COMMON.md`, `.agentcom/templates/<template>/template.json`, a shared `agentcom/SKILL.md` per supported agent, and six namespaced role skills: `agentcom/<template>-frontend`, `agentcom/<template>-backend`, `agentcom/<template>-plan`, `agentcom/<template>-review`, `agentcom/<template>-architect`, and `agentcom/<template>-design`.
+- When `--template` is set, `.agentcom.json` also records `template.active` so `agentcom up` can start the same template later without repeating the flag.
 - Supported built-in templates are `company` and `oh-my-opencode`; `custom` launches a template-creation wizard in interactive mode.
 - `agentcom agents template --list` shows built-in and custom templates, and `agentcom agents template --delete <name>` removes a custom template after confirmation.
-- JSON output includes `path`, `status`, `instruction_files`, `agents_md`, `memory_files`, `template`, `custom_template_path`, and `generated_files` when applicable.
+- JSON output includes `path`, `status`, `project`, `project_config_path`, `template`, `active_template`, `instruction_files`, `agents_md`, `memory_files`, `custom_template_path`, and `generated_files` when applicable.
 - Because the current implementation prepares the home directory before `init` checks it, `status` may appear as `already_initialized` even for a newly prepared path.
+
+### `agentcom up`
+
+Starts the active template for the current project. By default, `up` detaches immediately, starts a background supervisor, and launches one `register` child process per template role.
+
+Usage:
+
+```bash
+agentcom up
+agentcom up --template company
+agentcom up --only frontend,plan
+agentcom up --force
+agentcom --json up
+```
+
+Flags:
+
+- `--template <name>` - override `.agentcom.json` `template.active` and persist the new active template
+- `--only <roles>` - start only the listed role names from the template
+- `--force` - stop an existing managed session before starting a new one
+
+Notes:
+
+- On an interactive terminal, if the project is not initialized yet, `up` runs `agentcom init` first.
+- On a non-interactive terminal, `up` fails fast if `.agentcom.json` is missing.
+- Runtime metadata is written to `.agentcom/run/up.json`.
+- `agentcom up` is the recommended high-level way to run template-based teams.
+
+### `agentcom down`
+
+Stops agents started by `agentcom up`.
+
+Usage:
+
+```bash
+agentcom down
+agentcom down --only plan
+agentcom down --timeout 15
+agentcom down --force
+agentcom --json down
+```
+
+Flags:
+
+- `--only <roles>` - stop only the listed role names
+- `--timeout <seconds>` - wait for graceful shutdown before giving up
+- `--force` - skip graceful shutdown and kill the managed processes immediately
+
+Notes:
+
+- `down` reads `.agentcom/run/up.json` as its primary runtime source.
+- If all managed roles are stopped, the runtime state file is removed.
 
 ### `agentcom register`
 
 Registers the current process as a live agent, starts heartbeat updates, opens a Unix Domain Socket server, and starts a fallback poller. This command is intentionally long-running: it stays alive until interrupted.
+
+Use this as the low-level or advanced interface when you want to run one standalone agent manually instead of starting a whole template with `agentcom up`.
 
 Usage:
 
@@ -639,8 +717,27 @@ Example shape:
 
 ```json
 {
+  "active_template": "company",
   "path": "/Users/name/.agentcom",
   "status": "initialized or already_initialized"
+}
+```
+
+Managed session start:
+
+```bash
+agentcom --json up
+```
+
+Example shape:
+
+```json
+{
+  "status": "started",
+  "project": "myapp",
+  "template": "company",
+  "supervisor_pid": 12345,
+  "runtime_state": "/path/to/project/.agentcom/run/up.json"
 }
 ```
 
@@ -664,34 +761,26 @@ agentcom --json task list --status pending
 
 ## End-to-end example workflow
 
-Terminal 1:
+Project terminal:
 
 ```bash
 export AGENTCOM_HOME=/tmp/agentcom-demo
-agentcom init
-agentcom register --name alpha --type codex --cap plan,execute
+agentcom init --project demo --template company
+agentcom up --only frontend,plan
 ```
 
-Terminal 2:
+Work terminal:
 
 ```bash
 export AGENTCOM_HOME=/tmp/agentcom-demo
-agentcom register --name beta --type claude --cap review,test
-```
-
-Terminal 3:
-
-```bash
-export AGENTCOM_HOME=/tmp/agentcom-demo
-agentcom send --from alpha beta '{"text":"please review README"}'
-agentcom inbox --agent beta --unread
-agentcom task create "Review README" --creator alpha --assign beta --priority high
-agentcom task list --assignee beta
+agentcom send --from frontend plan '{"text":"please review README"}'
+agentcom inbox --agent plan --unread
+agentcom task create "Review README" --creator frontend --assign plan --priority high
+agentcom task list --assignee plan
 agentcom status
 agentcom health
+agentcom down
 ```
-
-Stop the registered processes with `Ctrl+C` when finished.
 
 ## MCP Setup
 

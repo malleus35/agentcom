@@ -6,6 +6,7 @@
 
 ## 功能特性
 
+- 使用 `agentcom up` / `agentcom down` 批量启动和停止模板中定义的全部代理
 - 注册和注销长时间运行的代理会话
 - 代理之间的单播消息和广播消息
 - 将消息、任务和代理状态持久化到 SQLite
@@ -156,10 +157,11 @@ make build
 
 常见使用流程如下：
 
-1. 初始化本地 agentcom home 目录
-2. 启动一个或多个长时间运行的已注册代理进程
+1. 用 `agentcom init` 初始化本地状态并选择 project / template
+2. 用 `agentcom up` 以 detached 管理进程方式启动 active template 的全部角色
 3. 使用 CLI 命令或 MCP 工具处理消息、inbox 和任务
-4. 正常关闭进程，让代理自动注销
+4. 用 `agentcom down` 关闭当前受管模板会话
+5. `agentcom register` 保留给手动启动单个代理的低层用法
 
 ## 本地状态和配置
 
@@ -167,6 +169,12 @@ make build
 
 - SQLite DB: `~/.agentcom/agentcom.db`
 - Socket 目录: `~/.agentcom/sockets/`
+
+每个项目还会使用这些本地元数据文件：
+
+- 项目配置：`.agentcom.json`
+- 模板脚手架：`.agentcom/templates/<template>/COMMON.md` 与 `.agentcom/templates/<template>/template.json`
+- `up` 的运行时状态：`.agentcom/run/up.json`
 
 可以用 `AGENTCOM_HOME` 覆盖基础目录：
 
@@ -181,6 +189,8 @@ agentcom init
 
 - `--json` - 在支持时输出机器可读的 JSON
 - `-v`, `--verbose` - 打开基于 `log/slog` 的调试日志
+- `--project <name>` - 覆盖当前 project 作用域
+- `--all-projects` - 跳过 project 作用域并查看全部资源
 
 ```bash
 agentcom --json list
@@ -190,11 +200,11 @@ agentcom --verbose health
 ## 快速开始
 
 ```bash
-agentcom init
-agentcom init --agents-md
-agentcom init --batch
-agentcom init --batch --agents-md claude,codex
+agentcom init --project myapp --template company
+agentcom --json init --project myapp --template company
 ```
+
+`.agentcom.json` 会从当前目录或任意父目录自动解析，并保存 `project` 与 `template.active`。
 
 生成包含共享说明和 6 个角色技能的内置模板：
 
@@ -214,33 +224,43 @@ agentcom --json agents template oh-my-opencode
 
 在交互式终端中不带模板名执行 `agentcom agents template` 时，现在会先输入搜索词，再通过编号选择模板。
 
-在不同终端启动两个代理：
+批量启动模板中定义的代理：
 
 ```bash
-agentcom register --name alpha --type codex --cap plan,execute
-agentcom register --name beta --type claude --cap review,test
+agentcom up
+agentcom up --only frontend,plan
+agentcom --json up
+```
+
+默认 `up` 会立即 detach，并把运行时元数据写入 `.agentcom/run/up.json`。停止时使用 `down`。
+
+```bash
+agentcom down
+agentcom down --only plan
+agentcom down --timeout 15
+agentcom --json down
 ```
 
 发送消息：
 
 ```bash
-agentcom send --from alpha beta '{"text":"hello"}'
-agentcom broadcast --from alpha --topic sync '{"status":"ready"}'
+agentcom send --from frontend plan '{"text":"hello"}'
+agentcom broadcast --from frontend --topic sync '{"status":"ready"}'
 ```
 
 操作任务：
 
 ```bash
-agentcom task create "Implement MCP tests" --creator alpha --assign beta --priority high
-agentcom task list --assignee beta
-agentcom task delegate <task-id> --to beta
+agentcom task create "Implement MCP tests" --creator frontend --assign plan --priority high
+agentcom task list --assignee plan
+agentcom task delegate <task-id> --to plan
 agentcom task update <task-id> --status in_progress --result "started"
 ```
 
 查看状态：
 
 ```bash
-agentcom inbox --agent beta --unread
+agentcom inbox --agent plan --unread
 agentcom status
 agentcom health
 ```
@@ -273,14 +293,57 @@ agentcom --json init
 - `--batch` 会强制使用非交互流程，`--json` 时也会自动启用
 - `--agents-md` 现在接受 `all` 或 `claude,codex,cursor` 这样的逗号分隔 agent 列表。像 `agentcom init --batch --agents-md` 这样不给值时，会保留原来的 `AGENTS.md` 行为
 - `--template` 会生成 `.agentcom/templates/<template>/COMMON.md`、`.agentcom/templates/<template>/template.json`、每个支持 agent 的 shared `agentcom/SKILL.md`，以及 `agentcom/<template>-frontend` 形式的 6 个 namespaced role skill
+- 指定 `--template` 时，也会把 `template.active` 写入 `.agentcom.json`，供后续 `agentcom up` 直接使用
 - 内置模板为 `company` 和 `oh-my-opencode`，`custom` 会在交互模式下启动模板创建 wizard
 - `agentcom agents template --list` 会同时列出 built-in/custom 模板，`agentcom agents template --delete <name>` 会在确认后删除 custom 模板
-- JSON 输出在适用时会包含 `path`、`status`、`instruction_files`、`agents_md`、`memory_files`、`template`、`custom_template_path`、`generated_files`
+- JSON 输出在适用时会包含 `path`、`status`、`project`、`project_config_path`、`template`、`active_template`、`instruction_files`、`agents_md`、`memory_files`、`custom_template_path`、`generated_files`
 - 当前实现会先准备 home 目录再检查状态，因此即使是新路径，`status` 也可能显示为 `already_initialized`
+
+### `agentcom up`
+
+启动当前项目的 active template。默认行为是 detach，由后台 supervisor 为模板中的每个角色启动一个 `register` 子进程。
+
+```bash
+agentcom up
+agentcom up --template company
+agentcom up --only frontend,plan
+agentcom up --force
+agentcom --json up
+```
+
+- `--template <name>` - 覆盖 `.agentcom.json` 中的 `template.active`，并把新值写回配置
+- `--only <roles>` - 只启动指定角色名
+- `--force` - 已有受管会话时先停止再重启
+
+说明：
+
+- 在交互式终端中，如果项目尚未初始化，`up` 会先运行 `agentcom init`
+- 在非交互环境中，如果缺少 `.agentcom.json`，`up` 会直接报错
+- 运行时元数据写入 `.agentcom/run/up.json`
+
+### `agentcom down`
+
+停止通过 `agentcom up` 启动的代理。
+
+```bash
+agentcom down
+agentcom down --only plan
+agentcom down --timeout 15
+agentcom down --force
+agentcom --json down
+```
+
+- `--only <roles>` - 只停止指定角色名
+- `--timeout <seconds>` - graceful shutdown 等待时间
+- `--force` - 不等待 graceful shutdown，立即终止
+
+### `agentcom register`
 
 ### `agentcom register`
 
 将当前进程注册为 live agent，并启动 heartbeat、Unix Domain Socket 服务和 fallback poller。这个命令本身是长时间运行的。
+
+如果你要启动整个模板团队，应优先使用 `agentcom up`；`register` 适合手动启动单个代理的低层场景。
 
 ```bash
 agentcom register --name alpha --type codex
@@ -483,41 +546,52 @@ agentcom --json task list --status pending
 
 ```json
 {
+  "active_template": "company",
   "path": "/Users/name/.agentcom",
   "status": "initialized or already_initialized"
 }
 ```
 
+启动受管会话：
+
+```bash
+agentcom --json up
+```
+
+输出示例：
+
+```json
+{
+  "status": "started",
+  "project": "myapp",
+  "template": "company",
+  "supervisor_pid": 12345,
+  "runtime_state": "/path/to/project/.agentcom/run/up.json"
+}
+```
+
 ## 端到端示例流程
 
-终端 1：
+项目终端：
 
 ```bash
 export AGENTCOM_HOME=/tmp/agentcom-demo
-agentcom init
-agentcom register --name alpha --type codex --cap plan,execute
+agentcom init --project demo --template company
+agentcom up --only frontend,plan
 ```
 
-终端 2：
+工作终端：
 
 ```bash
 export AGENTCOM_HOME=/tmp/agentcom-demo
-agentcom register --name beta --type claude --cap review,test
-```
-
-终端 3：
-
-```bash
-export AGENTCOM_HOME=/tmp/agentcom-demo
-agentcom send --from alpha beta '{"text":"please review README"}'
-agentcom inbox --agent beta --unread
-agentcom task create "Review README" --creator alpha --assign beta --priority high
-agentcom task list --assignee beta
+agentcom send --from frontend plan '{"text":"please review README"}'
+agentcom inbox --agent plan --unread
+agentcom task create "Review README" --creator frontend --assign plan --priority high
+agentcom task list --assignee plan
 agentcom status
 agentcom health
+agentcom down
 ```
-
-完成后可通过 `Ctrl+C` 停止注册中的进程。
 
 ## MCP 用法
 
