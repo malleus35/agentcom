@@ -12,7 +12,7 @@ import (
 )
 
 var ErrAgentNotFound = errors.New("agent not found")
-var ErrDuplicateName = errors.New("agent name already exists")
+var ErrDuplicateName = errors.New("agent name already exists in this project")
 
 // Agent represents a registered agent record.
 type Agent struct {
@@ -23,6 +23,7 @@ type Agent struct {
 	SocketPath    string
 	Capabilities  string
 	WorkDir       string
+	Project       string
 	Status        string
 	RegisteredAt  time.Time
 	LastHeartbeat time.Time
@@ -40,8 +41,8 @@ func (d *DB) InsertAgent(ctx context.Context, agent *Agent) error {
 
 	stmt, err := d.PrepareContext(ctx, `
 		INSERT INTO agents (
-			id, name, type, pid, socket_path, capabilities, workdir, status
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			id, name, type, pid, socket_path, capabilities, workdir, project, status
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`)
 	if err != nil {
 		return fmt.Errorf("db.InsertAgent: prepare: %w", err)
@@ -56,6 +57,7 @@ func (d *DB) InsertAgent(ctx context.Context, agent *Agent) error {
 		nullableString(agent.SocketPath),
 		agent.Capabilities,
 		nullableString(agent.WorkDir),
+		agent.Project,
 		agent.Status,
 	); err != nil {
 		if isUniqueNameViolation(err) {
@@ -71,7 +73,7 @@ func (d *DB) InsertAgent(ctx context.Context, agent *Agent) error {
 func (d *DB) UpdateAgent(ctx context.Context, agent *Agent) error {
 	stmt, err := d.PrepareContext(ctx, `
 		UPDATE agents
-		SET name = ?, type = ?, pid = ?, socket_path = ?, capabilities = ?, workdir = ?, status = ?
+		SET name = ?, type = ?, pid = ?, socket_path = ?, capabilities = ?, workdir = ?, project = ?, status = ?
 		WHERE id = ?
 	`)
 	if err != nil {
@@ -86,6 +88,7 @@ func (d *DB) UpdateAgent(ctx context.Context, agent *Agent) error {
 		nullableString(agent.SocketPath),
 		agent.Capabilities,
 		nullableString(agent.WorkDir),
+		agent.Project,
 		agent.Status,
 		agent.ID,
 	)
@@ -135,9 +138,11 @@ func (d *DB) DeleteAgent(ctx context.Context, id string) error {
 func (d *DB) FindAgentByName(ctx context.Context, name string) (*Agent, error) {
 	stmt, err := d.PrepareContext(ctx, `
 		SELECT
-			id, name, type, pid, socket_path, capabilities, workdir, status, registered_at, last_heartbeat
+			id, name, type, pid, socket_path, capabilities, workdir, project, status, registered_at, last_heartbeat
 		FROM agents
 		WHERE name = ?
+		ORDER BY registered_at ASC
+		LIMIT 1
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("db.FindAgentByName: prepare: %w", err)
@@ -155,11 +160,41 @@ func (d *DB) FindAgentByName(ctx context.Context, name string) (*Agent, error) {
 	return agent, nil
 }
 
+// FindAgentByNameAndProject finds a single agent by name within a project.
+func (d *DB) FindAgentByNameAndProject(ctx context.Context, name string, project string) (*Agent, error) {
+	if project == "" {
+		return d.FindAgentByName(ctx, name)
+	}
+
+	stmt, err := d.PrepareContext(ctx, `
+		SELECT
+			id, name, type, pid, socket_path, capabilities, workdir, project, status, registered_at, last_heartbeat
+		FROM agents
+		WHERE name = ? AND project = ?
+		ORDER BY registered_at ASC
+		LIMIT 1
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("db.FindAgentByNameAndProject: prepare: %w", err)
+	}
+	defer stmt.Close()
+
+	agent, err := scanAgent(stmt.QueryRowContext(ctx, name, project))
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrAgentNotFound
+		}
+		return nil, fmt.Errorf("db.FindAgentByNameAndProject: %w", err)
+	}
+
+	return agent, nil
+}
+
 // FindAgentByID finds a single agent by ID.
 func (d *DB) FindAgentByID(ctx context.Context, id string) (*Agent, error) {
 	stmt, err := d.PrepareContext(ctx, `
 		SELECT
-			id, name, type, pid, socket_path, capabilities, workdir, status, registered_at, last_heartbeat
+			id, name, type, pid, socket_path, capabilities, workdir, project, status, registered_at, last_heartbeat
 		FROM agents
 		WHERE id = ?
 	`)
@@ -183,7 +218,7 @@ func (d *DB) FindAgentByID(ctx context.Context, id string) (*Agent, error) {
 func (d *DB) ListAllAgents(ctx context.Context) ([]*Agent, error) {
 	stmt, err := d.PrepareContext(ctx, `
 		SELECT
-			id, name, type, pid, socket_path, capabilities, workdir, status, registered_at, last_heartbeat
+			id, name, type, pid, socket_path, capabilities, workdir, project, status, registered_at, last_heartbeat
 		FROM agents
 		ORDER BY registered_at ASC
 	`)
@@ -214,11 +249,51 @@ func (d *DB) ListAllAgents(ctx context.Context) ([]*Agent, error) {
 	return agents, nil
 }
 
+// ListAgentsByProject lists all agents for a project, or all agents in legacy mode.
+func (d *DB) ListAgentsByProject(ctx context.Context, project string) ([]*Agent, error) {
+	if project == "" {
+		return d.ListAllAgents(ctx)
+	}
+
+	stmt, err := d.PrepareContext(ctx, `
+		SELECT
+			id, name, type, pid, socket_path, capabilities, workdir, project, status, registered_at, last_heartbeat
+		FROM agents
+		WHERE project = ?
+		ORDER BY registered_at ASC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("db.ListAgentsByProject: prepare: %w", err)
+	}
+	defer stmt.Close()
+
+	rows, err := stmt.QueryContext(ctx, project)
+	if err != nil {
+		return nil, fmt.Errorf("db.ListAgentsByProject: query: %w", err)
+	}
+	defer rows.Close()
+
+	agents := make([]*Agent, 0)
+	for rows.Next() {
+		agent, err := scanAgent(rows)
+		if err != nil {
+			return nil, fmt.Errorf("db.ListAgentsByProject: scan: %w", err)
+		}
+		agents = append(agents, agent)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("db.ListAgentsByProject: rows: %w", err)
+	}
+
+	return agents, nil
+}
+
 // ListAliveAgents lists all agents with alive status.
 func (d *DB) ListAliveAgents(ctx context.Context) ([]*Agent, error) {
 	stmt, err := d.PrepareContext(ctx, `
 		SELECT
-			id, name, type, pid, socket_path, capabilities, workdir, status, registered_at, last_heartbeat
+			id, name, type, pid, socket_path, capabilities, workdir, project, status, registered_at, last_heartbeat
 		FROM agents
 		WHERE status = 'alive'
 		ORDER BY last_heartbeat DESC
@@ -245,6 +320,46 @@ func (d *DB) ListAliveAgents(ctx context.Context) ([]*Agent, error) {
 
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("db.ListAliveAgents: rows: %w", err)
+	}
+
+	return agents, nil
+}
+
+// ListAliveAgentsByProject lists alive agents for a project, or all alive agents in legacy mode.
+func (d *DB) ListAliveAgentsByProject(ctx context.Context, project string) ([]*Agent, error) {
+	if project == "" {
+		return d.ListAliveAgents(ctx)
+	}
+
+	stmt, err := d.PrepareContext(ctx, `
+		SELECT
+			id, name, type, pid, socket_path, capabilities, workdir, project, status, registered_at, last_heartbeat
+		FROM agents
+		WHERE status = 'alive' AND project = ?
+		ORDER BY last_heartbeat DESC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("db.ListAliveAgentsByProject: prepare: %w", err)
+	}
+	defer stmt.Close()
+
+	rows, err := stmt.QueryContext(ctx, project)
+	if err != nil {
+		return nil, fmt.Errorf("db.ListAliveAgentsByProject: query: %w", err)
+	}
+	defer rows.Close()
+
+	agents := make([]*Agent, 0)
+	for rows.Next() {
+		agent, err := scanAgent(rows)
+		if err != nil {
+			return nil, fmt.Errorf("db.ListAliveAgentsByProject: scan: %w", err)
+		}
+		agents = append(agents, agent)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("db.ListAliveAgentsByProject: rows: %w", err)
 	}
 
 	return agents, nil
@@ -285,6 +400,7 @@ type rowScanner interface {
 func scanAgent(scanner rowScanner) (*Agent, error) {
 	var socketPath sql.NullString
 	var workDir sql.NullString
+	var project sql.NullString
 	var pid sql.NullInt64
 	var registeredAt sql.NullString
 	var lastHeartbeat sql.NullString
@@ -298,6 +414,7 @@ func scanAgent(scanner rowScanner) (*Agent, error) {
 		&socketPath,
 		&agent.Capabilities,
 		&workDir,
+		&project,
 		&agent.Status,
 		&registeredAt,
 		&lastHeartbeat,
@@ -313,6 +430,9 @@ func scanAgent(scanner rowScanner) (*Agent, error) {
 	}
 	if workDir.Valid {
 		agent.WorkDir = workDir.String
+	}
+	if project.Valid {
+		agent.Project = project.String
 	}
 
 	if registeredAt.Valid {
