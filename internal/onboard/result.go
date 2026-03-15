@@ -8,6 +8,7 @@ import (
 // Result captures the selections made during onboarding.
 type Result struct {
 	HomeDir           string
+	Project           string
 	Template          string
 	WriteAgentsMD     bool
 	SelectedAgents    []string
@@ -22,6 +23,8 @@ type ApplyReport struct {
 	HomeDir            string   `json:"home_dir"`
 	DBPath             string   `json:"db_path"`
 	Status             string   `json:"status"`
+	Project            string   `json:"project,omitempty"`
+	ProjectConfigPath  string   `json:"project_config_path,omitempty"`
 	Template           string   `json:"template,omitempty"`
 	AgentsMDPath       string   `json:"agents_md,omitempty"`
 	InstructionFiles   []string `json:"instruction_files,omitempty"`
