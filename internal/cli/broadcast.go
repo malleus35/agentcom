@@ -22,7 +22,7 @@ func newBroadcastCmd() *cobra.Command {
 			rawMessage := args[0]
 
 			registry := agent.NewRegistry(app.db, app.cfg)
-			sender, err := registry.FindByName(cmd.Context(), from)
+			sender, err := registry.FindByName(cmd.Context(), from, currentProjectFilter())
 			if err != nil {
 				return fmt.Errorf("cli.newBroadcastCmd: resolve sender: %w", err)
 			}
@@ -32,7 +32,7 @@ func newBroadcastCmd() *cobra.Command {
 				return fmt.Errorf("cli.newBroadcastCmd: parse payload: %w", err)
 			}
 
-			router := message.NewRouter(app.db, registry, transport.NewClient())
+			router := message.NewRouter(app.db, registry, transport.NewClient(), currentProjectFilter())
 			envelopes, err := router.Broadcast(cmd.Context(), sender.ID, topic, payload)
 			if err != nil {
 				return fmt.Errorf("cli.newBroadcastCmd: broadcast: %w", err)
