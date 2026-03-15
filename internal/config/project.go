@@ -19,7 +19,31 @@ const (
 var projectNamePattern = regexp.MustCompile(`^[a-z0-9_-]+$`)
 
 type ProjectConfig struct {
-	Project string `json:"project"`
+	Project  string                `json:"project"`
+	Template ProjectTemplateConfig `json:"template,omitempty"`
+}
+
+type ProjectTemplateConfig struct {
+	Active string `json:"active,omitempty"`
+}
+
+func SaveProjectConfig(dir string, cfg ProjectConfig) (string, error) {
+	if err := ValidateProjectName(cfg.Project); err != nil {
+		return "", fmt.Errorf("config.SaveProjectConfig: %w", err)
+	}
+
+	path := filepath.Join(dir, ProjectConfigFileName)
+	content, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("config.SaveProjectConfig: marshal: %w", err)
+	}
+	content = append(content, '\n')
+
+	if err := os.WriteFile(path, content, 0o644); err != nil {
+		return "", fmt.Errorf("config.SaveProjectConfig: write: %w", err)
+	}
+
+	return path, nil
 }
 
 func WriteProjectConfig(dir string, project string) (string, error) {
@@ -34,17 +58,12 @@ func WriteProjectConfig(dir string, project string) (string, error) {
 		return "", fmt.Errorf("config.WriteProjectConfig: stat: %w", err)
 	}
 
-	content, err := json.MarshalIndent(ProjectConfig{Project: project}, "", "  ")
+	writtenPath, err := SaveProjectConfig(dir, ProjectConfig{Project: project})
 	if err != nil {
-		return "", fmt.Errorf("config.WriteProjectConfig: marshal: %w", err)
-	}
-	content = append(content, '\n')
-
-	if err := os.WriteFile(path, content, 0o644); err != nil {
-		return "", fmt.Errorf("config.WriteProjectConfig: write: %w", err)
+		return "", fmt.Errorf("config.WriteProjectConfig: %w", err)
 	}
 
-	return path, nil
+	return writtenPath, nil
 }
 
 func LoadProjectConfig(startDir string) (ProjectConfig, string, error) {
