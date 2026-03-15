@@ -178,7 +178,4 @@
 
 ## 진행 중 작업 체크리스트
 
-- P11 구현/README 반영 완료, develop 머지 대기
-- 다음 공개 릴리스 버전 미확정 (`v0.1.6` 추천)
-- 릴리스 전 install script / Scoop manifest 버전 동기화 필요
-- Homebrew 배포는 tap 갱신 또는 goreleaser 기반 별도 실행 경로 검토 필요
+- 템플릿 스캐폴드 후속 정리 필요: `internal/cli/agents.go`의 shared skill / role skill / built-in template `CommonBody`가 아직 `register` 중심 문구를 포함해 현재 `init -> up -> down` 기본 흐름과 불일치
