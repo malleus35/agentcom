@@ -87,10 +87,15 @@ func (e *initSetupExecutor) Apply(ctx context.Context, result onboard.Result) (o
 		Template: result.Template,
 	}
 
-	if result.Project != "" {
-		path, err := config.WriteProjectConfig(e.projectDir, result.Project)
+	if result.Project != "" || result.Template != "" {
+		path, err := config.SaveProjectConfig(e.projectDir, config.ProjectConfig{
+			Project: result.Project,
+			Template: config.ProjectTemplateConfig{
+				Active: result.Template,
+			},
+		})
 		if err != nil {
-			return onboard.ApplyReport{}, fmt.Errorf("cli.initSetupExecutor.Apply: write project config: %w", err)
+			return onboard.ApplyReport{}, fmt.Errorf("cli.initSetupExecutor.Apply: save project config: %w", err)
 		}
 		report.ProjectConfigPath = path
 		report.GeneratedFiles = append(report.GeneratedFiles, path)
