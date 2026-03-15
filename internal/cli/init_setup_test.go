@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/malleus35/agentcom/internal/config"
 	"github.com/malleus35/agentcom/internal/onboard"
 )
 
@@ -21,7 +22,7 @@ func (p setupTestPrompter) Run(_ context.Context, _ onboard.Result) (onboard.Res
 	return p.result, p.err
 }
 
-func TestInitCommandSetupRunsWizard(t *testing.T) {
+func TestInitCommandRunsWizardByDefault(t *testing.T) {
 	projectDir := t.TempDir()
 	homeDir := filepath.Join(t.TempDir(), "agentcom-home")
 
@@ -47,10 +48,12 @@ func TestInitCommandSetupRunsWizard(t *testing.T) {
 
 	newOnboardPrompter = func(accessible bool, input io.Reader, output io.Writer) onboard.Prompter {
 		return setupTestPrompter{result: onboard.Result{
-			HomeDir:       homeDir,
-			Template:      "company",
-			WriteAgentsMD: true,
-			Confirmed:     true,
+			HomeDir:           homeDir,
+			Template:          "company",
+			WriteAgentsMD:     true,
+			WriteInstructions: true,
+			SelectedAgents:    []string{"codex"},
+			Confirmed:         true,
 		}}
 	}
 	isInteractiveInput = func(_ io.Reader) bool { return true }
@@ -59,7 +62,6 @@ func TestInitCommandSetupRunsWizard(t *testing.T) {
 	cmd := newInitCmd()
 	cmd.SetOut(buf)
 	cmd.SetErr(buf)
-	cmd.SetArgs([]string{"--setup"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("cmd.Execute() error = %v", err)
@@ -82,14 +84,169 @@ func TestInitCommandSetupRunsWizard(t *testing.T) {
 	}
 }
 
-func TestInitCommandSetupRejectsNonInteractiveInput(t *testing.T) {
-	oldInteractive := isInteractiveInput
-	defer func() { isInteractiveInput = oldInteractive }()
-	isInteractiveInput = func(_ io.Reader) bool { return false }
+func TestInitCommandNonInteractiveDefaultsToBatch(t *testing.T) {
+	homeDir := filepath.Join(t.TempDir(), ".agentcom-home")
+	if err := os.MkdirAll(homeDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(homeDir) error = %v", err)
+	}
 
+	oldInteractive := isInteractiveInput
+	oldApp := app
+	defer func() {
+		isInteractiveInput = oldInteractive
+		app = oldApp
+	}()
+	isInteractiveInput = func(_ io.Reader) bool { return false }
+	app = &appContext{cfg: &config.Config{HomeDir: homeDir}}
+
+	buf := &bytes.Buffer{}
 	cmd := newInitCmd()
-	cmd.SetArgs([]string{"--setup"})
-	if err := cmd.Execute(); err == nil {
-		t.Fatal("cmd.Execute() error = nil, want error")
+	cmd.SetOut(buf)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("cmd.Execute() error = %v", err)
+	}
+	if !strings.Contains(buf.String(), "agentcom already initialized at ") {
+		t.Fatalf("output = %q, want batch init result", buf.String())
+	}
+}
+
+func TestShouldRunWizard(t *testing.T) {
+	tests := []struct {
+		name        string
+		interactive bool
+		json        bool
+		args        []string
+		want        bool
+	}{
+		{name: "interactive default", interactive: true, want: true},
+		{name: "batch flag", interactive: true, args: []string{"--batch"}, want: false},
+		{name: "json mode", interactive: true, json: true, want: false},
+		{name: "non interactive", interactive: false, want: false},
+	}
+
+	oldInteractive := isInteractiveInput
+	oldJSON := jsonOutput
+	defer func() {
+		isInteractiveInput = oldInteractive
+		jsonOutput = oldJSON
+	}()
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			isInteractiveInput = func(_ io.Reader) bool { return tt.interactive }
+			jsonOutput = tt.json
+
+			cmd := newInitCmd()
+			cmd.SetArgs(tt.args)
+			if err := cmd.Flags().Parse(tt.args); err != nil {
+				t.Fatalf("Flags().Parse() error = %v", err)
+			}
+
+			if got := shouldRunWizard(cmd); got != tt.want {
+				t.Fatalf("shouldRunWizard() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestInitCommandBatchGeneratesInstructionFiles(t *testing.T) {
+	projectDir := t.TempDir()
+	homeDir := filepath.Join(t.TempDir(), ".agentcom-home")
+	if err := os.MkdirAll(homeDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(homeDir) error = %v", err)
+	}
+
+	oldwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	defer func() {
+		if err := os.Chdir(oldwd); err != nil {
+			t.Fatalf("restore cwd: %v", err)
+		}
+	}()
+	if err := os.Chdir(projectDir); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+
+	oldApp := app
+	app = &appContext{cfg: &config.Config{HomeDir: homeDir}}
+	defer func() { app = oldApp }()
+
+	oldJSON := jsonOutput
+	jsonOutput = true
+	defer func() { jsonOutput = oldJSON }()
+
+	buf := &bytes.Buffer{}
+	cmd := newInitCmd()
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"--batch", "--agents-md", "claude,codex"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("cmd.Execute() error = %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(projectDir, "CLAUDE.md")); err != nil {
+		t.Fatalf("Stat(CLAUDE.md) error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(projectDir, "AGENTS.md")); err != nil {
+		t.Fatalf("Stat(AGENTS.md) error = %v", err)
+	}
+	if !strings.Contains(buf.String(), "instruction_files") {
+		t.Fatalf("json output missing instruction_files: %s", buf.String())
+	}
+}
+
+func TestInitCommandWizardGeneratesInstructionAndMemoryFiles(t *testing.T) {
+	projectDir := t.TempDir()
+	homeDir := filepath.Join(t.TempDir(), "agentcom-home")
+
+	oldwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	defer func() {
+		if err := os.Chdir(oldwd); err != nil {
+			t.Fatalf("restore cwd: %v", err)
+		}
+	}()
+	if err := os.Chdir(projectDir); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+
+	oldPrompter := newOnboardPrompter
+	oldInteractive := isInteractiveInput
+	defer func() {
+		newOnboardPrompter = oldPrompter
+		isInteractiveInput = oldInteractive
+	}()
+
+	newOnboardPrompter = func(accessible bool, input io.Reader, output io.Writer) onboard.Prompter {
+		return setupTestPrompter{result: onboard.Result{
+			HomeDir:           homeDir,
+			WriteInstructions: true,
+			WriteMemory:       true,
+			SelectedAgents:    []string{"claude", "codex"},
+			Confirmed:         true,
+		}}
+	}
+	isInteractiveInput = func(_ io.Reader) bool { return true }
+
+	buf := &bytes.Buffer{}
+	cmd := newInitCmd()
+	cmd.SetOut(buf)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("cmd.Execute() error = %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(projectDir, "CLAUDE.md")); err != nil {
+		t.Fatalf("Stat(CLAUDE.md) error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(projectDir, "AGENTS.md")); err != nil {
+		t.Fatalf("Stat(AGENTS.md) error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(projectDir, ".agents", "MEMORY.md")); err != nil {
+		t.Fatalf("Stat(MEMORY.md) error = %v", err)
 	}
 }
