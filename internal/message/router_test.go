@@ -15,8 +15,11 @@ type stubFinder struct {
 	alive  []*db.Agent
 }
 
-func (s *stubFinder) FindByName(ctx context.Context, name string) (*db.Agent, error) {
+func (s *stubFinder) FindByName(ctx context.Context, name string, project string) (*db.Agent, error) {
 	if agent, ok := s.byName[name]; ok {
+		if project != "" && agent.Project != project {
+			return nil, db.ErrAgentNotFound
+		}
 		return agent, nil
 	}
 	return nil, db.ErrAgentNotFound
@@ -29,8 +32,17 @@ func (s *stubFinder) FindByID(ctx context.Context, id string) (*db.Agent, error)
 	return nil, db.ErrAgentNotFound
 }
 
-func (s *stubFinder) ListAlive(ctx context.Context) ([]*db.Agent, error) {
-	return s.alive, nil
+func (s *stubFinder) ListAlive(ctx context.Context, project string) ([]*db.Agent, error) {
+	if project == "" {
+		return s.alive, nil
+	}
+	filtered := make([]*db.Agent, 0, len(s.alive))
+	for _, agent := range s.alive {
+		if agent.Project == project {
+			filtered = append(filtered, agent)
+		}
+	}
+	return filtered, nil
 }
 
 type stubTransport struct {
@@ -66,13 +78,13 @@ func setupMessageTestDB(t *testing.T) *db.DB {
 
 func TestRouterSendFallsBackToSQLiteWhenSocketMissing(t *testing.T) {
 	database := setupMessageTestDB(t)
-	target := &db.Agent{ID: "agt_target", Name: "beta", Status: "alive"}
+	target := &db.Agent{ID: "agt_target", Name: "beta", Project: "project-a", Status: "alive"}
 	finder := &stubFinder{
 		byName: map[string]*db.Agent{"beta": target},
 		byID:   map[string]*db.Agent{target.ID: target},
 	}
 	transport := &stubTransport{}
-	router := NewRouter(database, finder, transport)
+	router := NewRouter(database, finder, transport, "project-a")
 
 	env, err := router.Send(context.Background(), "agt_sender", "beta", "notification", "sync", json.RawMessage(`{"ok":true}`))
 	if err != nil {
@@ -100,13 +112,13 @@ func TestRouterSendFallsBackToSQLiteWhenSocketMissing(t *testing.T) {
 
 func TestRouterSendMarksDeliveredOnTransportSuccess(t *testing.T) {
 	database := setupMessageTestDB(t)
-	target := &db.Agent{ID: "agt_target", Name: "beta", SocketPath: "/tmp/beta.sock", Status: "alive"}
+	target := &db.Agent{ID: "agt_target", Name: "beta", Project: "project-a", SocketPath: "/tmp/beta.sock", Status: "alive"}
 	finder := &stubFinder{
 		byName: map[string]*db.Agent{"beta": target},
 		byID:   map[string]*db.Agent{target.ID: target},
 	}
 	transport := &stubTransport{}
-	router := NewRouter(database, finder, transport)
+	router := NewRouter(database, finder, transport, "project-a")
 
 	_, err := router.Send(context.Background(), "agt_sender", "beta", "request", "review", json.RawMessage(`{"file":"README.md"}`))
 	if err != nil {
@@ -131,13 +143,13 @@ func TestRouterSendMarksDeliveredOnTransportSuccess(t *testing.T) {
 
 func TestRouterBroadcastSkipsSenderAndContinuesOnFailure(t *testing.T) {
 	database := setupMessageTestDB(t)
-	alpha := &db.Agent{ID: "agt_alpha", Name: "alpha", Status: "alive"}
-	beta := &db.Agent{ID: "agt_beta", Name: "beta", SocketPath: "/tmp/beta.sock", Status: "alive"}
-	gamma := &db.Agent{ID: "agt_gamma", Name: "gamma", SocketPath: "/tmp/gamma.sock", Status: "alive"}
+	alpha := &db.Agent{ID: "agt_alpha", Name: "alpha", Project: "project-a", Status: "alive"}
+	beta := &db.Agent{ID: "agt_beta", Name: "beta", Project: "project-a", SocketPath: "/tmp/beta.sock", Status: "alive"}
+	gamma := &db.Agent{ID: "agt_gamma", Name: "gamma", Project: "project-a", SocketPath: "/tmp/gamma.sock", Status: "alive"}
 
 	finder := &stubFinder{alive: []*db.Agent{alpha, beta, gamma}, byID: map[string]*db.Agent{alpha.ID: alpha, beta.ID: beta, gamma.ID: gamma}, byName: map[string]*db.Agent{alpha.Name: alpha, beta.Name: beta, gamma.Name: gamma}}
 	transport := &stubTransport{err: errors.New("send failed")}
-	router := NewRouter(database, finder, transport)
+	router := NewRouter(database, finder, transport, "project-a")
 
 	envelopes, err := router.Broadcast(context.Background(), alpha.ID, "sync", json.RawMessage(`{"phase":9}`))
 	if err != nil {

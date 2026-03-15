@@ -21,7 +21,7 @@ func newInboxCmd() *cobra.Command {
 		Short: "View messages for an agent inbox",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			registry := agent.NewRegistry(app.db, app.cfg)
-			agt, err := registry.FindByName(cmd.Context(), agentName)
+			agt, err := registry.FindByName(cmd.Context(), agentName, currentProjectFilter())
 			if err != nil {
 				agt, err = registry.FindByID(cmd.Context(), agentName)
 				if err != nil {

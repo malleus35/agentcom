@@ -26,7 +26,7 @@ func newSendCmd() *cobra.Command {
 			rawMessage := args[1]
 
 			registry := agent.NewRegistry(app.db, app.cfg)
-			sender, err := registry.FindByName(cmd.Context(), from)
+			sender, err := registry.FindByName(cmd.Context(), from, currentProjectFilter())
 			if err != nil {
 				return fmt.Errorf("cli.newSendCmd: resolve sender: %w", err)
 			}
@@ -36,7 +36,7 @@ func newSendCmd() *cobra.Command {
 				return fmt.Errorf("cli.newSendCmd: parse payload: %w", err)
 			}
 
-			router := message.NewRouter(app.db, registry, transport.NewClient())
+			router := message.NewRouter(app.db, registry, transport.NewClient(), currentProjectFilter())
 			env, err := router.Send(cmd.Context(), sender.ID, target, msgType, topic, payload)
 			if err != nil {
 				return fmt.Errorf("cli.newSendCmd: send: %w", err)

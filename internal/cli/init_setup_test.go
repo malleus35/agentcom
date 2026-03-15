@@ -197,6 +197,69 @@ func TestInitCommandBatchGeneratesInstructionFiles(t *testing.T) {
 	}
 }
 
+func TestInitCommandBatchWritesProjectConfig(t *testing.T) {
+	projectDir := t.TempDir()
+	homeDir := filepath.Join(t.TempDir(), ".agentcom-home")
+	if err := os.MkdirAll(homeDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(homeDir) error = %v", err)
+	}
+
+	oldwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	defer func() {
+		if err := os.Chdir(oldwd); err != nil {
+			t.Fatalf("restore cwd: %v", err)
+		}
+	}()
+	if err := os.Chdir(projectDir); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+
+	oldApp := app
+	app = &appContext{cfg: &config.Config{HomeDir: homeDir}, project: "demo-app"}
+	defer func() { app = oldApp }()
+
+	oldProjectFlag := projectFlag
+	projectFlag = "demo-app"
+	defer func() { projectFlag = oldProjectFlag }()
+
+	oldJSON := jsonOutput
+	jsonOutput = true
+	defer func() { jsonOutput = oldJSON }()
+
+	buf := &bytes.Buffer{}
+	cmd := newInitCmd()
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"--batch"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("cmd.Execute() error = %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(projectDir, ".agentcom.json")); err != nil {
+		t.Fatalf("Stat(.agentcom.json) error = %v", err)
+	}
+	if !strings.Contains(buf.String(), "\"project\": \"demo-app\"") {
+		t.Fatalf("json output missing project: %s", buf.String())
+	}
+	if !strings.Contains(buf.String(), "project_config_path") {
+		t.Fatalf("json output missing project_config_path: %s", buf.String())
+	}
+
+	buf.Reset()
+	cmd = newInitCmd()
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"--batch"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("second cmd.Execute() error = %v", err)
+	}
+	if !strings.Contains(buf.String(), "\"project\": \"demo-app\"") {
+		t.Fatalf("second json output missing project: %s", buf.String())
+	}
+}
+
 func TestInitCommandWizardGeneratesInstructionAndMemoryFiles(t *testing.T) {
 	projectDir := t.TempDir()
 	homeDir := filepath.Join(t.TempDir(), "agentcom-home")

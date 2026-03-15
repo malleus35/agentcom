@@ -7,8 +7,8 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	gonanoid "github.com/matoous/go-nanoid/v2"
 	"github.com/malleus35/agentcom/internal/agent"
+	gonanoid "github.com/matoous/go-nanoid/v2"
 	"github.com/spf13/cobra"
 )
 
@@ -45,7 +45,7 @@ func newTaskCreateCmd() *cobra.Command {
 
 			assignedID := ""
 			if assign != "" {
-				resolved, err := resolveAgentID(cmd, registry, assign)
+				resolved, err := resolveAgentID(cmd, registry, assign, currentProjectFilter())
 				if err != nil {
 					return fmt.Errorf("cli.newTaskCreateCmd: resolve assignee: %w", err)
 				}
@@ -54,7 +54,7 @@ func newTaskCreateCmd() *cobra.Command {
 
 			creatorID := ""
 			if creator != "" {
-				resolved, err := resolveAgentID(cmd, registry, creator)
+				resolved, err := resolveAgentID(cmd, registry, creator, currentProjectFilter())
 				if err != nil {
 					return fmt.Errorf("cli.newTaskCreateCmd: resolve creator: %w", err)
 				}
@@ -133,7 +133,7 @@ func newTaskListCmd() *cobra.Command {
 			assigneeID := assignee
 			if assignee != "" {
 				registry := agent.NewRegistry(app.db, app.cfg)
-				if resolved, err := resolveAgentID(cmd, registry, assignee); err == nil {
+				if resolved, err := resolveAgentID(cmd, registry, assignee, currentProjectFilter()); err == nil {
 					assigneeID = resolved
 				}
 			}
@@ -268,7 +268,7 @@ func newTaskDelegateCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			taskID := args[0]
 			registry := agent.NewRegistry(app.db, app.cfg)
-			assigneeID, err := resolveAgentID(cmd, registry, to)
+			assigneeID, err := resolveAgentID(cmd, registry, to, currentProjectFilter())
 			if err != nil {
 				return fmt.Errorf("cli.newTaskDelegateCmd: resolve target: %w", err)
 			}
@@ -314,8 +314,8 @@ func newTaskDelegateCmd() *cobra.Command {
 	return cmd
 }
 
-func resolveAgentID(cmd *cobra.Command, registry *agent.Registry, nameOrID string) (string, error) {
-	agt, err := registry.FindByName(cmd.Context(), nameOrID)
+func resolveAgentID(cmd *cobra.Command, registry *agent.Registry, nameOrID string, project string) (string, error) {
+	agt, err := registry.FindByName(cmd.Context(), nameOrID, project)
 	if err == nil {
 		return agt.ID, nil
 	}

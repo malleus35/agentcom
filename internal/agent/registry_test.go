@@ -46,7 +46,7 @@ func TestRegistryRegisterAndDeregister(t *testing.T) {
 	registry, _, cfg := setupRegistryTest(t)
 	ctx := context.Background()
 
-	agent, err := registry.Register(ctx, "alpha", "worker", []string{"send", "recv"}, "/workspace")
+	agent, err := registry.Register(ctx, "alpha", "worker", []string{"send", "recv"}, "/workspace", "project-a")
 	if err != nil {
 		t.Fatalf("Register() error = %v", err)
 	}
@@ -58,14 +58,17 @@ func TestRegistryRegisterAndDeregister(t *testing.T) {
 		t.Fatalf("SocketPath = %q, want %q", agent.SocketPath, wantSocketPath)
 	}
 
-	if _, err := registry.Register(ctx, "alpha", "worker", nil, ""); !errors.Is(err, db.ErrDuplicateName) {
+	if _, err := registry.Register(ctx, "alpha", "worker", nil, "", "project-a"); !errors.Is(err, db.ErrDuplicateName) {
 		t.Fatalf("Register(duplicate) error = %v, want %v", err, db.ErrDuplicateName)
+	}
+	if _, err := registry.Register(ctx, "alpha", "worker", nil, "", "project-b"); err != nil {
+		t.Fatalf("Register(cross project duplicate) error = %v", err)
 	}
 
 	if err := os.WriteFile(agent.SocketPath, []byte("socket"), 0o600); err != nil {
 		t.Fatalf("WriteFile(socket) error = %v", err)
 	}
-	if err := registry.Deregister(ctx, agent.Name); err != nil {
+	if err := registry.Deregister(ctx, agent.Name, agent.Project); err != nil {
 		t.Fatalf("Deregister() error = %v", err)
 	}
 	if _, err := os.Stat(agent.SocketPath); !errors.Is(err, os.ErrNotExist) {
@@ -80,11 +83,11 @@ func TestRegistryMarkInactive(t *testing.T) {
 	registry, database, _ := setupRegistryTest(t)
 	ctx := context.Background()
 
-	stale, err := registry.Register(ctx, "stale", "worker", nil, "")
+	stale, err := registry.Register(ctx, "stale", "worker", nil, "", "project-a")
 	if err != nil {
 		t.Fatalf("Register(stale) error = %v", err)
 	}
-	alive, err := registry.Register(ctx, "alive", "worker", nil, "")
+	alive, err := registry.Register(ctx, "alive", "worker", nil, "", "project-b")
 	if err != nil {
 		t.Fatalf("Register(alive) error = %v", err)
 	}
@@ -121,7 +124,7 @@ func TestHeartbeatStart(t *testing.T) {
 	registry, database, _ := setupRegistryTest(t)
 	ctx := context.Background()
 
-	agent, err := registry.Register(ctx, "heartbeat", "worker", nil, "")
+	agent, err := registry.Register(ctx, "heartbeat", "worker", nil, "", "project-a")
 	if err != nil {
 		t.Fatalf("Register() error = %v", err)
 	}
@@ -155,4 +158,45 @@ func TestHeartbeatStart(t *testing.T) {
 	}
 
 	t.Fatal("heartbeat did not update last_heartbeat")
+}
+
+func TestRegistryProjectFiltering(t *testing.T) {
+	registry, _, _ := setupRegistryTest(t)
+	ctx := context.Background()
+
+	alpha, err := registry.Register(ctx, "alpha", "worker", nil, "", "project-a")
+	if err != nil {
+		t.Fatalf("Register(alpha) error = %v", err)
+	}
+	beta, err := registry.Register(ctx, "beta", "worker", nil, "", "project-b")
+	if err != nil {
+		t.Fatalf("Register(beta) error = %v", err)
+	}
+
+	gotAlpha, err := registry.FindByName(ctx, "alpha", "project-a")
+	if err != nil {
+		t.Fatalf("FindByName(project-a) error = %v", err)
+	}
+	if gotAlpha.ID != alpha.ID {
+		t.Fatalf("FindByName(project-a) id = %q, want %q", gotAlpha.ID, alpha.ID)
+	}
+	if _, err := registry.FindByName(ctx, "alpha", "project-b"); !errors.Is(err, db.ErrAgentNotFound) {
+		t.Fatalf("FindByName(wrong project) error = %v, want %v", err, db.ErrAgentNotFound)
+	}
+
+	projectA, err := registry.ListAll(ctx, "project-a")
+	if err != nil {
+		t.Fatalf("ListAll(project-a) error = %v", err)
+	}
+	if len(projectA) != 1 || projectA[0].ID != alpha.ID {
+		t.Fatalf("ListAll(project-a) = %+v, want only %q", projectA, alpha.ID)
+	}
+
+	projectBAlive, err := registry.ListAlive(ctx, "project-b")
+	if err != nil {
+		t.Fatalf("ListAlive(project-b) error = %v", err)
+	}
+	if len(projectBAlive) != 1 || projectBAlive[0].ID != beta.ID {
+		t.Fatalf("ListAlive(project-b) = %+v, want only %q", projectBAlive, beta.ID)
+	}
 }

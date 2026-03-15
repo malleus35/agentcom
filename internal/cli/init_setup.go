@@ -83,7 +83,17 @@ func (e *initSetupExecutor) Apply(ctx context.Context, result onboard.Result) (o
 		HomeDir:  cfg.HomeDir,
 		DBPath:   cfg.DBPath,
 		Status:   status,
+		Project:  result.Project,
 		Template: result.Template,
+	}
+
+	if result.Project != "" {
+		path, err := config.WriteProjectConfig(e.projectDir, result.Project)
+		if err != nil {
+			return onboard.ApplyReport{}, fmt.Errorf("cli.initSetupExecutor.Apply: write project config: %w", err)
+		}
+		report.ProjectConfigPath = path
+		report.GeneratedFiles = append(report.GeneratedFiles, path)
 	}
 
 	if result.CustomTemplate != nil {

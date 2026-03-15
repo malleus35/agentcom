@@ -19,7 +19,7 @@ func newHealthCmd() *cobra.Command {
 		Short: "Check health of all registered agents",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			registry := agent.NewRegistry(app.db, app.cfg)
-			agents, err := registry.ListAll(cmd.Context())
+			agents, err := registry.ListAll(cmd.Context(), currentProjectFilter())
 			if err != nil {
 				return fmt.Errorf("cli.newHealthCmd: list agents: %w", err)
 			}
@@ -27,6 +27,7 @@ func newHealthCmd() *cobra.Command {
 			type healthEntry struct {
 				Name         string `json:"name"`
 				Type         string `json:"type"`
+				Project      string `json:"project"`
 				PID          int    `json:"pid"`
 				HeartbeatAge string `json:"heartbeat_age"`
 				Socket       bool   `json:"socket"`
@@ -62,6 +63,7 @@ func newHealthCmd() *cobra.Command {
 				entries = append(entries, healthEntry{
 					Name:         agt.Name,
 					Type:         agt.Type,
+					Project:      agt.Project,
 					PID:          agt.PID,
 					HeartbeatAge: age.Round(time.Second).String(),
 					Socket:       socketOK,
@@ -76,11 +78,11 @@ func newHealthCmd() *cobra.Command {
 			}
 
 			tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-			if _, err := fmt.Fprintln(tw, "NAME\tTYPE\tPID\tHEARTBEAT_AGE\tSOCKET\tVERDICT"); err != nil {
+			if _, err := fmt.Fprintln(tw, "NAME\tTYPE\tPROJECT\tPID\tHEARTBEAT_AGE\tSOCKET\tVERDICT"); err != nil {
 				return fmt.Errorf("cli.newHealthCmd: write header: %w", err)
 			}
 			for _, e := range entries {
-				if _, err := fmt.Fprintf(tw, "%s\t%s\t%d\t%s\t%t\t%s\n", e.Name, e.Type, e.PID, e.HeartbeatAge, e.Socket, e.Verdict); err != nil {
+				if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%s\t%t\t%s\n", e.Name, e.Type, e.Project, e.PID, e.HeartbeatAge, e.Socket, e.Verdict); err != nil {
 					return fmt.Errorf("cli.newHealthCmd: write row: %w", err)
 				}
 			}
