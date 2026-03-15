@@ -21,14 +21,18 @@ var (
 
 // appContext holds shared application state initialized in PersistentPreRunE.
 type appContext struct {
-	cfg *config.Config
-	db  *db.DB
+	cfg         *config.Config
+	db          *db.DB
+	project     string
+	allProjects bool
 }
 
 var (
 	// Global flags
-	jsonOutput bool
-	verbose    bool
+	jsonOutput  bool
+	verbose     bool
+	projectFlag string
+	allProjects bool
 
 	// Shared state
 	app *appContext
@@ -57,6 +61,8 @@ func NewRootCmd() *cobra.Command {
 	pf := root.PersistentFlags()
 	pf.BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	pf.BoolVarP(&verbose, "verbose", "v", false, "Enable verbose logging")
+	pf.StringVar(&projectFlag, "project", "", "Project name override")
+	pf.BoolVar(&allProjects, "all-projects", false, "Show resources from all projects")
 
 	// Register subcommands
 	root.AddCommand(
@@ -100,6 +106,15 @@ func initApp(ctx context.Context) error {
 		return fmt.Errorf("cli.initApp: %w", err)
 	}
 
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("cli.initApp: getwd: %w", err)
+	}
+	project, err := config.ResolveProject(projectFlag, cwd)
+	if err != nil {
+		return fmt.Errorf("cli.initApp: resolve project: %w", err)
+	}
+
 	if err := cfg.EnsureDirs(); err != nil {
 		return fmt.Errorf("cli.initApp: %w", err)
 	}
@@ -115,12 +130,21 @@ func initApp(ctx context.Context) error {
 	}
 
 	app = &appContext{
-		cfg: cfg,
-		db:  database,
+		cfg:         cfg,
+		db:          database,
+		project:     project,
+		allProjects: allProjects,
 	}
 
 	slog.Debug("agentcom initialized", "db", cfg.DBPath, "sockets", cfg.SocketsPath)
 	return nil
+}
+
+func currentProjectFilter() string {
+	if app == nil || app.allProjects {
+		return ""
+	}
+	return app.project
 }
 
 // shutdownApp cleans up shared application state.
