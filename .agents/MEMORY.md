@@ -4,12 +4,12 @@
 
 ## 현재 상태
 
-- **Phase**: 9 진행 중
-- **마지막 작업**: `agentcom init` wizard 기본화, agent별 instruction/memory 생성, custom template 저장/삭제 흐름 구현
-- **현재 브랜치**: `feature/P8-01-onboard-setup-wizard`
+- **Phase**: 10 진행 중
+- **마지막 작업**: `agents.project` 컬럼 추가와 project-scoped CLI/MCP 흐름 구현
+- **현재 브랜치**: `feature/P10-add-project-column-plan-prd`
 - **현재 버전**: v0.1.4 (Homebrew/Scoop/GitHub Release 배포 완료)
 - **추가 진행 작업**: P9 init overhaul 구현 및 검증 진행 중
-- **다음 작업**: 전체 수동 QA와 커밋, 이후 P10 project column 착수
+- **다음 작업**: P10 변경사항 커밋 및 `develop` 머지
 
 ## 완료된 태스크
 
@@ -22,6 +22,7 @@
 - P6-01~P6-12 완료
 - P7-01~P7-04 완료
 - P8-01-01~09 완료 (onboard/setup wizard MVP)
+- P10 project column 핵심 구현 완료
 
 ## 이번 세션에서 마무리한 작업
 
@@ -66,6 +67,14 @@
 - `packaging/scoop/agentcom.json`: `v0.1.4` Windows asset URL/hash로 갱신
 - Homebrew tap(`malleus35/homebrew-tap`): `Formula/agentcom.rb`를 `0.1.4` asset/hash로 갱신하고 macOS arm64 분기 복원
 - 로컬 Homebrew 설치에서 `agentcom` formula가 `pinned at 0.1.3` 상태였고, `brew unpin agentcom && brew upgrade agentcom`으로 `0.1.4` 업그레이드 확인
+- `internal/db/migrations.go`, `internal/db/migrations_test.go`: `PRAGMA user_version` 기반 schema versioning과 `agents.project` 재생성 마이그레이션 추가
+- `internal/db/agent.go`, `internal/db/agent_test.go`: `Agent.Project` 필드, project-aware CRUD/query/list, 동일 이름의 cross-project 등록 테스트 추가
+- `internal/config/project.go`, `internal/config/project_test.go`: `.agentcom.json` 읽기/쓰기/상위 탐색/프로젝트명 검증/우선순위 해석 추가
+- `internal/agent/registry.go`, `internal/agent/registry_test.go`: register/find/list/deregister에 project 컨텍스트 반영
+- `internal/cli/root.go`, `internal/cli/init.go`, `internal/cli/init_setup.go`, `internal/cli/*_test.go`: `--project`/`--all-projects`, init project config 생성, project-scoped list/send/broadcast/inbox/status/health 반영
+- `internal/message/router.go`, `internal/message/router_test.go`: router에 project 컨텍스트 추가
+- `internal/mcp/server.go`, `internal/mcp/handler.go`, `internal/mcp/tools.go`, `internal/mcp/server_test.go`: MCP 기본 project와 tool-level `project` 파라미터 반영
+- `README.md`: project scope, `.agentcom.json`, 새 global flags 문서화
 
 ## 설계 결정 로그
 
@@ -96,6 +105,8 @@
 | 2026-03-15 | P9 `--template custom`: 사용자 정의 템플릿 생성 wizard 추가 | built-in 템플릿만으로는 다양한 팀 구조를 커버할 수 없음 |
 | 2026-03-15 | AGENTS.md는 크로스 툴 표준 (AAIF, 15+ agent, 60K+ 저장소) | instruction 파일 생성 시 AGENTS.md를 Priority 1으로, 나머지는 agent별 고유 파일로 |
 | 2026-03-15 | 작업 우선순위는 P9 init-overhaul 먼저, P10 project column은 후속으로 진행 | project column 계획이 init wizard 구조를 전제로 일부 단계를 얹는 형태라 P9 이후가 재작업이 적음 |
+| 2026-03-15 | `agents` schema는 `PRAGMA user_version` 기반 순차 마이그레이션으로 관리하고 `UNIQUE(name, project)` 전환은 테이블 재생성으로 처리 | SQLite에서 기존 UNIQUE 제약을 직접 변경할 수 없고, 재실행 안전성과 기존 DB 호환을 함께 확보해야 했기 때문 |
+| 2026-03-15 | CLI/MCP 기본 project scope는 `.agentcom.json` 또는 `--project`에서 해석하고, `--all-projects`일 때만 필터를 우회 | 기존 글로벌 동작과 프로젝트 격리를 동시에 지원하면서 명시적 override를 유지하기 위해 |
 
 ## 발견된 이슈
 
@@ -124,10 +135,9 @@
 - 전체 테스트 통과: `go test ./...`
 - 전체 빌드 통과: `go build ./...`
 - P9 주요 구현 파일: `internal/cli/instruction.go`, `internal/cli/init_prompter.go`, `internal/cli/template_store.go`
-- 수동 QA 예정: `agentcom init --batch --agents-md claude,codex`, `agentcom agents template --list`, `agentcom agents template --delete <name>`, interactive `agentcom init`
+- P10 주요 구현 파일: `internal/db/migrations.go`, `internal/config/project.go`, `internal/cli/root.go`, `internal/mcp/handler.go`
+- 수동 QA 완료: `agentcom init --batch --project`, project별 `list`, `--all-projects list`, project-scoped `send`/`inbox`/`status`
 
 ## 진행 중 작업 체크리스트
 
-- P9 init overhaul 구현 완료, 전체 검증 및 커밋 대기
-- **P10 계획 정리 완료** — `.agents/plans/P10-add-project-column-plan-prd.md` (renumber 완료)
-- 다음 액션은 수동 QA와 커밋, 이후 P10 구현 시작
+- P10 project scope 구현 완료, 커밋/merge 대기

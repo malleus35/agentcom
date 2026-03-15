@@ -201,12 +201,15 @@ Every command supports these global flags:
 
 - `--json` - machine-readable JSON output where supported
 - `-v`, `--verbose` - enable debug logging via `log/slog`
+- `--project <name>` - override the current project scope
+- `--all-projects` - bypass project scoping and show all projects
 
 Examples:
 
 ```bash
 agentcom --json list
 agentcom --verbose health
+agentcom --project myapp list
 ```
 
 ## Quickstart
@@ -216,7 +219,10 @@ Initialize local state:
 ```bash
 agentcom init
 agentcom init --batch
+agentcom init --batch --project myapp
 ```
+
+Project-scoped commands read `.agentcom.json` from the current directory or any parent directory. `agentcom init --project myapp` writes that file so later commands automatically scope agent lookup and listing to `myapp`.
 
 Generate agent-specific instruction files in the current directory:
 
@@ -296,6 +302,7 @@ Usage:
 ```bash
 agentcom init
 agentcom init --batch
+agentcom init --batch --project myapp
 agentcom init --agents-md
 agentcom init --batch --agents-md claude,codex
 agentcom init --template company
@@ -309,6 +316,8 @@ Notes:
 - Running it repeatedly is safe.
 - On an interactive terminal, `agentcom init` now runs the onboarding wizard by default.
 - `--batch` forces the legacy non-interactive flow and is also implied by `--json`.
+- `--project <name>` writes `.agentcom.json` in the current directory and scopes later commands to that project.
+- `--force` lets `init` replace an existing `.agentcom.json`.
 - `--accessible` switches the setup wizard to accessible text prompts.
 - `--agents-md` now accepts `all` or a comma-separated agent list such as `claude,codex,cursor`; `agentcom init --batch --agents-md` without a value keeps the legacy `AGENTS.md` behavior.
 - `--template` writes `.agentcom/templates/<template>/COMMON.md`, `.agentcom/templates/<template>/template.json`, a shared `agentcom/SKILL.md` per supported agent, and six namespaced role skills: `agentcom/<template>-frontend`, `agentcom/<template>-backend`, `agentcom/<template>-plan`, `agentcom/<template>-review`, `agentcom/<template>-architect`, and `agentcom/<template>-design`.
@@ -335,6 +344,12 @@ Flags:
 - `--type` - required free-form type string
 - `--cap` - optional comma-separated capability list
 - `--workdir` - optional working directory; defaults to current working directory
+
+Project behavior:
+
+- Agent names are unique per project, not globally.
+- The same agent name can be reused in different projects.
+- Use `--all-projects` to inspect all projects from one shell.
 
 Notes:
 
@@ -372,6 +387,7 @@ Usage:
 ```bash
 agentcom list
 agentcom list --alive
+agentcom --all-projects list
 agentcom --json list
 ```
 
