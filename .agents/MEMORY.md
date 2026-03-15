@@ -4,11 +4,11 @@
 
 ## 현재 상태
 
-- **Phase**: 7 완료
-- **마지막 작업**: `feature/skill-agent-catalog`를 `develop`에 머지했고, `feature/P8-01-onboard-setup-wizard`를 최신 `develop` 기준으로 리베이스 완료
+- **Phase**: 9 진행 중
+- **마지막 작업**: `agentcom init` wizard 기본화, agent별 instruction/memory 생성, custom template 저장/삭제 흐름 구현
 - **현재 브랜치**: `feature/P8-01-onboard-setup-wizard`
-- **추가 진행 작업**: `agentcom init --setup` 대화형 wizard MVP 구현/검증/커밋 완료
-- **다음 작업**: P8 브랜치를 `develop`에 머지할지 결정하고, 필요 시 localized README에 onboarding 문서 동기화 검토
+- **추가 진행 작업**: P9 init overhaul 구현 및 검증 진행 중
+- **다음 작업**: 전체 수동 QA와 커밋
 
 ## 완료된 태스크
 
@@ -51,6 +51,12 @@
 - `v0.1.3` release/tag 생성 및 GitHub release asset 업로드 완료
 - `packaging/scoop/agentcom.json`: `v0.1.3` Windows asset URL/hash로 갱신
 - Homebrew tap(`malleus35/homebrew-tap`): `Formula/agentcom.rb`를 `0.1.3` asset/hash로 갱신
+- `internal/cli/instruction.go`: agent별 instruction/memory 파일 레지스트리, 렌더링, 쓰기 로직 추가
+- `internal/cli/init.go`, `internal/cli/init_setup.go`, `internal/cli/init_prompter.go`: `--setup` 제거, `--batch` 추가, interactive wizard 기본화, agent 선택/ instruction/memory / custom template 흐름 통합
+- `internal/cli/template_store.go`: custom template 저장/로드/병합 로직 추가
+- `internal/cli/agents.go`: built-in + custom template 통합 조회와 custom template 삭제 지원 추가
+- `internal/cli/*_test.go`, `internal/onboard/result_test.go`: instruction, batch mode, custom template, wizard 통합 시나리오 TDD 테스트 추가
+- `README*.md`: 새 `init` UX와 `--agents-md`/`--template custom`/`agents template --delete` 문서 반영
 
 ## 설계 결정 로그
 
@@ -72,6 +78,9 @@
 | 2026-03-15 | onboard/setup UI는 full-screen TUI 대신 `huh` wizard로 구현 | 요구 범위가 초기 설정 단계에 한정되고, 기존 CLI 패턴을 최소 변경으로 유지하기 위해 |
 | 2026-03-15 | `agentcom init --setup`은 기존 root DB 초기화를 우회한 뒤 선택한 home dir 기준으로 별도 apply | 사용자가 wizard에서 홈 경로를 바꾸기 전에 기본 config/db가 먼저 생성되는 부작용을 막기 위해 |
 | 2026-03-15 | skill agent catalog 확장 후에도 템플릿 scaffold는 core agent 집합만 사용 | `skill create --agent all`의 catalog 확장과 템플릿 scaffold 범위를 분리해 기존 템플릿 생성 기대값을 보존하기 위해 |
+| 2026-03-15 | `agentcom init`은 interactive TTY에서 wizard를 기본 실행하고 `--batch`/`--json`에서만 비대화형으로 동작 | `--setup`을 제거하고 온보딩을 기본 UX로 만들기 위해 |
+| 2026-03-15 | `--agents-md`는 bool 대신 string으로 바꾸고 agent별 instruction 파일 생성을 기본으로 하되 `--batch --agents-md` 무값 호출은 legacy `AGENTS.md`를 유지 | 확장된 instruction 파일 생성과 기존 배치 스크립트 호환성을 동시에 만족시키기 위해 |
+| 2026-03-15 | custom template는 `.agentcom/templates/<name>/COMMON.md` + `template.json` 저장소 모델을 사용하고 built-in과 함께 해석한다 | init wizard, template inspect, scaffold가 같은 템플릿 원본을 공유하도록 하기 위해 |
 
 ## 발견된 이슈
 
@@ -95,9 +104,10 @@
 - `release/v0.1.3`, `main`, `develop`, `v0.1.3` 태그는 원격 반영 완료
 - 전체 테스트 통과: `go test ./...`
 - 전체 빌드 통과: `go build ./...`
+- P9 주요 구현 파일: `internal/cli/instruction.go`, `internal/cli/init_prompter.go`, `internal/cli/template_store.go`
+- 수동 QA 예정: `agentcom init --batch --agents-md claude,codex`, `agentcom agents template --list`, `agentcom agents template --delete <name>`, interactive `agentcom init`
 
 ## 진행 중 작업 체크리스트
 
-- P8-01-01~09: onboard/setup wizard MVP 구현, 검증, 커밋 완료
-- `feature/P8-01-onboard-setup-wizard`는 최신 `develop` 기준으로 리베이스 완료
-- 다음 액션은 P8 브랜치 병합 여부 결정 또는 localized README onboarding 문서 동기화 검토
+- P9 init overhaul 구현 완료, 전체 검증 및 커밋 대기
+- 다음 액션은 수동 QA와 커밋
