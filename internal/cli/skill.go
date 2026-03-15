@@ -22,6 +22,68 @@ type skillTarget struct {
 	Path  string `json:"path"`
 }
 
+type skillFileName string
+
+const (
+	skillFileNameStandard skillFileName = "SKILL.md"
+	skillFileNameMarkdown skillFileName = ".md"
+	skillFileNameCursor   skillFileName = ".mdc"
+)
+
+type skillAgentDefinition struct {
+	ID            string
+	Aliases       []string
+	ProjectRelDir string
+	UserRelDir    string
+	FileName      skillFileName
+}
+
+var skillAgentDefinitions = []skillAgentDefinition{
+	{ID: "claude", Aliases: []string{"claude-code"}, ProjectRelDir: filepath.Join(".claude", "skills"), UserRelDir: filepath.Join(".claude", "skills"), FileName: skillFileNameStandard},
+	{ID: "codex", ProjectRelDir: filepath.Join(".agents", "skills"), UserRelDir: filepath.Join(".agents", "skills"), FileName: skillFileNameStandard},
+	{ID: "gemini", Aliases: []string{"gemini-cli"}, ProjectRelDir: filepath.Join(".gemini", "skills"), UserRelDir: filepath.Join(".gemini", "skills"), FileName: skillFileNameStandard},
+	{ID: "opencode", ProjectRelDir: filepath.Join(".opencode", "skills"), UserRelDir: filepath.Join(".config", "opencode", "skills"), FileName: skillFileNameStandard},
+	{ID: "cursor", ProjectRelDir: filepath.Join(".cursor", "skills"), UserRelDir: filepath.Join(".cursor", "skills"), FileName: skillFileNameCursor},
+	{ID: "github-copilot", ProjectRelDir: filepath.Join(".github", "skills"), UserRelDir: filepath.Join(".github", "skills"), FileName: skillFileNameMarkdown},
+	{ID: "windsurf", ProjectRelDir: filepath.Join(".windsurf", "skills"), UserRelDir: filepath.Join(".windsurf", "skills"), FileName: skillFileNameMarkdown},
+	{ID: "antigravity", ProjectRelDir: filepath.Join(".antigravity", "skills"), UserRelDir: filepath.Join(".antigravity", "skills"), FileName: skillFileNameStandard},
+	{ID: "amp", ProjectRelDir: filepath.Join(".amp", "skills"), UserRelDir: filepath.Join(".amp", "skills"), FileName: skillFileNameStandard},
+	{ID: "clawdbot", ProjectRelDir: filepath.Join(".clawdbot", "skills"), UserRelDir: filepath.Join(".clawdbot", "skills"), FileName: skillFileNameStandard},
+	{ID: "factory", Aliases: []string{"droid"}, ProjectRelDir: filepath.Join(".factory", "skills"), UserRelDir: filepath.Join(".factory", "skills"), FileName: skillFileNameStandard},
+	{ID: "goose", ProjectRelDir: filepath.Join(".goose", "skills"), UserRelDir: filepath.Join(".goose", "skills"), FileName: skillFileNameStandard},
+	{ID: "kilo-code", ProjectRelDir: filepath.Join(".kilocode", "skills"), UserRelDir: filepath.Join(".kilocode", "skills"), FileName: skillFileNameStandard},
+	{ID: "kiro-cli", ProjectRelDir: filepath.Join(".kiro", "skills"), UserRelDir: filepath.Join(".kiro", "skills"), FileName: skillFileNameStandard},
+	{ID: "roo-code", ProjectRelDir: filepath.Join(".roo", "skills"), UserRelDir: filepath.Join(".roo", "skills"), FileName: skillFileNameStandard},
+	{ID: "trae", ProjectRelDir: filepath.Join(".trae", "skills"), UserRelDir: filepath.Join(".trae", "skills"), FileName: skillFileNameStandard},
+	{ID: "cline", ProjectRelDir: filepath.Join(".cline", "skills"), UserRelDir: filepath.Join(".cline", "skills"), FileName: skillFileNameStandard},
+	{ID: "codebuddy", ProjectRelDir: filepath.Join(".codebuddy", "skills"), UserRelDir: filepath.Join(".codebuddy", "skills"), FileName: skillFileNameStandard},
+	{ID: "commandcode", ProjectRelDir: filepath.Join(".commandcode", "skills"), UserRelDir: filepath.Join(".commandcode", "skills"), FileName: skillFileNameStandard},
+	{ID: "continue", ProjectRelDir: filepath.Join(".continue", "skills"), UserRelDir: filepath.Join(".continue", "skills"), FileName: skillFileNameStandard},
+	{ID: "crush", ProjectRelDir: filepath.Join(".crush", "skills"), UserRelDir: filepath.Join(".crush", "skills"), FileName: skillFileNameStandard},
+	{ID: "mcpjam", ProjectRelDir: filepath.Join(".mcpjam", "skills"), UserRelDir: filepath.Join(".mcpjam", "skills"), FileName: skillFileNameStandard},
+	{ID: "mux", ProjectRelDir: filepath.Join(".mux", "skills"), UserRelDir: filepath.Join(".mux", "skills"), FileName: skillFileNameStandard},
+	{ID: "neovate", ProjectRelDir: filepath.Join(".neovate", "skills"), UserRelDir: filepath.Join(".neovate", "skills"), FileName: skillFileNameStandard},
+	{ID: "openhands", ProjectRelDir: filepath.Join(".openhands", "skills"), UserRelDir: filepath.Join(".openhands", "skills"), FileName: skillFileNameStandard},
+	{ID: "pi", ProjectRelDir: filepath.Join(".pi", "skills"), UserRelDir: filepath.Join(".pi", "skills"), FileName: skillFileNameStandard},
+	{ID: "qoder", ProjectRelDir: filepath.Join(".qoder", "skills"), UserRelDir: filepath.Join(".qoder", "skills"), FileName: skillFileNameStandard},
+	{ID: "qwen", ProjectRelDir: filepath.Join(".qwen", "skills"), UserRelDir: filepath.Join(".qwen", "skills"), FileName: skillFileNameStandard},
+	{ID: "vercel", ProjectRelDir: filepath.Join(".vercel", "skills"), UserRelDir: filepath.Join(".vercel", "skills"), FileName: skillFileNameStandard},
+	{ID: "zencoder", ProjectRelDir: filepath.Join(".zencoder", "skills"), UserRelDir: filepath.Join(".zencoder", "skills"), FileName: skillFileNameStandard},
+	{ID: "devin", ProjectRelDir: filepath.Join(".devin", "skills"), UserRelDir: filepath.Join(".devin", "skills"), FileName: skillFileNameMarkdown},
+	{ID: "aider", ProjectRelDir: filepath.Join(".aider", "skills"), UserRelDir: filepath.Join(".aider", "skills"), FileName: skillFileNameStandard},
+	{ID: "sourcegraph-cody", ProjectRelDir: filepath.Join(".cody", "skills"), UserRelDir: filepath.Join(".cody", "skills"), FileName: skillFileNameStandard},
+	{ID: "amazon-q", ProjectRelDir: filepath.Join(".amazonq", "skills"), UserRelDir: filepath.Join(".amazonq", "skills"), FileName: skillFileNameStandard},
+	{ID: "augment-code", ProjectRelDir: filepath.Join(".augment", "skills"), UserRelDir: filepath.Join(".augment", "skills"), FileName: skillFileNameStandard},
+	{ID: "replit-agent", ProjectRelDir: filepath.Join(".replit", "skills"), UserRelDir: filepath.Join(".replit", "skills"), FileName: skillFileNameMarkdown},
+	{ID: "bolt", ProjectRelDir: filepath.Join(".bolt", "skills"), UserRelDir: filepath.Join(".bolt", "skills"), FileName: skillFileNameMarkdown},
+	{ID: "lovable", ProjectRelDir: filepath.Join(".lovable", "skills"), UserRelDir: filepath.Join(".lovable", "skills"), FileName: skillFileNameMarkdown},
+	{ID: "tabby", ProjectRelDir: filepath.Join(".tabby", "skills"), UserRelDir: filepath.Join(".tabby", "skills"), FileName: skillFileNameStandard},
+	{ID: "tabnine", ProjectRelDir: filepath.Join(".tabnine", "skills"), UserRelDir: filepath.Join(".tabnine", "skills"), FileName: skillFileNameStandard},
+	{ID: "codegpt", ProjectRelDir: filepath.Join(".codegpt", "skills"), UserRelDir: filepath.Join(".codegpt", "skills"), FileName: skillFileNameStandard},
+	{ID: "playcode-agent", ProjectRelDir: filepath.Join(".playcode", "skills"), UserRelDir: filepath.Join(".playcode", "skills"), FileName: skillFileNameMarkdown},
+	{ID: "universal", ProjectRelDir: "skills", UserRelDir: "skills", FileName: skillFileNameStandard},
+}
+
 func newSkillCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "skill",
@@ -87,7 +149,7 @@ func newSkillCreateCmd() *cobra.Command {
 
 	f := cmd.Flags()
 	f.StringVar(&scope, "scope", "project", "Skill scope: project|user")
-	f.StringVar(&agentType, "agent", "all", "Target agent: claude|codex|gemini|opencode|all")
+	f.StringVar(&agentType, "agent", "all", "Target agent identifier or all")
 	f.StringVar(&description, "description", "", "Skill description")
 
 	return cmd
@@ -106,16 +168,21 @@ func resolveSkillTargets(scope string, agentType string, name string) ([]skillTa
 		return nil, err
 	}
 
+	return resolveSkillTargetsForAgents(scope, agents, name)
+}
+
+func resolveTemplateSkillTargets(scope string, name string) ([]skillTarget, error) {
+	return resolveSkillTargetsForAgents(scope, []string{"claude", "codex", "gemini", "opencode"}, name)
+}
+
+func resolveSkillTargetsForAgents(scope string, agents []string, name string) ([]skillTarget, error) {
 	targets := make([]skillTarget, 0, len(agents))
 	for _, agent := range agents {
 		targetPath, err := skillTargetPath(scope, agent, name)
 		if err != nil {
 			return nil, err
 		}
-		targets = append(targets, skillTarget{
-			Agent: agent,
-			Path:  targetPath,
-		})
+		targets = append(targets, skillTarget{Agent: agent, Path: targetPath})
 	}
 
 	sort.Slice(targets, func(i, j int) bool {
@@ -145,14 +212,20 @@ func resolveSkillBaseDir(scope string) (string, error) {
 }
 
 func resolveSkillAgents(agentType string) ([]string, error) {
-	switch agentType {
-	case "all":
-		return []string{"claude", "codex", "gemini", "opencode"}, nil
-	case "claude", "codex", "gemini", "opencode":
-		return []string{agentType}, nil
-	default:
-		return nil, fmt.Errorf("invalid agent %q: must be claude, codex, gemini, opencode, or all", agentType)
+	if agentType == "all" {
+		agents := make([]string, 0, len(skillAgentDefinitions))
+		for _, definition := range skillAgentDefinitions {
+			agents = append(agents, definition.ID)
+		}
+		return agents, nil
 	}
+
+	definition, ok := findSkillAgentDefinition(agentType)
+	if !ok {
+		return nil, fmt.Errorf("invalid agent %q: must be one of %s, or all", agentType, strings.Join(validSkillAgentNames(), ", "))
+	}
+
+	return []string{definition.ID}, nil
 }
 
 func skillTargetPath(scope string, agent string, name string) (string, error) {
@@ -161,25 +234,51 @@ func skillTargetPath(scope string, agent string, name string) (string, error) {
 		return "", err
 	}
 
-	var relDir string
-	switch agent {
-	case "claude":
-		relDir = filepath.Join(".claude", "skills")
-	case "codex":
-		relDir = filepath.Join(".agents", "skills")
-	case "gemini":
-		relDir = filepath.Join(".gemini", "skills")
-	case "opencode":
-		if scope == "project" {
-			relDir = filepath.Join(".opencode", "skills")
-		} else {
-			relDir = filepath.Join(".config", "opencode", "skills")
-		}
-	default:
+	definition, ok := findSkillAgentDefinition(agent)
+	if !ok {
 		return "", fmt.Errorf("unsupported agent %q", agent)
 	}
 
-	return filepath.Join(baseDir, relDir, name, "SKILL.md"), nil
+	relDir := definition.ProjectRelDir
+	if scope == "user" {
+		relDir = definition.UserRelDir
+	}
+
+	return filepath.Join(baseDir, relDir, skillFileRelativePath(definition.FileName, name)), nil
+}
+
+func findSkillAgentDefinition(agent string) (skillAgentDefinition, bool) {
+	for _, definition := range skillAgentDefinitions {
+		if definition.ID == agent {
+			return definition, true
+		}
+		for _, alias := range definition.Aliases {
+			if alias == agent {
+				return definition, true
+			}
+		}
+	}
+
+	return skillAgentDefinition{}, false
+}
+
+func validSkillAgentNames() []string {
+	names := make([]string, 0, len(skillAgentDefinitions))
+	for _, definition := range skillAgentDefinitions {
+		names = append(names, definition.ID)
+		names = append(names, definition.Aliases...)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func skillFileRelativePath(fileName skillFileName, skillName string) string {
+	switch fileName {
+	case skillFileNameMarkdown, skillFileNameCursor:
+		return skillName + string(fileName)
+	default:
+		return filepath.Join(skillName, string(skillFileNameStandard))
+	}
 }
 
 func writeSkillFile(path string, content string) error {

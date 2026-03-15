@@ -5,8 +5,10 @@
 ## 현재 상태
 
 - **Phase**: 7 완료
-- **마지막 작업**: `agents template` 인터랙티브 검색/선택 추가, 템플릿 role skill을 `agentcom` 네임스페이스로 재구성해 `develop`에 머지
-- **다음 작업**: 현재 `feature/skill-agent-catalog`에 남아 있는 다중 agent skill 지원 확장 작업 정리 여부 판단
+- **마지막 작업**: `feature/skill-agent-catalog`를 `develop`에 머지했고, `feature/P8-01-onboard-setup-wizard`를 최신 `develop` 기준으로 리베이스 완료
+- **현재 브랜치**: `feature/P8-01-onboard-setup-wizard`
+- **추가 진행 작업**: `agentcom init --setup` 대화형 wizard MVP 구현/검증/커밋 완료
+- **다음 작업**: P8 브랜치를 `develop`에 머지할지 결정하고, 필요 시 localized README에 onboarding 문서 동기화 검토
 
 ## 완료된 태스크
 
@@ -44,6 +46,11 @@
 - Homebrew tap(`malleus35/homebrew-tap`): `Formula/agentcom.rb`를 `0.1.2` asset/hash로 갱신
 - `feature/template-search-select`: `agentcom agents template`에 검색어 입력 + 번호 선택 기반 인터랙티브 템플릿 선택 추가 후 `develop` 머지
 - `feature/agentcom-shared-skills`: 템플릿 role skill을 각 agent의 `agentcom/<template>-<role>/SKILL.md` 구조로 생성하고 shared `agentcom/SKILL.md` 참조 추가 후 `develop` 머지
+- `README*.md`: interactive template selection과 `agentcom` namespace scaffold 구조 문서화
+- `scripts/install.sh`, `scripts/install.ps1`: 기본 설치 버전을 `v0.1.3`으로 상향
+- `v0.1.3` release/tag 생성 및 GitHub release asset 업로드 완료
+- `packaging/scoop/agentcom.json`: `v0.1.3` Windows asset URL/hash로 갱신
+- Homebrew tap(`malleus35/homebrew-tap`): `Formula/agentcom.rb`를 `0.1.3` asset/hash로 갱신
 
 ## 설계 결정 로그
 
@@ -61,6 +68,10 @@
 | 2026-03-14 | `v0.1.2` 태그는 최종적으로 `main` 최신 커밋을 가리키도록 재설정 | Scoop manifest 후속 커밋까지 동일 릴리스 태그에 포함하기 위해 |
 | 2026-03-15 | `agents template` 검색/선택은 `openclaw onboard`의 위저드 UX만 차용하고 실제 명령 호출은 하지 않음 | 공식 `openclaw onboard`는 템플릿 검색 기능이 없고, step-based interactive flow만 유사하게 적용하는 편이 안전하기 때문 |
 | 2026-03-15 | 템플릿 role skill은 각 agent의 `agentcom` 네임스페이스 아래 shared `SKILL.md` + role adapter 구조로 생성 | shared/common 지침과 role-specific 지침을 분리해 중복을 줄이고 참조형 구조를 만들기 위해 |
+| 2026-03-15 | `v0.1.3` release는 tag 워크플로 자산 + 수동 `darwin/arm64` 업로드 조합으로 마무리 | 현재 GitHub Actions release workflow가 `darwin/arm64`를 자동 생성하지 않기 때문 |
+| 2026-03-15 | onboard/setup UI는 full-screen TUI 대신 `huh` wizard로 구현 | 요구 범위가 초기 설정 단계에 한정되고, 기존 CLI 패턴을 최소 변경으로 유지하기 위해 |
+| 2026-03-15 | `agentcom init --setup`은 기존 root DB 초기화를 우회한 뒤 선택한 home dir 기준으로 별도 apply | 사용자가 wizard에서 홈 경로를 바꾸기 전에 기본 config/db가 먼저 생성되는 부작용을 막기 위해 |
+| 2026-03-15 | skill agent catalog 확장 후에도 템플릿 scaffold는 core agent 집합만 사용 | `skill create --agent all`의 catalog 확장과 템플릿 scaffold 범위를 분리해 기존 템플릿 생성 기대값을 보존하기 위해 |
 
 ## 발견된 이슈
 
@@ -70,6 +81,7 @@
 ## 메모
 
 - PRD 경로: `.agents/plans/PRD.md`
+- onboard wizard PRD: `.agents/plans/P8-01-onboard-setup-wizard.md`
 - 전체 태스크 수: 62개
 - root 커맨드에 `mcp-server` 등록 완료
 - root 커맨드에 `skill` 등록 완료
@@ -77,7 +89,15 @@
 - `agentcom init --template company|oh-my-opencode`는 `.agentcom/templates/<template>/COMMON.md`, `.agentcom/templates/<template>/template.json`, 그리고 6개 role skill을 각 agent CLI 경로에 생성
 - `agentcom agents template`는 interactive tty에서 검색어 기반 템플릿 선택을 지원하고, non-interactive/JSON 모드에서는 기존 목록/상세 출력 동작을 유지
 - 템플릿 role skill 생성 경로는 `.claude/skills/agentcom/<template>-<role>/SKILL.md` 등 각 agent 네임스페이스 구조로 변경됐고, shared file은 `.claude/skills/agentcom/SKILL.md` 형태로 생성
+- onboard wizard PRD: `.agents/plans/P8-01-onboard-setup-wizard.md`
 - CEO 중심 라우팅 vs direct-to-user 응답 모델은 아직 계획 단계이며, 현 구현에는 특수 `user` recipient를 추가하지 않음
 - `develop`, `release/v0.1.2`, `main`, `feature/init-template-scaffold` 브랜치와 `v0.1.2` 태그는 원격 반영 완료
+- `release/v0.1.3`, `main`, `develop`, `v0.1.3` 태그는 원격 반영 완료
 - 전체 테스트 통과: `go test ./...`
 - 전체 빌드 통과: `go build ./...`
+
+## 진행 중 작업 체크리스트
+
+- P8-01-01~09: onboard/setup wizard MVP 구현, 검증, 커밋 완료
+- `feature/P8-01-onboard-setup-wizard`는 최신 `develop` 기준으로 리베이스 완료
+- 다음 액션은 P8 브랜치 병합 여부 결정 또는 localized README onboarding 문서 동기화 검토

@@ -68,10 +68,16 @@ func TestSkillTargetPath(t *testing.T) {
 		{name: "project codex", scope: "project", agent: "codex", want: filepath.Join(resolvedProjectDir, ".agents", "skills", "my-skill", "SKILL.md")},
 		{name: "project gemini", scope: "project", agent: "gemini", want: filepath.Join(resolvedProjectDir, ".gemini", "skills", "my-skill", "SKILL.md")},
 		{name: "project opencode", scope: "project", agent: "opencode", want: filepath.Join(resolvedProjectDir, ".opencode", "skills", "my-skill", "SKILL.md")},
+		{name: "project claude alias", scope: "project", agent: "claude-code", want: filepath.Join(resolvedProjectDir, ".claude", "skills", "my-skill", "SKILL.md")},
+		{name: "project cursor", scope: "project", agent: "cursor", want: filepath.Join(resolvedProjectDir, ".cursor", "skills", "my-skill.mdc")},
+		{name: "project github copilot", scope: "project", agent: "github-copilot", want: filepath.Join(resolvedProjectDir, ".github", "skills", "my-skill.md")},
+		{name: "project universal", scope: "project", agent: "universal", want: filepath.Join(resolvedProjectDir, "skills", "my-skill", "SKILL.md")},
 		{name: "user claude", scope: "user", agent: "claude", want: filepath.Join(homeDir, ".claude", "skills", "my-skill", "SKILL.md")},
 		{name: "user codex", scope: "user", agent: "codex", want: filepath.Join(homeDir, ".agents", "skills", "my-skill", "SKILL.md")},
 		{name: "user gemini", scope: "user", agent: "gemini", want: filepath.Join(homeDir, ".gemini", "skills", "my-skill", "SKILL.md")},
 		{name: "user opencode", scope: "user", agent: "opencode", want: filepath.Join(homeDir, ".config", "opencode", "skills", "my-skill", "SKILL.md")},
+		{name: "user devin", scope: "user", agent: "devin", want: filepath.Join(homeDir, ".devin", "skills", "my-skill.md")},
+		{name: "user factory alias", scope: "user", agent: "droid", want: filepath.Join(homeDir, ".factory", "skills", "my-skill", "SKILL.md")},
 	}
 
 	for _, tt := range tests {
@@ -84,6 +90,45 @@ func TestSkillTargetPath(t *testing.T) {
 				t.Fatalf("skillTargetPath() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestResolveSkillAgents(t *testing.T) {
+	t.Run("all", func(t *testing.T) {
+		agents, err := resolveSkillAgents("all")
+		if err != nil {
+			t.Fatalf("resolveSkillAgents(all) error = %v", err)
+		}
+		if len(agents) != len(skillAgentDefinitions) {
+			t.Fatalf("len(agents) = %d, want %d", len(agents), len(skillAgentDefinitions))
+		}
+	})
+
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{name: "claude alias", input: "claude-code", want: "claude"},
+		{name: "gemini alias", input: "gemini-cli", want: "gemini"},
+		{name: "droid alias", input: "droid", want: "factory"},
+		{name: "regular", input: "cursor", want: "cursor"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			agents, err := resolveSkillAgents(tt.input)
+			if err != nil {
+				t.Fatalf("resolveSkillAgents(%q) error = %v", tt.input, err)
+			}
+			if len(agents) != 1 || agents[0] != tt.want {
+				t.Fatalf("resolveSkillAgents(%q) = %v, want [%s]", tt.input, agents, tt.want)
+			}
+		})
+	}
+
+	if _, err := resolveSkillAgents("missing-agent"); err == nil {
+		t.Fatal("resolveSkillAgents(missing-agent) error = nil, want error")
 	}
 }
 
@@ -130,7 +175,7 @@ func TestSkillCreateCommandOutputsJSON(t *testing.T) {
 	buf := &bytes.Buffer{}
 	cmd := newSkillCreateCmd()
 	cmd.SetOut(buf)
-	cmd.SetArgs([]string{"demo-skill", "--agent", "claude", "--scope", "project"})
+	cmd.SetArgs([]string{"demo-skill", "--agent", "cursor", "--scope", "project"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("cmd.Execute() error = %v", err)
@@ -151,7 +196,7 @@ func TestSkillCreateCommandOutputsJSON(t *testing.T) {
 		t.Fatalf("description = %v, want %q", got["description"], defaultSkillDescription)
 	}
 
-	content, err := os.ReadFile(filepath.Join(projectDir, ".claude", "skills", "demo-skill", "SKILL.md"))
+	content, err := os.ReadFile(filepath.Join(projectDir, ".cursor", "skills", "demo-skill.mdc"))
 	if err != nil {
 		t.Fatalf("ReadFile() error = %v", err)
 	}
