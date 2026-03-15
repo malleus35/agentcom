@@ -7,8 +7,9 @@
 - **Phase**: 9 진행 중
 - **마지막 작업**: `agentcom init` wizard 기본화, agent별 instruction/memory 생성, custom template 저장/삭제 흐름 구현
 - **현재 브랜치**: `feature/P8-01-onboard-setup-wizard`
+- **현재 버전**: v0.1.4 (Homebrew/Scoop/GitHub Release 배포 완료)
 - **추가 진행 작업**: P9 init overhaul 구현 및 검증 진행 중
-- **다음 작업**: 전체 수동 QA와 커밋
+- **다음 작업**: 전체 수동 QA와 커밋, 이후 P10 project column 착수
 
 ## 완료된 태스크
 
@@ -20,6 +21,7 @@
 - P5-01~P5-03 완료
 - P6-01~P6-12 완료
 - P7-01~P7-04 완료
+- P8-01-01~09 완료 (onboard/setup wizard MVP)
 
 ## 이번 세션에서 마무리한 작업
 
@@ -57,6 +59,13 @@
 - `internal/cli/agents.go`: built-in + custom template 통합 조회와 custom template 삭제 지원 추가
 - `internal/cli/*_test.go`, `internal/onboard/result_test.go`: instruction, batch mode, custom template, wizard 통합 시나리오 TDD 테스트 추가
 - `README*.md`: 새 `init` UX와 `--agents-md`/`--template custom`/`agents template --delete` 문서 반영
+- `feature/skill-agent-catalog`: 추가 agent identifier/alias(`cursor`, `github-copilot`, `gemini-cli`, `droid` 등)와 agent별 파일 확장자 지원 추가 후 `develop` 머지
+- `feature/P8-01-onboard-setup-wizard`: `agentcom init --setup` + `--accessible` 기반 onboarding wizard 구현 후 `develop`/`main` 반영
+- `v0.1.4` release/tag 생성 및 GitHub release asset 업로드 완료
+- `v0.1.4` release에는 누락됐던 `darwin/arm64` asset을 수동 빌드/업로드로 추가 완료
+- `packaging/scoop/agentcom.json`: `v0.1.4` Windows asset URL/hash로 갱신
+- Homebrew tap(`malleus35/homebrew-tap`): `Formula/agentcom.rb`를 `0.1.4` asset/hash로 갱신하고 macOS arm64 분기 복원
+- 로컬 Homebrew 설치에서 `agentcom` formula가 `pinned at 0.1.3` 상태였고, `brew unpin agentcom && brew upgrade agentcom`으로 `0.1.4` 업그레이드 확인
 
 ## 설계 결정 로그
 
@@ -81,17 +90,26 @@
 | 2026-03-15 | `agentcom init`은 interactive TTY에서 wizard를 기본 실행하고 `--batch`/`--json`에서만 비대화형으로 동작 | `--setup`을 제거하고 온보딩을 기본 UX로 만들기 위해 |
 | 2026-03-15 | `--agents-md`는 bool 대신 string으로 바꾸고 agent별 instruction 파일 생성을 기본으로 하되 `--batch --agents-md` 무값 호출은 legacy `AGENTS.md`를 유지 | 확장된 instruction 파일 생성과 기존 배치 스크립트 호환성을 동시에 만족시키기 위해 |
 | 2026-03-15 | custom template는 `.agentcom/templates/<name>/COMMON.md` + `template.json` 저장소 모델을 사용하고 built-in과 함께 해석한다 | init wizard, template inspect, scaffold가 같은 템플릿 원본을 공유하도록 하기 위해 |
+| 2026-03-15 | `v0.1.4` release도 `darwin/arm64` asset은 수동 업로드로 보강 | 현재 GitHub release workflow가 `darwin/arm64` build matrix를 포함하지 않아 Homebrew arm64 formula 지원을 위해 별도 업로드가 필요했기 때문 |
+| 2026-03-15 | P9 `init` 개편: wizard를 기본 UI로, `--setup` 제거, `--batch` 추가 | 대부분의 사용자가 인터랙티브 환경에서 init 실행 — wizard가 기본이어야 함 |
+| 2026-03-15 | P9 `--agents-md`: agent별 고유 instruction 파일 생성으로 확장 | AGENTS.md 단일 파일 대신 CLAUDE.md, .cursorrules 등 agent별 파일 생성 필요 |
+| 2026-03-15 | P9 `--template custom`: 사용자 정의 템플릿 생성 wizard 추가 | built-in 템플릿만으로는 다양한 팀 구조를 커버할 수 없음 |
+| 2026-03-15 | AGENTS.md는 크로스 툴 표준 (AAIF, 15+ agent, 60K+ 저장소) | instruction 파일 생성 시 AGENTS.md를 Priority 1으로, 나머지는 agent별 고유 파일로 |
+| 2026-03-15 | 작업 우선순위는 P9 init-overhaul 먼저, P10 project column은 후속으로 진행 | project column 계획이 init wizard 구조를 전제로 일부 단계를 얹는 형태라 P9 이후가 재작업이 적음 |
 
 ## 발견된 이슈
 
 - 기존 메모의 PRD 경로 표기는 `.agents/plan/PRD.md`였지만 실제 경로는 `.agents/plans/PRD.md`
 - agent 삭제 시 message/task 외래 키가 deregister를 막는 문제를 확인했고, 초기 스키마에서 제약 제거로 수정 완료
+- Homebrew는 remote tap이 최신이어도 local tap checkout이 stale하거나 formula가 pin 되어 있으면 `brew upgrade agentcom`이 새 릴리스를 보지 못할 수 있음
 
 ## 메모
 
 - PRD 경로: `.agents/plans/PRD.md`
 - onboard wizard PRD: `.agents/plans/P8-01-onboard-setup-wizard.md`
-- 전체 태스크 수: 62개
+- **init 개편 PRD: `.agents/plans/P9-init-overhaul.md`** (7 tasks, 43 subtasks)
+- **project column PRD: `.agents/plans/P10-add-project-column-plan-prd.md`** (renumber 완료)
+- 전체 태스크 수: 62개 (P0-P7) + 9개 (P8) + 43개 (P9) + 63개(+3 sub) (P10) = 177개(+3 sub)
 - root 커맨드에 `mcp-server` 등록 완료
 - root 커맨드에 `skill` 등록 완료
 - root 커맨드에 `agents` 등록 완료
@@ -102,6 +120,7 @@
 - CEO 중심 라우팅 vs direct-to-user 응답 모델은 아직 계획 단계이며, 현 구현에는 특수 `user` recipient를 추가하지 않음
 - `develop`, `release/v0.1.2`, `main`, `feature/init-template-scaffold` 브랜치와 `v0.1.2` 태그는 원격 반영 완료
 - `release/v0.1.3`, `main`, `develop`, `v0.1.3` 태그는 원격 반영 완료
+- `main`, `develop`, `v0.1.4` 태그와 GitHub release는 원격 반영 완료
 - 전체 테스트 통과: `go test ./...`
 - 전체 빌드 통과: `go build ./...`
 - P9 주요 구현 파일: `internal/cli/instruction.go`, `internal/cli/init_prompter.go`, `internal/cli/template_store.go`
@@ -110,4 +129,5 @@
 ## 진행 중 작업 체크리스트
 
 - P9 init overhaul 구현 완료, 전체 검증 및 커밋 대기
-- 다음 액션은 수동 QA와 커밋
+- **P10 계획 정리 완료** — `.agents/plans/P10-add-project-column-plan-prd.md` (renumber 완료)
+- 다음 액션은 수동 QA와 커밋, 이후 P10 구현 시작
