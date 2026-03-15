@@ -28,6 +28,14 @@
 
 ## 이번 세션에서 마무리한 작업
 
+- 템플릿 스캐폴드 up/down 문구 정렬 완료
+  - `internal/cli/agents.go`의 shared `agentcom/SKILL.md` 생성 문구에 기본 흐름 `init -> up -> down` 추가
+  - `internal/cli/agents.go`의 role skill 생성 문구에 template 기본 lifecycle과 `register`의 고급/standalone 위치를 명시
+  - `internal/cli/agents.go`의 built-in template `CommonBody` (`company`, `oh-my-opencode`)를 `register` 중심에서 `init -> up -> down` 중심으로 조정
+  - `internal/cli/agents_test.go`의 scaffold assertion을 새 문구 기준으로 최소 갱신
+  - 검증 완료: `gofmt -w internal/cli/agents.go internal/cli/agents_test.go`, `go test ./internal/cli/...`, `go test ./...`, `go build ./...`
+  - 수동 QA 완료: 임시 프로젝트에서 `agentcom init --batch --project demo-company --template company`, `agentcom init --batch --project demo-omo --template oh-my-opencode` 실행 후 generated `COMMON.md`, shared `SKILL.md`, role `SKILL.md`에 기본 흐름/보조적 register 문구 반영 확인
+
 - P11 `up`/`down` 에이전트 라이프사이클 구현 완료
   - `.agentcom.json`에 `template.active` 저장/로드 추가
   - `agentcom init`가 template 선택 시 active template까지 기록하도록 확장
@@ -178,4 +186,4 @@
 
 ## 진행 중 작업 체크리스트
 
-- 템플릿 스캐폴드 후속 정리 필요: `internal/cli/agents.go`의 shared skill / role skill / built-in template `CommonBody`가 아직 `register` 중심 문구를 포함해 현재 `init -> up -> down` 기본 흐름과 불일치
+- 현재 후속 우선순위: 릴리스 버전 확정 → develop 머지 → 태그/릴리스 → Scoop/Homebrew 반영 검증
