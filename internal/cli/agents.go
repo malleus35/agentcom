@@ -345,6 +345,8 @@ description: Shared agentcom skill instructions for generated template roles
 # Agentcom
 
 - Use this shared skill as the common base for generated agentcom template role skills.
+- Default template lifecycle: run ` + "`agentcom init --template <template>`" + ` once, start the managed roles with ` + "`agentcom up`" + `, and stop them with ` + "`agentcom down`" + `.
+- Use ` + "`agentcom register`" + ` only as the low-level path for manually running one standalone agent session.
 - Coordinate with ` + "`agentcom send`" + `, ` + "`agentcom inbox`" + `, ` + "`agentcom task create`" + `, and ` + "`agentcom task delegate`" + `.
 - Read the role-specific skill under this directory for template and responsibility details.
 `
@@ -371,6 +373,7 @@ description: %s
 ## Communication
 
 - Primary contacts: %s
+- For template-based teams, use `+"`agentcom up`"+` and `+"`agentcom down`"+` as the default lifecycle; keep `+"`agentcom register`"+` for advanced standalone sessions.
 - Use `+"`agentcom send --from <sender> <target> <message-or-json>`"+` for direct coordination.
 - Use `+"`agentcom task create`"+`, `+"`agentcom task delegate`"+`, and `+"`agentcom inbox --agent <name>`"+` to coordinate handoffs.
 - Escalate blockers to `+"`plan`"+` and `+"`architect`"+` when requirements or system boundaries change.
@@ -408,7 +411,8 @@ func builtInTemplateDefinitions() []templateDefinition {
 			CommonBody: strings.TrimSpace(`Use this template when a small product team needs clear functional ownership.
 
 - Keep agent names stable across sessions.
-- Register each active role with ` + "`agentcom register --name <name> --type <type>`" + ` before starting collaboration.
+- Use ` + "`agentcom init --template company`" + ` to scaffold the template, ` + "`agentcom up`" + ` to start the managed roles, and ` + "`agentcom down`" + ` to stop them cleanly.
+- Use ` + "`agentcom register --name <name> --type <type>`" + ` only for low-level manual runs of a single standalone role.
 - Prefer direct role-to-role communication for execution details, and keep planning updates visible to the planning role.
 - Store structured payloads as JSON so review and architect can audit decisions.
 - This template is inspired by Paperclip's company/org model, but uses six delivery-focused roles: frontend, backend, plan, review, architect, and design.`),
@@ -471,6 +475,8 @@ func builtInTemplateDefinitions() []templateDefinition {
 			CommonBody: strings.TrimSpace(`Use this template when you want a planning-heavy workflow inspired by Oh-My-OpenCode.
 
 - Keep the planner, reviewer, and architect roles distinct from implementation roles.
+- Use ` + "`agentcom init --template oh-my-opencode`" + ` to scaffold the template, ` + "`agentcom up`" + ` to start the managed roles, and ` + "`agentcom down`" + ` to stop them cleanly.
+- Use ` + "`agentcom register --name <name> --type <type>`" + ` only as the advanced/manual path for a single standalone role.
 - Use ` + "`agentcom send`" + ` for targeted messages and ` + "`agentcom task`" + ` for explicit handoffs.
 - Treat role skills as execution guidance layered on top of the shared agentcom workflow.
 - This template references official Oh-My-OpenCode agent patterns such as Prometheus (planning), Momus (review), Oracle (architecture), and Sisyphus-Junior style execution specialists.`),
