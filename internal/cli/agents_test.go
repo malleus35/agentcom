@@ -229,3 +229,81 @@ func TestInitCommandGeneratesTemplateScaffold(t *testing.T) {
 		t.Fatalf("Stat(template.json) error = %v", err)
 	}
 }
+
+func TestAgentsTemplateCommandListIncludesCustomTemplates(t *testing.T) {
+	projectDir := t.TempDir()
+	oldwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	defer func() {
+		if err := os.Chdir(oldwd); err != nil {
+			t.Fatalf("restore cwd: %v", err)
+		}
+	}()
+	if err := os.Chdir(projectDir); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+
+	if _, err := saveCustomTemplate(projectDir, templateDefinition{
+		Name:        "custom-team",
+		Description: "Custom team template",
+		Reference:   "local",
+		CommonTitle: "Custom Team Common Instructions",
+		CommonBody:  "Coordinate through agentcom.",
+		Roles:       []templateRole{{Name: "planner", Description: "desc", AgentName: "planner", AgentType: "planner"}},
+	}); err != nil {
+		t.Fatalf("saveCustomTemplate() error = %v", err)
+	}
+
+	buf := &bytes.Buffer{}
+	cmd := newAgentsTemplateCmd()
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"--list"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("cmd.Execute() error = %v", err)
+	}
+	if !strings.Contains(buf.String(), "custom-team") {
+		t.Fatalf("output missing custom template: %s", buf.String())
+	}
+}
+
+func TestAgentsTemplateCommandDeleteCustomTemplate(t *testing.T) {
+	projectDir := t.TempDir()
+	oldwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	defer func() {
+		if err := os.Chdir(oldwd); err != nil {
+			t.Fatalf("restore cwd: %v", err)
+		}
+	}()
+	if err := os.Chdir(projectDir); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+
+	basePath, err := saveCustomTemplate(projectDir, templateDefinition{
+		Name:        "custom-team",
+		Description: "Custom team template",
+		Reference:   "local",
+		CommonTitle: "Custom Team Common Instructions",
+		CommonBody:  "Coordinate through agentcom.",
+		Roles:       []templateRole{{Name: "planner", Description: "desc", AgentName: "planner", AgentType: "planner"}},
+	})
+	if err != nil {
+		t.Fatalf("saveCustomTemplate() error = %v", err)
+	}
+
+	cmd := newAgentsTemplateCmd()
+	cmd.SetIn(bytes.NewBufferString("y\n"))
+	cmd.SetArgs([]string{"--delete", "custom-team"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("cmd.Execute() error = %v", err)
+	}
+	if _, err := os.Stat(basePath); !os.IsNotExist(err) {
+		t.Fatalf("Stat(custom template path) error = %v, want not exist", err)
+	}
+}
