@@ -4,14 +4,14 @@
 
 ## 현재 상태
 
-- **Phase**: P11 계획 작성 완료 (구현 미착수)
-- **마지막 작업**: P11 `up`/`down` 에이전트 일괄 라이프사이클 계획 문서 작성
-- **현재 브랜치**: `feature/P10-add-project-column-plan-prd` (develop 위에 리베이스 완료)
-- **현재 버전**: v0.1.4 (Homebrew/Scoop/GitHub Release 배포 완료)
-- **P10 상태**: 구현 완료, develop 리베이스 완료, 커밋/머지 대기
-- **P11 상태**: `.agents/plans/P11-up-down-agent-lifecycle.md` 계획 문서 작성 완료, 구현 미착수
-- **다음 작업**: P10 develop 머지 → P11 설계 결정 확정 → P11 구현
-- **워킹트리**: stale worktree 4개 정리 완료 (메인 worktree만 남음)
+- **Phase**: P11 구현/문서 완료, release 준비 중
+- **마지막 작업**: P11 `up`/`down` 라이프사이클 구현 + README 전면 갱신 + atomic commit 정리
+- **현재 브랜치**: `feature/P11-up-down-agent-lifecycle-plan`
+- **현재 버전**: v0.1.5가 최신 공개 릴리스, 다음 릴리스 버전은 아직 미확정
+- **P10 상태**: 구현/문서/테스트 완료, 관련 변경은 현재 브랜치에 포함됨
+- **P11 상태**: 구현 완료, 테스트/수동 QA/README 반영 완료, develop 머지 및 release 대기
+- **다음 작업**: 릴리스 버전 확정 → develop 머지 → 태그/릴리스 → Scoop/Homebrew 반영 검증
+- **워킹트리**: clean, P11 관련 6개 커밋으로 정리 완료
 
 ## 완료된 태스크
 
@@ -28,14 +28,26 @@
 
 ## 이번 세션에서 마무리한 작업
 
-- P11 `up`/`down` 에이전트 라이프사이클 계획 문서 작성: `.agents/plans/P11-up-down-agent-lifecycle.md`
-  - 업계 CLI 패턴 벤치마크 (Docker Compose, Terraform, Dapr, PM2, systemd, k8s)
-  - Oracle 아키텍처 상담 결과 반영
-  - 3가지 설계 옵션 (A: init=플랫폼/up=런타임, B: up이 init 흡수, C: 선언적 yaml)
-  - 프로세스 관리 방식 (supervisor 패턴), 런타임 상태 파일, 명령 시그니처
-  - 직관성 평가 매트릭스, 미결 사항 8개, 태스크 분해 13개
-- P10 feature 브랜치를 develop 위에 리베이스 완료 (충돌 없음, 빌드/테스트 전체 통과)
-- stale worktree 4개 정리 (agentcom-agentcom-skills, agentcom-main-release, agentcom-template-search, agentcom-v014-tag)
+- P11 `up`/`down` 에이전트 라이프사이클 구현 완료
+  - `.agentcom.json`에 `template.active` 저장/로드 추가
+  - `agentcom init`가 template 선택 시 active template까지 기록하도록 확장
+  - `agentcom up` 구현: active template 로드, detach 기본, `--template`, `--only`, `--force` 지원
+  - `agentcom down` 구현: `.agentcom/run/up.json` 기반 종료, `--only`, `--timeout`, `--force` 지원
+  - subprocess supervisor + 플랫폼별 detach 처리 + 런타임 상태 파일 추가
+- 테스트/검증 완료
+  - `go test ./...` 통과
+  - `go build ./...` 통과
+  - 수동 QA: `init --template company`, `up --only frontend,plan`, `down`, `down --only plan` 확인
+- README 전체 갱신 완료
+  - `README.md`, `README.ko.md`, `README.ja.md`, `README.zh.md` 모두 `init -> up -> down` 기본 흐름으로 재작성
+  - `register`를 고급/저수준 인터페이스로 재포지셔닝
+- P11 관련 커밋 6개 생성 완료
+  - `feat(config): persist active template in project config`
+  - `feat(cli): persist active template during init`
+  - `feat(cli): add runtime state storage for managed sessions`
+  - `feat(cli): add managed up and down commands`
+  - `test(cli): cover managed lifecycle commands`
+  - `docs: refresh README for init up down workflow`
 
 ### 이전 세션 작업 (참고)
 
@@ -113,6 +125,9 @@
 | 2026-03-15 | `--agents-md`는 bool 대신 string으로 바꾸고 agent별 instruction 파일 생성을 기본으로 하되 `--batch --agents-md` 무값 호출은 legacy `AGENTS.md`를 유지 | 확장된 instruction 파일 생성과 기존 배치 스크립트 호환성을 동시에 만족시키기 위해 |
 | 2026-03-15 | custom template는 `.agentcom/templates/<name>/COMMON.md` + `template.json` 저장소 모델을 사용하고 built-in과 함께 해석한다 | init wizard, template inspect, scaffold가 같은 템플릿 원본을 공유하도록 하기 위해 |
 | 2026-03-15 | `v0.1.4` release도 `darwin/arm64` asset은 수동 업로드로 보강 | 현재 GitHub release workflow가 `darwin/arm64` build matrix를 포함하지 않아 Homebrew arm64 formula 지원을 위해 별도 업로드가 필요했기 때문 |
+| 2026-03-15 | P11 구현은 `init=플랫폼 설정`, `up/down=런타임 관리` 레이어 분리를 유지하되 `up` 기본 모드는 detach로 선택 | 사용자 결정: 기존 추천안에서 3B만 채택. 일상 사용에서는 즉시 프롬프트 복귀가 더 중요하다고 판단 |
+| 2026-03-15 | `up`은 `.agentcom.json`의 `template.active`와 `.agentcom/templates/<name>/template.json`을 직접 사용하고, runtime PID 정보는 `.agentcom/run/up.json`에 기록 | 새 선언 파일을 도입하지 않고 기존 scaffold를 런타임 입력으로 재사용하면서 `down`이 정확히 종료 대상을 찾게 하기 위해 |
+| 2026-03-15 | 현재 release workflow는 GitHub release asset 업로드만 자동화하고 Homebrew tap 갱신은 별도 수행이 필요 | `.goreleaser.yml`에 brew 설정은 있으나 `.github/workflows/release.yml`은 goreleaser를 호출하지 않음 |
 | 2026-03-15 | P9 `init` 개편: wizard를 기본 UI로, `--setup` 제거, `--batch` 추가 | 대부분의 사용자가 인터랙티브 환경에서 init 실행 — wizard가 기본이어야 함 |
 | 2026-03-15 | P9 `--agents-md`: agent별 고유 instruction 파일 생성으로 확장 | AGENTS.md 단일 파일 대신 CLAUDE.md, .cursorrules 등 agent별 파일 생성 필요 |
 | 2026-03-15 | P9 `--template custom`: 사용자 정의 템플릿 생성 wizard 추가 | built-in 템플릿만으로는 다양한 팀 구조를 커버할 수 없음 |
@@ -130,6 +145,8 @@
 - 기존 메모의 PRD 경로 표기는 `.agents/plan/PRD.md`였지만 실제 경로는 `.agents/plans/PRD.md`
 - agent 삭제 시 message/task 외래 키가 deregister를 막는 문제를 확인했고, 초기 스키마에서 제약 제거로 수정 완료
 - Homebrew는 remote tap이 최신이어도 local tap checkout이 stale하거나 formula가 pin 되어 있으면 `brew upgrade agentcom`이 새 릴리스를 보지 못할 수 있음
+- `scripts/install.sh`, `scripts/install.ps1`, `packaging/scoop/agentcom.json`은 아직 `v0.1.5` 기준으로 고정돼 있어 다음 공개 릴리스 전에 버전/URL/hash 갱신이 필요
+- 현재 `release.yml` build matrix는 `linux/amd64`, `darwin/amd64`, `windows/amd64`만 자동 생성한다. README의 `arm64` 설명 및 기존 수동 업로드 경험과 차이가 있어 릴리스 시 확인 필요
 
 ## 메모
 
@@ -152,11 +169,16 @@
 - `main`, `develop`, `v0.1.4` 태그와 GitHub release는 원격 반영 완료
 - 전체 테스트 통과: `go test ./...`
 - 전체 빌드 통과: `go build ./...`
+- P11 주요 구현 파일: `internal/cli/up.go`, `internal/cli/up_state.go`, `internal/cli/detach_unix.go`, `internal/cli/detach_windows.go`, `internal/config/project.go`
+- P11 수동 QA 완료: `agentcom init --project demo --template company`, `agentcom up --only frontend,plan`, `agentcom down`, `agentcom down --only plan`
+- 현재 브랜치의 최신 P11 커밋 체인: `2a09224` → `d639ba2` → `1a3ca6e` → `640149a` → `3056328` → `61471d6`
 - P9 주요 구현 파일: `internal/cli/instruction.go`, `internal/cli/init_prompter.go`, `internal/cli/template_store.go`
 - P10 주요 구현 파일: `internal/db/migrations.go`, `internal/config/project.go`, `internal/cli/root.go`, `internal/mcp/handler.go`
 - 수동 QA 완료: `agentcom init --batch --project`, project별 `list`, `--all-projects list`, project-scoped `send`/`inbox`/`status`
 
 ## 진행 중 작업 체크리스트
 
-- P10 project scope 구현 완료, develop 리베이스 완료, 커밋/merge 대기
-- P11 up/down 계획 문서 작성 완료, 설계 결정 확정 및 구현 대기
+- P11 구현/README 반영 완료, develop 머지 대기
+- 다음 공개 릴리스 버전 미확정 (`v0.1.6` 추천)
+- 릴리스 전 install script / Scoop manifest 버전 동기화 필요
+- Homebrew 배포는 tap 갱신 또는 goreleaser 기반 별도 실행 경로 검토 필요
