@@ -22,7 +22,7 @@ func newDeregisterCmd() *cobra.Command {
 			nameOrID := args[0]
 			registry := agent.NewRegistry(app.db, app.cfg)
 
-			agt, err := registry.FindByName(cmd.Context(), nameOrID)
+			agt, err := registry.FindByName(cmd.Context(), nameOrID, currentProjectFilter())
 			if err != nil {
 				agt, err = registry.FindByID(cmd.Context(), nameOrID)
 				if err != nil {
@@ -53,7 +53,7 @@ func newDeregisterCmd() *cobra.Command {
 				}
 			}
 
-			if err := registry.Deregister(cmd.Context(), agt.ID); err != nil {
+			if err := registry.Deregister(cmd.Context(), agt.ID, agt.Project); err != nil {
 				return fmt.Errorf("cli.newDeregisterCmd: deregister: %w", err)
 			}
 

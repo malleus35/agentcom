@@ -38,7 +38,7 @@ func newRegisterCmd() *cobra.Command {
 			defer stop()
 
 			registry := agent.NewRegistry(app.db, app.cfg)
-			agt, err := registry.Register(ctx, name, agentType, caps, workdir)
+			agt, err := registry.Register(ctx, name, agentType, caps, workdir, app.project)
 			if err != nil {
 				return fmt.Errorf("cli.newRegisterCmd: register: %w", err)
 			}
@@ -64,6 +64,7 @@ func newRegisterCmd() *cobra.Command {
 					"socket_path":  agt.SocketPath,
 					"capabilities": caps,
 					"workdir":      agt.WorkDir,
+					"project":      agt.Project,
 					"status":       "registered",
 				}); err != nil {
 					return fmt.Errorf("cli.newRegisterCmd: encode: %w", err)
@@ -71,12 +72,13 @@ func newRegisterCmd() *cobra.Command {
 			} else {
 				if _, err := fmt.Fprintf(
 					cmd.OutOrStdout(),
-					"registered agent %s (%s) id=%s pid=%d socket=%s\n",
+					"registered agent %s (%s) id=%s pid=%d socket=%s project=%s\n",
 					agt.Name,
 					agt.Type,
 					agt.ID,
 					agt.PID,
 					agt.SocketPath,
+					agt.Project,
 				); err != nil {
 					return fmt.Errorf("cli.newRegisterCmd: write output: %w", err)
 				}
@@ -86,7 +88,7 @@ func newRegisterCmd() *cobra.Command {
 
 			cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			if err := registry.Deregister(cleanupCtx, agt.ID); err != nil {
+			if err := registry.Deregister(cleanupCtx, agt.ID, agt.Project); err != nil {
 				return fmt.Errorf("cli.newRegisterCmd: deregister: %w", err)
 			}
 

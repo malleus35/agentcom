@@ -25,9 +25,9 @@ func newListCmd() *cobra.Command {
 			)
 
 			if aliveOnly {
-				agents, err = registry.ListAlive(cmd.Context())
+				agents, err = registry.ListAlive(cmd.Context(), currentProjectFilter())
 			} else {
-				agents, err = registry.ListAll(cmd.Context())
+				agents, err = registry.ListAll(cmd.Context(), currentProjectFilter())
 			}
 			if err != nil {
 				return fmt.Errorf("cli.newListCmd: list agents: %w", err)
@@ -43,12 +43,12 @@ func newListCmd() *cobra.Command {
 			}
 
 			tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-			if _, err := fmt.Fprintln(tw, "NAME\tTYPE\tSTATUS\tPID\tLAST_HEARTBEAT"); err != nil {
+			if _, err := fmt.Fprintln(tw, "NAME\tTYPE\tPROJECT\tSTATUS\tPID\tLAST_HEARTBEAT"); err != nil {
 				return fmt.Errorf("cli.newListCmd: write header: %w", err)
 			}
 
 			for _, a := range agents {
-				if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%v\n", a.Name, a.Type, a.Status, a.PID, a.LastHeartbeat); err != nil {
+				if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%v\n", a.Name, a.Type, a.Project, a.Status, a.PID, a.LastHeartbeat); err != nil {
 					return fmt.Errorf("cli.newListCmd: write row: %w", err)
 				}
 			}
