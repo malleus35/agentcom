@@ -34,7 +34,7 @@ func setupMCPTestServer(t *testing.T) (*Server, *db.DB) {
 		SocketsPath: filepath.Join(homeDir, config.SocketsDir),
 	}
 
-	return NewServer(database, cfg), database
+	return NewServer(database, cfg, "project-a"), database
 }
 
 func TestServerRunJSONRPCRoundTrip(t *testing.T) {
@@ -42,11 +42,11 @@ func TestServerRunJSONRPCRoundTrip(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	sender := &db.Agent{Name: "sender", Type: "worker", Status: "alive"}
+	sender := &db.Agent{Name: "sender", Type: "worker", Project: "project-a", Status: "alive"}
 	if err := database.InsertAgent(ctx, sender); err != nil {
 		t.Fatalf("InsertAgent(sender) error = %v", err)
 	}
-	receiver := &db.Agent{Name: "receiver", Type: "worker", Status: "alive"}
+	receiver := &db.Agent{Name: "receiver", Type: "worker", Project: "project-a", Status: "alive"}
 	if err := database.InsertAgent(ctx, receiver); err != nil {
 		t.Fatalf("InsertAgent(receiver) error = %v", err)
 	}
