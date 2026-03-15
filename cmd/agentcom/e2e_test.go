@@ -81,6 +81,42 @@ func TestAgentcomE2EFlow(t *testing.T) {
 	}
 }
 
+func TestAgentcomUpDownFlow(t *testing.T) {
+	binPath := buildAgentcomBinary(t)
+	homeDir := t.TempDir()
+	projectDir := t.TempDir()
+
+	initOutput := runAgentcomJSON(t, binPath, homeDir, projectDir, "init", "--template", "company")
+	if initOutput["active_template"] != "company" {
+		t.Fatalf("active_template = %v, want company", initOutput["active_template"])
+	}
+
+	upOutput := runAgentcomJSON(t, binPath, homeDir, projectDir, "up", "--only", "frontend,plan")
+	if upOutput["template"] != "company" {
+		t.Fatalf("template = %v, want company", upOutput["template"])
+	}
+	agents, ok := upOutput["agents"].([]any)
+	if !ok || len(agents) != 2 {
+		t.Fatalf("agents = %#v, want 2 entries", upOutput["agents"])
+	}
+	if _, err := os.Stat(filepath.Join(projectDir, ".agentcom", "run", "up.json")); err != nil {
+		t.Fatalf("runtime state missing: %v", err)
+	}
+
+	waitForAgents(t, binPath, homeDir, 2)
+
+	downOutput := runAgentcomJSON(t, binPath, homeDir, projectDir, "down")
+	stoppedRoles, ok := downOutput["stopped_roles"].([]any)
+	if !ok || len(stoppedRoles) != 2 {
+		t.Fatalf("stopped_roles = %#v, want 2 entries", downOutput["stopped_roles"])
+	}
+
+	waitForAgents(t, binPath, homeDir, 0)
+	if _, err := os.Stat(filepath.Join(projectDir, ".agentcom", "run", "up.json")); !os.IsNotExist(err) {
+		t.Fatalf("runtime state should be removed, stat err=%v", err)
+	}
+}
+
 func buildAgentcomBinary(t *testing.T) string {
 	t.Helper()
 

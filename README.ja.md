@@ -6,6 +6,7 @@
 
 ## 主な機能
 
+- `agentcom up` / `agentcom down` によるテンプレート定義済みエージェントの一括起動と停止
 - 長時間動作するエージェントセッションの登録と解除
 - エージェント間のダイレクトメッセージとブロードキャスト
 - メッセージ、タスク、エージェント状態の SQLite 永続化
@@ -156,10 +157,11 @@ make build
 
 通常の流れは次のとおりです。
 
-1. ローカルの agentcom ホームディレクトリを初期化する
-2. 1つ以上の長時間実行エージェントを登録する
+1. `agentcom init` でローカル状態を初期化し、project と template を選ぶ
+2. `agentcom up` で active template の全ロールを detached な管理プロセスとして起動する
 3. CLI または MCP ツールでメッセージ、inbox、タスクを扱う
-4. プロセスを正常終了して自動 deregister させる
+4. `agentcom down` で管理中のテンプレートセッションを停止する
+5. `agentcom register` は単一エージェントを手動で起動したい場合の低レベル用途として使う
 
 ## ローカル状態と設定
 
@@ -167,6 +169,12 @@ make build
 
 - SQLite DB: `~/.agentcom/agentcom.db`
 - ソケットディレクトリ: `~/.agentcom/sockets/`
+
+project ごとのローカルメタデータも使います。
+
+- project 設定: `.agentcom.json`
+- テンプレート scaffold: `.agentcom/templates/<template>/COMMON.md` と `.agentcom/templates/<template>/template.json`
+- `up` のランタイム状態: `.agentcom/run/up.json`
 
 ベースディレクトリは `AGENTCOM_HOME` で変更できます。
 
@@ -181,6 +189,8 @@ agentcom init
 
 - `--json` - 可能な場合は機械可読な JSON 出力
 - `-v`, `--verbose` - `log/slog` ベースのデバッグログ
+- `--project <name>` - 現在の project スコープを上書き
+- `--all-projects` - project スコープを無視して全件表示
 
 ```bash
 agentcom --json list
@@ -190,11 +200,11 @@ agentcom --verbose health
 ## クイックスタート
 
 ```bash
-agentcom init
-agentcom init --agents-md
-agentcom init --batch
-agentcom init --batch --agents-md claude,codex
+agentcom init --project myapp --template company
+agentcom --json init --project myapp --template company
 ```
+
+`.agentcom.json` はカレントディレクトリまたは親ディレクトリから自動検出され、`project` と `template.active` を保持します。
 
 共通指示と 6 つの役割スキルを含む内蔵テンプレートを生成:
 
@@ -214,33 +224,43 @@ agentcom --json agents template oh-my-opencode
 
 インタラクティブ端末でテンプレート名なしに `agentcom agents template` を実行すると、検索語を入力して番号でテンプレートを選択できます。
 
-別ターミナルで 2 つのエージェントを起動します。
+テンプレート定義済みエージェントをまとめて起動します。
 
 ```bash
-agentcom register --name alpha --type codex --cap plan,execute
-agentcom register --name beta --type claude --cap review,test
+agentcom up
+agentcom up --only frontend,plan
+agentcom --json up
+```
+
+既定の `up` はすぐに detach し、ランタイムメタデータを `.agentcom/run/up.json` に書き出します。停止は `down` を使います。
+
+```bash
+agentcom down
+agentcom down --only plan
+agentcom down --timeout 15
+agentcom --json down
 ```
 
 メッセージ送信:
 
 ```bash
-agentcom send --from alpha beta '{"text":"hello"}'
-agentcom broadcast --from alpha --topic sync '{"status":"ready"}'
+agentcom send --from frontend plan '{"text":"hello"}'
+agentcom broadcast --from frontend --topic sync '{"status":"ready"}'
 ```
 
 タスク操作:
 
 ```bash
-agentcom task create "Implement MCP tests" --creator alpha --assign beta --priority high
-agentcom task list --assignee beta
-agentcom task delegate <task-id> --to beta
+agentcom task create "Implement MCP tests" --creator frontend --assign plan --priority high
+agentcom task list --assignee plan
+agentcom task delegate <task-id> --to plan
 agentcom task update <task-id> --status in_progress --result "started"
 ```
 
 状態確認:
 
 ```bash
-agentcom inbox --agent beta --unread
+agentcom inbox --agent plan --unread
 agentcom status
 agentcom health
 ```
@@ -273,14 +293,57 @@ agentcom --json init
 - `--batch` は非対話フローを強制し、`--json` 時にも自動適用されます
 - `--agents-md` は `all` または `claude,codex,cursor` のようなカンマ区切りの agent 一覧を受け取ります。`agentcom init --batch --agents-md` のように値なしで使うと従来どおり `AGENTS.md` を生成します
 - `--template` は `.agentcom/templates/<template>/COMMON.md`、`.agentcom/templates/<template>/template.json`、各対応 agent 向けの shared `agentcom/SKILL.md`、および `agentcom/<template>-frontend` 形式の 6 つの namespaced role skill を生成します
+- `--template` を指定すると `.agentcom.json` に `template.active` も記録され、以後 `agentcom up` の既定入力として使われます
 - 組み込みテンプレートは `company` と `oh-my-opencode` で、`custom` はインタラクティブなテンプレート作成 wizard を起動します
 - `agentcom agents template --list` は built-in/custom テンプレートをまとめて表示し、`agentcom agents template --delete <name>` は確認後に custom テンプレートを削除します
-- JSON 出力には必要に応じて `path`, `status`, `instruction_files`, `agents_md`, `memory_files`, `template`, `custom_template_path`, `generated_files` が含まれます
+- JSON 出力には必要に応じて `path`, `status`, `project`, `project_config_path`, `template`, `active_template`, `instruction_files`, `agents_md`, `memory_files`, `custom_template_path`, `generated_files` が含まれます
 - 現在の実装では事前にホームディレクトリを準備するため、新しいパスでも `status` が `already_initialized` になる場合があります
+
+### `agentcom up`
+
+現在の project の active template を起動します。既定では detach し、バックグラウンド supervisor が各ロールごとに `register` 子プロセスを起動します。
+
+```bash
+agentcom up
+agentcom up --template company
+agentcom up --only frontend,plan
+agentcom up --force
+agentcom --json up
+```
+
+- `--template <name>` - `.agentcom.json` の `template.active` を上書きし、その値を保存
+- `--only <roles>` - 指定したロール名だけ起動
+- `--force` - 既存の管理セッションを停止してから再起動
+
+補足:
+
+- interactive terminal で project が未初期化なら、`up` は先に `agentcom init` を実行します。
+- non-interactive 環境では `.agentcom.json` がないとエラーになります。
+- ランタイムメタデータは `.agentcom/run/up.json` に保存されます。
+
+### `agentcom down`
+
+`agentcom up` で起動したエージェントを停止します。
+
+```bash
+agentcom down
+agentcom down --only plan
+agentcom down --timeout 15
+agentcom down --force
+agentcom --json down
+```
+
+- `--only <roles>` - 指定したロール名だけ停止
+- `--timeout <seconds>` - graceful shutdown の待機時間
+- `--force` - graceful shutdown を待たず即時終了
+
+### `agentcom register`
 
 ### `agentcom register`
 
 現在のプロセスを live agent として登録し、heartbeat 更新、Unix Domain Socket サーバー、fallback poller を開始します。このコマンドは長時間動作する前提です。
+
+テンプレート単位でチームを起動したい場合は `agentcom up` を優先し、`register` は単一エージェントを手動起動する低レベル用途として使ってください。
 
 ```bash
 agentcom register --name alpha --type codex
@@ -483,41 +546,52 @@ agentcom --json task list --status pending
 
 ```json
 {
+  "active_template": "company",
   "path": "/Users/name/.agentcom",
   "status": "initialized or already_initialized"
 }
 ```
 
+管理セッション開始:
+
+```bash
+agentcom --json up
+```
+
+出力例:
+
+```json
+{
+  "status": "started",
+  "project": "myapp",
+  "template": "company",
+  "supervisor_pid": 12345,
+  "runtime_state": "/path/to/project/.agentcom/run/up.json"
+}
+```
+
 ## エンドツーエンド例
 
-ターミナル 1:
+プロジェクト用ターミナル:
 
 ```bash
 export AGENTCOM_HOME=/tmp/agentcom-demo
-agentcom init
-agentcom register --name alpha --type codex --cap plan,execute
+agentcom init --project demo --template company
+agentcom up --only frontend,plan
 ```
 
-ターミナル 2:
+作業用ターミナル:
 
 ```bash
 export AGENTCOM_HOME=/tmp/agentcom-demo
-agentcom register --name beta --type claude --cap review,test
-```
-
-ターミナル 3:
-
-```bash
-export AGENTCOM_HOME=/tmp/agentcom-demo
-agentcom send --from alpha beta '{"text":"please review README"}'
-agentcom inbox --agent beta --unread
-agentcom task create "Review README" --creator alpha --assign beta --priority high
-agentcom task list --assignee beta
+agentcom send --from frontend plan '{"text":"please review README"}'
+agentcom inbox --agent plan --unread
+agentcom task create "Review README" --creator frontend --assign plan --priority high
+agentcom task list --assignee plan
 agentcom status
 agentcom health
+agentcom down
 ```
-
-終了時は `Ctrl+C` で登録プロセスを止めます。
 
 ## MCP セットアップ
 

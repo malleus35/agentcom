@@ -21,6 +21,8 @@ const (
 
 	// SocketsDir is the subdirectory for agent Unix Domain Sockets.
 	SocketsDir = "sockets"
+
+	RunDir = "run"
 )
 
 // Config holds resolved paths for agentcom.

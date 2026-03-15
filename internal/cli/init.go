@@ -133,7 +133,7 @@ func newInitCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("cli.newInitCmd: getwd for project config: %w", err)
 			}
-			projectConfigPath, projectValue, err := ensureInitProjectConfig(cwd, force)
+			projectConfigPath, projectCfg, err := ensureInitProjectConfig(cwd, force, templateSelection)
 			if err != nil {
 				return fmt.Errorf("cli.newInitCmd: ensure project config: %w", err)
 			}
@@ -156,8 +156,11 @@ func newInitCmd() *cobra.Command {
 					payload["template"] = templateSelection
 					payload["generated_files"] = generatedFiles
 				}
-				if projectValue != "" {
-					payload["project"] = projectValue
+				if projectCfg.Project != "" {
+					payload["project"] = projectCfg.Project
+				}
+				if projectCfg.Template.Active != "" {
+					payload["active_template"] = projectCfg.Template.Active
 				}
 				if projectConfigPath != "" {
 					payload["project_config_path"] = projectConfigPath
@@ -340,29 +343,40 @@ func defaultInitProject(projectDir string) (string, error) {
 	return suggested, nil
 }
 
-func ensureInitProjectConfig(projectDir string, force bool) (string, string, error) {
-	if strings.TrimSpace(projectFlag) == "" {
-		cfg, path, err := config.LoadProjectConfig(projectDir)
-		if err != nil {
-			return "", "", fmt.Errorf("cli.ensureInitProjectConfig: %w", err)
-		}
-		return path, cfg.Project, nil
+func ensureInitProjectConfig(projectDir string, force bool, templateSelection string) (string, config.ProjectConfig, error) {
+	trimmedTemplate := strings.TrimSpace(templateSelection)
+	if trimmedTemplate == promptTemplateSelection {
+		trimmedTemplate = ""
 	}
 
 	path := filepath.Join(projectDir, config.ProjectConfigFileName)
+	existingCfg, existingPath, err := config.LoadProjectConfig(projectDir)
+	if err != nil {
+		return "", config.ProjectConfig{}, fmt.Errorf("cli.ensureInitProjectConfig: %w", err)
+	}
+
+	targetCfg := existingCfg
+	if strings.TrimSpace(projectFlag) != "" {
+		targetCfg.Project = projectFlag
+	}
+	if trimmedTemplate != "" {
+		targetCfg.Template.Active = trimmedTemplate
+	}
+
+	shouldWrite := force || existingPath == "" || strings.TrimSpace(projectFlag) != "" || trimmedTemplate != ""
+	if !shouldWrite {
+		return existingPath, existingCfg, nil
+	}
+
 	if force {
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-			return "", "", fmt.Errorf("cli.ensureInitProjectConfig: remove existing: %w", err)
+			return "", config.ProjectConfig{}, fmt.Errorf("cli.ensureInitProjectConfig: remove existing: %w", err)
 		}
 	}
 
-	writtenPath, err := config.WriteProjectConfig(projectDir, projectFlag)
+	writtenPath, err := config.SaveProjectConfig(projectDir, targetCfg)
 	if err != nil {
-		cfg, existingPath, loadErr := config.LoadProjectConfig(projectDir)
-		if loadErr == nil && existingPath != "" {
-			return existingPath, cfg.Project, nil
-		}
-		return "", "", fmt.Errorf("cli.ensureInitProjectConfig: %w", err)
+		return "", config.ProjectConfig{}, fmt.Errorf("cli.ensureInitProjectConfig: %w", err)
 	}
-	return writtenPath, projectFlag, nil
+	return writtenPath, targetCfg, nil
 }

@@ -6,6 +6,7 @@
 
 ## 주요 기능
 
+- `agentcom up` / `agentcom down`으로 템플릿에 정의된 전체 에이전트 일괄 시작 및 종료
 - 장시간 실행되는 에이전트 세션 등록 및 해제
 - 에이전트 간 1:1 메시지 및 브로드캐스트 전송
 - 메시지, 태스크, 에이전트 상태를 SQLite에 영속화
@@ -172,10 +173,11 @@ make build
 
 일반적인 사용 흐름은 다음과 같습니다.
 
-1. 로컬 agentcom 홈 디렉터리를 초기화합니다.
-2. 하나 이상의 장시간 실행 에이전트 프로세스를 등록합니다.
+1. `agentcom init`으로 로컬 상태를 초기화하고 프로젝트/템플릿을 선택합니다.
+2. `agentcom up`으로 active template의 모든 역할을 detached 관리 프로세스로 기동합니다.
 3. CLI 명령 또는 MCP 도구로 메시지, inbox, 태스크를 다룹니다.
-4. 프로세스를 정상 종료해서 에이전트가 자동 해제되도록 합니다.
+4. `agentcom down`으로 관리 중인 템플릿 세션을 정상 종료합니다.
+5. `agentcom register`는 단일 에이전트를 수동으로 띄우고 싶을 때만 사용하는 저수준 명령으로 남겨 둡니다.
 
 ## 로컬 상태와 설정
 
@@ -183,6 +185,12 @@ make build
 
 - SQLite DB: `~/.agentcom/agentcom.db`
 - 소켓 디렉터리: `~/.agentcom/sockets/`
+
+프로젝트별 로컬 메타데이터도 함께 사용합니다.
+
+- 프로젝트 설정: `.agentcom.json`
+- 템플릿 스캐폴드: `.agentcom/templates/<template>/COMMON.md`, `.agentcom/templates/<template>/template.json`
+- `up` 런타임 상태: `.agentcom/run/up.json`
 
 기본 경로는 `AGENTCOM_HOME` 환경변수로 바꿀 수 있습니다.
 
@@ -199,6 +207,8 @@ agentcom init
 
 - `--json` - 가능한 경우 기계가 읽기 쉬운 JSON 출력
 - `-v`, `--verbose` - `log/slog` 기반 디버그 로그 활성화
+- `--project <name>` - 현재 프로젝트 스코프 override
+- `--all-projects` - 프로젝트 스코프를 우회하고 전체 조회
 
 예시:
 
@@ -209,12 +219,14 @@ agentcom --verbose health
 
 ## 빠른 시작
 
-로컬 상태 초기화:
+프로젝트와 active template 초기화:
 
 ```bash
-agentcom init
-agentcom init --batch
+agentcom init --project myapp --template company
+agentcom --json init --project myapp --template company
 ```
+
+`.agentcom.json`은 현재 디렉터리 또는 상위 디렉터리에서 자동 탐색되며, `project`와 `template.active`를 저장합니다.
 
 현재 디렉터리에 agent별 instruction 파일 생성:
 
@@ -241,17 +253,34 @@ agentcom --json agents template oh-my-opencode
 
 인터랙티브 터미널에서 템플릿 이름 없이 `agentcom agents template`를 실행하면 검색어를 입력한 뒤 번호로 템플릿을 선택할 수 있습니다.
 
-별도 터미널에서 두 개의 에이전트 시작:
+템플릿에 정의된 에이전트 전체 시작:
 
 ```bash
-agentcom register --name alpha --type codex --cap plan,execute
-agentcom register --name beta --type claude --cap review,test
+agentcom up
+agentcom up --only frontend,plan
+agentcom --json up
+```
+
+기본 `up` 동작은 즉시 detach되며 런타임 메타데이터를 `.agentcom/run/up.json`에 기록합니다. 종료는 `down`으로 처리합니다.
+
+```bash
+agentcom down
+agentcom down --only plan
+agentcom down --timeout 15
+agentcom --json down
+```
+
+관리 중인 에이전트 확인:
+
+```bash
+agentcom list
+agentcom health
 ```
 
 직접 메시지 전송:
 
 ```bash
-agentcom send --from alpha beta '{"text":"hello"}'
+agentcom send --from frontend plan '{"text":"hello"}'
 ```
 
 브로드캐스트 전송:
@@ -263,18 +292,17 @@ agentcom broadcast --from alpha --topic sync '{"status":"ready"}'
 태스크 생성, 위임, 갱신:
 
 ```bash
-agentcom task create "Implement MCP tests" --creator alpha --assign beta --priority high
-agentcom task list --assignee beta
-agentcom task delegate <task-id> --to beta
+agentcom task create "Implement MCP tests" --creator frontend --assign plan --priority high
+agentcom task list --assignee plan
+agentcom task delegate <task-id> --to plan
 agentcom task update <task-id> --status in_progress --result "started"
 ```
 
 inbox와 상태 확인:
 
 ```bash
-agentcom inbox --agent beta --unread
+agentcom inbox --agent plan --unread
 agentcom status
-agentcom health
 ```
 
 지원하는 모든 에이전트 CLI용 프로젝트 스킬 생성:
@@ -309,14 +337,69 @@ agentcom --json init
 - `--batch`는 비대화형 흐름을 강제하며, `--json`일 때도 자동 적용됩니다.
 - `--agents-md`는 `all` 또는 `claude,codex,cursor` 같은 콤마 구분 agent 목록을 받습니다. `agentcom init --batch --agents-md`처럼 값 없이 쓰면 기존처럼 `AGENTS.md`를 생성합니다.
 - `--template`는 `.agentcom/templates/<template>/COMMON.md`, `.agentcom/templates/<template>/template.json`, 각 지원 agent별 shared `agentcom/SKILL.md`, 그리고 `agentcom/<template>-frontend` 형태의 6개 namespaced role skill을 생성합니다.
+- `--template`를 지정하면 `.agentcom.json`에 `template.active`도 함께 기록되며, 이후 `agentcom up`이 이를 기본 입력으로 사용합니다.
 - 내장 템플릿은 `company`, `oh-my-opencode`이며, `custom`은 인터랙티브 템플릿 생성 wizard를 엽니다.
 - `agentcom agents template --list`는 built-in/custom 템플릿을 함께 보여주고, `agentcom agents template --delete <name>`는 확인 후 custom 템플릿을 삭제합니다.
-- JSON 출력에는 상황에 따라 `path`, `status`, `instruction_files`, `agents_md`, `memory_files`, `template`, `custom_template_path`, `generated_files`가 포함됩니다.
+- JSON 출력에는 상황에 따라 `path`, `status`, `project`, `project_config_path`, `template`, `active_template`, `instruction_files`, `agents_md`, `memory_files`, `custom_template_path`, `generated_files`가 포함됩니다.
 - 현재 구현상 홈 디렉터리를 먼저 준비한 뒤 `init` 상태를 검사하므로, 새 경로에서도 `status`가 `already_initialized`로 보일 수 있습니다.
+
+### `agentcom up`
+
+현재 프로젝트의 active template을 기동합니다. 기본 동작은 detach이며, 백그라운드 supervisor가 각 역할마다 `register` 자식 프로세스를 하나씩 시작합니다.
+
+사용 예시:
+
+```bash
+agentcom up
+agentcom up --template company
+agentcom up --only frontend,plan
+agentcom up --force
+agentcom --json up
+```
+
+플래그:
+
+- `--template <name>` - `.agentcom.json`의 `template.active`를 override하고 새 값으로 저장
+- `--only <roles>` - 지정한 역할명만 시작
+- `--force` - 기존 관리 세션이 있으면 먼저 종료하고 다시 시작
+
+참고:
+
+- interactive terminal에서 프로젝트가 아직 초기화되지 않았다면 `up`이 먼저 `agentcom init`을 실행합니다.
+- non-interactive 환경에서는 `.agentcom.json`이 없으면 에러를 반환합니다.
+- 런타임 메타데이터는 `.agentcom/run/up.json`에 저장됩니다.
+- 템플릿 기반 팀을 시작할 때의 기본 고수준 명령은 `agentcom up`입니다.
+
+### `agentcom down`
+
+`agentcom up`으로 시작한 에이전트를 종료합니다.
+
+사용 예시:
+
+```bash
+agentcom down
+agentcom down --only plan
+agentcom down --timeout 15
+agentcom down --force
+agentcom --json down
+```
+
+플래그:
+
+- `--only <roles>` - 지정한 역할명만 종료
+- `--timeout <seconds>` - graceful shutdown 대기 시간
+- `--force` - graceful shutdown 없이 즉시 종료
+
+참고:
+
+- `down`은 `.agentcom/run/up.json`을 기본 런타임 정보 원천으로 사용합니다.
+- 모든 역할이 종료되면 런타임 상태 파일을 제거합니다.
 
 ### `agentcom register`
 
 현재 프로세스를 live agent로 등록하고, heartbeat 갱신, Unix Domain Socket 서버, fallback poller를 시작합니다. 이 명령은 의도적으로 오래 실행되는 명령이며, 인터럽트될 때까지 종료되지 않습니다.
+
+전체 템플릿 팀을 띄우려는 경우에는 `register`보다 `agentcom up`을 권장합니다. `register`는 단일 에이전트를 수동으로 띄우는 고급/저수준 인터페이스입니다.
 
 사용 예시:
 
@@ -620,8 +703,27 @@ agentcom --json init
 
 ```json
 {
+  "active_template": "company",
   "path": "/Users/name/.agentcom",
   "status": "initialized or already_initialized"
+}
+```
+
+관리 세션 시작:
+
+```bash
+agentcom --json up
+```
+
+출력 형태 예시:
+
+```json
+{
+  "status": "started",
+  "project": "myapp",
+  "template": "company",
+  "supervisor_pid": 12345,
+  "runtime_state": "/path/to/project/.agentcom/run/up.json"
 }
 ```
 
@@ -645,34 +747,26 @@ agentcom --json task list --status pending
 
 ## 전체 흐름 예시
 
-터미널 1:
+프로젝트 터미널:
 
 ```bash
 export AGENTCOM_HOME=/tmp/agentcom-demo
-agentcom init
-agentcom register --name alpha --type codex --cap plan,execute
+agentcom init --project demo --template company
+agentcom up --only frontend,plan
 ```
 
-터미널 2:
+작업 터미널:
 
 ```bash
 export AGENTCOM_HOME=/tmp/agentcom-demo
-agentcom register --name beta --type claude --cap review,test
-```
-
-터미널 3:
-
-```bash
-export AGENTCOM_HOME=/tmp/agentcom-demo
-agentcom send --from alpha beta '{"text":"please review README"}'
-agentcom inbox --agent beta --unread
-agentcom task create "Review README" --creator alpha --assign beta --priority high
-agentcom task list --assignee beta
+agentcom send --from frontend plan '{"text":"please review README"}'
+agentcom inbox --agent plan --unread
+agentcom task create "Review README" --creator frontend --assign plan --priority high
+agentcom task list --assignee plan
 agentcom status
 agentcom health
+agentcom down
 ```
-
-작업이 끝나면 등록된 프로세스를 `Ctrl+C`로 종료하면 됩니다.
 
 ## MCP 사용법
 
