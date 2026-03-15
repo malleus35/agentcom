@@ -12,9 +12,9 @@ import (
 
 // AgentFinder locates agents for message routing.
 type AgentFinder interface {
-	FindByName(ctx context.Context, name string) (*db.Agent, error)
+	FindByName(ctx context.Context, name string, project string) (*db.Agent, error)
 	FindByID(ctx context.Context, id string) (*db.Agent, error)
-	ListAlive(ctx context.Context) ([]*db.Agent, error)
+	ListAlive(ctx context.Context, project string) ([]*db.Agent, error)
 }
 
 // Transport sends raw message bytes to an agent's socket.
@@ -27,14 +27,16 @@ type Router struct {
 	db        *db.DB
 	finder    AgentFinder
 	transport Transport
+	project   string
 }
 
 // NewRouter creates a message router.
-func NewRouter(database *db.DB, finder AgentFinder, transport Transport) *Router {
+func NewRouter(database *db.DB, finder AgentFinder, transport Transport, project string) *Router {
 	return &Router{
 		db:        database,
 		finder:    finder,
 		transport: transport,
+		project:   project,
 	}
 }
 
@@ -47,7 +49,7 @@ func (r *Router) Send(
 	topic string,
 	payload json.RawMessage,
 ) (*Envelope, error) {
-	target, err := r.finder.FindByName(ctx, toNameOrID)
+	target, err := r.finder.FindByName(ctx, toNameOrID, r.project)
 	if err != nil {
 		target, err = r.finder.FindByID(ctx, toNameOrID)
 		if err != nil {
@@ -104,7 +106,7 @@ func (r *Router) Broadcast(
 	topic string,
 	payload json.RawMessage,
 ) ([]*Envelope, error) {
-	agents, err := r.finder.ListAlive(ctx)
+	agents, err := r.finder.ListAlive(ctx, r.project)
 	if err != nil {
 		return nil, fmt.Errorf("message.Router.Broadcast: list alive agents: %w", err)
 	}
