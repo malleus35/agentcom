@@ -12,6 +12,10 @@ import (
 )
 
 func saveCustomTemplate(projectDir string, definition templateDefinition) (string, error) {
+	return writeCustomTemplate(projectDir, definition, writeModeCreate)
+}
+
+func writeCustomTemplate(projectDir string, definition templateDefinition, mode writeMode) (string, error) {
 	if err := validateCustomTemplateDefinition(definition); err != nil {
 		return "", fmt.Errorf("validate custom template: %w", err)
 	}
@@ -21,7 +25,7 @@ func saveCustomTemplate(projectDir string, definition templateDefinition) (strin
 	manifestPath := filepath.Join(baseDir, "template.json")
 
 	commonContent := renderTemplateCommonContent(definition)
-	if err := writeScaffoldFile(commonPath, commonContent, writeModeCreate); err != nil {
+	if err := writeScaffoldFile(commonPath, commonContent, mode); err != nil {
 		return "", fmt.Errorf("write custom template common markdown: %w", err)
 	}
 
@@ -29,11 +33,36 @@ func saveCustomTemplate(projectDir string, definition templateDefinition) (strin
 	if err != nil {
 		return "", fmt.Errorf("render custom template manifest: %w", err)
 	}
-	if err := writeScaffoldFile(manifestPath, manifestContent, writeModeCreate); err != nil {
+	if err := writeScaffoldFile(manifestPath, manifestContent, mode); err != nil {
 		return "", fmt.Errorf("write custom template manifest: %w", err)
 	}
 
 	return baseDir, nil
+}
+
+func loadCustomTemplate(projectDir string, name string) (templateDefinition, string, error) {
+	manifestPath := filepath.Join(projectDir, ".agentcom", "templates", name, "template.json")
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return templateDefinition{}, "", fmt.Errorf("custom template %q not found", name)
+		}
+		return templateDefinition{}, "", fmt.Errorf("read custom template manifest: %w", err)
+	}
+
+	var definition templateDefinition
+	if err := json.Unmarshal(data, &definition); err != nil {
+		return templateDefinition{}, "", fmt.Errorf("unmarshal custom template manifest: %w", err)
+	}
+
+	baseDir := filepath.Dir(manifestPath)
+	commonPath := filepath.Join(baseDir, "COMMON.md")
+	commonData, err := os.ReadFile(commonPath)
+	if err != nil {
+		return templateDefinition{}, "", fmt.Errorf("read custom template common markdown: %w", err)
+	}
+	definition.CommonBody = extractTemplateCommonBody(string(commonData), definition.CommonTitle)
+	return definition, baseDir, nil
 }
 
 func loadCustomTemplates(projectDir string) ([]templateDefinition, error) {
