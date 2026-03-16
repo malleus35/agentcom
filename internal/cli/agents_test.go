@@ -27,12 +27,50 @@ func TestResolveTemplateDefinition(t *testing.T) {
 			if len(definition.Roles) != 6 {
 				t.Fatalf("len(definition.Roles) = %d, want 6", len(definition.Roles))
 			}
+
+			frontend := findTemplateRole(t, definition, "frontend")
+			plan := findTemplateRole(t, definition, "plan")
+			switch name {
+			case "company":
+				for _, target := range []string{"architect", "review", "plan"} {
+					if !containsString(frontend.CommunicatesWith, target) {
+						t.Fatalf("company frontend missing %q in communicates_with: %v", target, frontend.CommunicatesWith)
+					}
+				}
+			case "oh-my-opencode":
+				for _, target := range []string{"design", "backend", "plan"} {
+					if !containsString(frontend.CommunicatesWith, target) {
+						t.Fatalf("oh-my-opencode frontend missing %q in communicates_with: %v", target, frontend.CommunicatesWith)
+					}
+				}
+				for _, target := range []string{"architect", "review"} {
+					if containsString(frontend.CommunicatesWith, target) {
+						t.Fatalf("oh-my-opencode frontend unexpectedly contains %q in communicates_with: %v", target, frontend.CommunicatesWith)
+					}
+				}
+				for _, target := range []string{"architect", "frontend", "backend", "design", "review"} {
+					if !containsString(plan.CommunicatesWith, target) {
+						t.Fatalf("oh-my-opencode plan missing %q in communicates_with: %v", target, plan.CommunicatesWith)
+					}
+				}
+			}
 		})
 	}
 
 	if _, err := resolveTemplateDefinition("missing"); err == nil {
 		t.Fatal("resolveTemplateDefinition() error = nil, want error")
 	}
+}
+
+func findTemplateRole(t *testing.T, definition templateDefinition, roleName string) templateRole {
+	t.Helper()
+	for _, role := range definition.Roles {
+		if role.Name == roleName {
+			return role
+		}
+	}
+	t.Fatalf("role %q not found in template %q", roleName, definition.Name)
+	return templateRole{}
 }
 
 func TestComputeEscalationTargets(t *testing.T) {
@@ -519,6 +557,87 @@ func TestTemplateScaffoldReInit(t *testing.T) {
 	}
 	if string(common1) != string(common2) {
 		t.Fatal("COMMON.md changed on re-scaffold")
+	}
+}
+
+func TestTemplateExportCommandOutputsYAML(t *testing.T) {
+	projectDir := t.TempDir()
+	oldwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	defer func() {
+		if err := os.Chdir(oldwd); err != nil {
+			t.Fatalf("restore cwd: %v", err)
+		}
+	}()
+	if err := os.Chdir(projectDir); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+
+	buf := &bytes.Buffer{}
+	cmd := newAgentsCmd()
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"template", "export", "company"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("cmd.Execute() error = %v output=%s", err, buf.String())
+	}
+
+	output := buf.String()
+	for _, want := range []string{"name: company", "roles:", "common_title:"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("export output missing %q: %s", want, output)
+		}
+	}
+}
+
+func TestTemplateExportImportRoundtrip(t *testing.T) {
+	projectDir := t.TempDir()
+	oldwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	defer func() {
+		if err := os.Chdir(oldwd); err != nil {
+			t.Fatalf("restore cwd: %v", err)
+		}
+	}()
+	if err := os.Chdir(projectDir); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+
+	buf := &bytes.Buffer{}
+	cmd := newAgentsCmd()
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"template", "export", "company"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("cmd.Execute() error = %v output=%s", err, buf.String())
+	}
+
+	exportPath := filepath.Join(projectDir, "company.yaml")
+	if err := os.WriteFile(exportPath, buf.Bytes(), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	imported, err := loadTemplateDefinitionFromFile(exportPath)
+	if err != nil {
+		t.Fatalf("loadTemplateDefinitionFromFile() error = %v", err)
+	}
+	definition, err := resolveTemplateDefinition("company")
+	if err != nil {
+		t.Fatalf("resolveTemplateDefinition() error = %v", err)
+	}
+
+	if imported.Name != definition.Name {
+		t.Fatalf("imported.Name = %q, want %q", imported.Name, definition.Name)
+	}
+	if !reflect.DeepEqual(imported.Roles, definition.Roles) {
+		t.Fatalf("imported roles = %#v, want %#v", imported.Roles, definition.Roles)
+	}
+	if imported.CommonTitle != definition.CommonTitle {
+		t.Fatalf("imported.CommonTitle = %q, want %q", imported.CommonTitle, definition.CommonTitle)
 	}
 }
 

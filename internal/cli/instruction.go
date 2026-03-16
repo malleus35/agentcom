@@ -384,7 +384,11 @@ func writeInstructionFileForAgent(path string, content string, mode writeMode, a
 		}
 		return nil
 	default:
-		return fmt.Errorf("cli.writeInstructionFile: file already exists: %s (use --force to overwrite)", path)
+		return newUserError(
+			fmt.Sprintf("Instruction file already exists at %s", path),
+			"Create mode does not overwrite existing instruction files.",
+			"Re-run with `agentcom init --force` or switch to append mode.",
+		)
 	}
 }
 

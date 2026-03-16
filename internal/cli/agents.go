@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 type templateDefinition struct {
@@ -63,7 +64,11 @@ func newAgentsTemplateCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if deleteName != "" {
 				if len(args) > 0 || listFlag {
-					return fmt.Errorf("cli.newAgentsTemplateCmd: --delete cannot be combined with template name or --list")
+					return newUserError(
+						"Template delete flags are combined incorrectly",
+						"`--delete` works by itself and cannot be used with a template name or `--list`.",
+						"Run `agentcom agents template --delete <name>` or `agentcom agents template --list` separately.",
+					)
 				}
 				return deleteCustomTemplate(cmd, deleteName)
 			}
@@ -73,11 +78,11 @@ func newAgentsTemplateCmd() *cobra.Command {
 				if !listFlag && templateSelectionEnabled(cmd) {
 					selectedName, err := selectTemplateSummary(cmd, summaries)
 					if err != nil {
-						return fmt.Errorf("cli.newAgentsTemplateCmd: select template: %w", err)
+						return commandError("cli.newAgentsTemplateCmd", err)
 					}
 					definition, err := resolveTemplateDefinition(selectedName)
 					if err != nil {
-						return fmt.Errorf("cli.newAgentsTemplateCmd: %w", err)
+						return commandError("cli.newAgentsTemplateCmd", err)
 					}
 					return writeTemplateDefinition(cmd, definition)
 				}
@@ -100,7 +105,7 @@ func newAgentsTemplateCmd() *cobra.Command {
 
 			definition, err := resolveTemplateDefinition(args[0])
 			if err != nil {
-				return fmt.Errorf("cli.newAgentsTemplateCmd: %w", err)
+				return commandError("cli.newAgentsTemplateCmd", err)
 			}
 			return writeTemplateDefinition(cmd, definition)
 		},
@@ -109,8 +114,29 @@ func newAgentsTemplateCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&listFlag, "list", false, "List built-in and custom templates")
 	cmd.Flags().StringVar(&deleteName, "delete", "", "Delete a custom template by name")
 	cmd.AddCommand(newTemplateEditCmd())
+	cmd.AddCommand(newTemplateExportCmd())
 
 	return cmd
+}
+
+func newTemplateExportCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "export <name>",
+		Short: "Export a template definition as YAML",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			definition, err := resolveTemplateDefinition(args[0])
+			if err != nil {
+				return commandError("cli.newTemplateExportCmd", err)
+			}
+			data, err := yaml.Marshal(templateExportMap(definition))
+			if err != nil {
+				return fmt.Errorf("cli.newTemplateExportCmd: marshal: %w", err)
+			}
+			_, err = cmd.OutOrStdout().Write(data)
+			return err
+		},
+	}
 }
 
 func writeTemplateDefinition(cmd *cobra.Command, definition templateDefinition) error {
@@ -245,7 +271,11 @@ func resolveTemplateDefinition(name string) (templateDefinition, error) {
 	}
 	sort.Strings(available)
 
-	return templateDefinition{}, fmt.Errorf("unknown template %q: must be one of %s", name, strings.Join(available, ", "))
+	return templateDefinition{}, newUserError(
+		fmt.Sprintf("Template %q was not found", name),
+		fmt.Sprintf("Available templates are %s.", strings.Join(available, ", ")),
+		"Run `agentcom agents template --list` to inspect templates, then retry with one of those names.",
+	)
 }
 
 func writeTemplateScaffold(projectDir string, templateName string, mode writeMode) ([]string, error) {
@@ -337,7 +367,11 @@ func writeScaffoldFile(path string, content string, mode writeMode) error {
 		slog.Debug("scaffold file already exists, skipping", "path", path)
 		return nil
 	default:
-		return fmt.Errorf("cli.writeScaffoldFile: file already exists: %s (use --force to overwrite)", path)
+		return newUserError(
+			fmt.Sprintf("Scaffold file already exists at %s", path),
+			"Create mode keeps existing scaffold files unchanged.",
+			"Re-run with `agentcom init --force` or remove the file before scaffolding again.",
+		)
 	}
 }
 
@@ -414,6 +448,12 @@ Messages provide context around the task, but the task status is the team-visibl
 - Broadcast when the whole team should know about a milestone, blocker removal, or state change.
 - Escalate when architecture, sequencing, or priority decisions exceed your role scope.
 - Prefer ` + "`agentcom up`" + ` and ` + "`agentcom down`" + ` for template teams; keep ` + "`register`" + ` as the advanced manual path.
+
+## Communication
+
+- Use ` + "`agentcom send`" + ` for one-to-one coordination with a single role.
+- Use ` + "`agentcom broadcast`" + ` when every active role needs the same update.
+- Keep task ownership in ` + "`agentcom task`" + ` and use messages to add context around that durable state.
 
 ## Quick Reference
 
@@ -780,6 +820,28 @@ func templateRoleSkillName(templateName string, roleName string) string {
 	return templateName + "-" + roleName
 }
 
+func templateExportMap(definition templateDefinition) map[string]any {
+	roles := make([]map[string]any, 0, len(definition.Roles))
+	for _, role := range definition.Roles {
+		roles = append(roles, map[string]any{
+			"name":              role.Name,
+			"description":       role.Description,
+			"agent_name":        role.AgentName,
+			"agent_type":        role.AgentType,
+			"communicates_with": append([]string(nil), role.CommunicatesWith...),
+			"responsibilities":  append([]string(nil), role.Responsibilities...),
+		})
+	}
+	return map[string]any{
+		"name":         definition.Name,
+		"description":  definition.Description,
+		"reference":    definition.Reference,
+		"common_title": definition.CommonTitle,
+		"common_body":  definition.CommonBody,
+		"roles":        roles,
+	}
+}
+
 func renderResponsibilities(items []string) string {
 	lines := make([]string, 0, len(items))
 	for _, item := range items {
@@ -895,13 +957,21 @@ func renderEscalationLine(targets []string) string {
 }
 
 func builtInTemplateDefinitions() []templateDefinition {
-	communicationMap := map[string][]string{
+	companyCommunicationMap := map[string][]string{
 		"frontend":  {"design", "backend", "review", "architect", "plan"},
 		"backend":   {"frontend", "architect", "review", "plan"},
 		"plan":      {"architect", "frontend", "backend", "design", "review"},
 		"review":    {"frontend", "backend", "architect", "plan", "design"},
 		"architect": {"plan", "frontend", "backend", "design", "review"},
 		"design":    {"plan", "frontend", "architect", "review"},
+	}
+	omoCommunicationMap := map[string][]string{
+		"frontend":  {"design", "backend", "plan"},
+		"backend":   {"frontend", "plan", "review"},
+		"plan":      {"architect", "frontend", "backend", "design", "review"},
+		"review":    {"backend", "plan", "architect"},
+		"architect": {"plan", "review"},
+		"design":    {"plan", "frontend"},
 	}
 
 	definitions := []templateDefinition{
@@ -957,7 +1027,7 @@ This template is inspired by Paperclip's company/org model, but uses six deliver
 					Description:      "Frontend implementation specialist for UI delivery, design handoff, and agentcom coordination.",
 					AgentName:        "frontend",
 					AgentType:        "engineer-frontend",
-					CommunicatesWith: communicationMap["frontend"],
+					CommunicatesWith: companyCommunicationMap["frontend"],
 					Responsibilities: []string{"Implement UI work from design direction.", "Coordinate API contracts with backend.", "Send review-ready updates with file and state summaries."},
 				},
 				{
@@ -965,7 +1035,7 @@ This template is inspired by Paperclip's company/org model, but uses six deliver
 					Description:      "Backend implementation specialist for APIs, data flows, and agentcom coordination.",
 					AgentName:        "backend",
 					AgentType:        "engineer-backend",
-					CommunicatesWith: communicationMap["backend"],
+					CommunicatesWith: companyCommunicationMap["backend"],
 					Responsibilities: []string{"Implement services, schemas, and interfaces.", "Confirm payload contracts with frontend.", "Escalate system risks and migration needs to architect and plan."},
 				},
 				{
@@ -973,7 +1043,7 @@ This template is inspired by Paperclip's company/org model, but uses six deliver
 					Description:      "Planning specialist for breaking work into milestones, sequencing tasks, and routing updates through agentcom.",
 					AgentName:        "plan",
 					AgentType:        "pm",
-					CommunicatesWith: communicationMap["plan"],
+					CommunicatesWith: companyCommunicationMap["plan"],
 					Responsibilities: []string{"Turn requests into deliverable task breakdowns.", "Coordinate handoffs between execution roles.", "Track blockers and completion signals across the team."},
 				},
 				{
@@ -981,7 +1051,7 @@ This template is inspired by Paperclip's company/org model, but uses six deliver
 					Description:      "Review specialist for QA, regression checks, and cross-role feedback loops using agentcom.",
 					AgentName:        "review",
 					AgentType:        "qa",
-					CommunicatesWith: communicationMap["review"],
+					CommunicatesWith: companyCommunicationMap["review"],
 					Responsibilities: []string{"Review delivered changes for correctness and risk.", "Request missing context from frontend, backend, or architect.", "Report approval status and follow-up tasks back to plan."},
 				},
 				{
@@ -989,7 +1059,7 @@ This template is inspired by Paperclip's company/org model, but uses six deliver
 					Description:      "Architecture specialist for system boundaries, design reviews, and escalations via agentcom.",
 					AgentName:        "architect",
 					AgentType:        "cto",
-					CommunicatesWith: communicationMap["architect"],
+					CommunicatesWith: companyCommunicationMap["architect"],
 					Responsibilities: []string{"Define system-level constraints and interfaces.", "Review cross-cutting tradeoffs before implementation expands.", "Advise plan and review on architectural risk."},
 				},
 				{
@@ -997,7 +1067,7 @@ This template is inspired by Paperclip's company/org model, but uses six deliver
 					Description:      "Design specialist for UX direction, handoff quality, and collaboration through agentcom.",
 					AgentName:        "design",
 					AgentType:        "designer",
-					CommunicatesWith: communicationMap["design"],
+					CommunicatesWith: companyCommunicationMap["design"],
 					Responsibilities: []string{"Produce UI intent, states, and interaction direction.", "Resolve ambiguities with frontend and architect.", "Support review with expected behavior and acceptance notes."},
 				},
 			},
@@ -1052,7 +1122,7 @@ This template references official Oh-My-OpenCode agent patterns such as Promethe
 					Description:      "Frontend execution specialist aligned with visual-engineering style delivery and agentcom handoffs.",
 					AgentName:        "sisyphus-junior-frontend",
 					AgentType:        "sisyphus-junior/visual-engineering",
-					CommunicatesWith: communicationMap["frontend"],
+					CommunicatesWith: omoCommunicationMap["frontend"],
 					Responsibilities: []string{"Execute UI work after plan or design handoff.", "Sync API assumptions with backend and architect.", "Return review-ready updates with concrete verification notes."},
 				},
 				{
@@ -1060,7 +1130,7 @@ This template references official Oh-My-OpenCode agent patterns such as Promethe
 					Description:      "Backend execution specialist aligned with Sisyphus-Junior implementation work and agentcom handoffs.",
 					AgentName:        "sisyphus-junior-backend",
 					AgentType:        "sisyphus-junior/unspecified-high",
-					CommunicatesWith: communicationMap["backend"],
+					CommunicatesWith: omoCommunicationMap["backend"],
 					Responsibilities: []string{"Execute service and data-layer changes after planning.", "Confirm interfaces with frontend and architect.", "Report verification details back to review and plan."},
 				},
 				{
@@ -1068,7 +1138,7 @@ This template references official Oh-My-OpenCode agent patterns such as Promethe
 					Description:      "Planner specialist modeled after Prometheus for decomposition, sequencing, and agentcom task routing.",
 					AgentName:        "prometheus",
 					AgentType:        "planner",
-					CommunicatesWith: communicationMap["plan"],
+					CommunicatesWith: omoCommunicationMap["plan"],
 					Responsibilities: []string{"Create the initial execution plan and handoff order.", "Coordinate dependencies between specialists.", "Request architectural or review input before major expansions."},
 				},
 				{
@@ -1076,7 +1146,7 @@ This template references official Oh-My-OpenCode agent patterns such as Promethe
 					Description:      "Review specialist modeled after Momus for QA, gap detection, and agentcom feedback loops.",
 					AgentName:        "momus",
 					AgentType:        "reviewer",
-					CommunicatesWith: communicationMap["review"],
+					CommunicatesWith: omoCommunicationMap["review"],
 					Responsibilities: []string{"Check whether work matches the plan and acceptance bar.", "Request missing evidence from execution roles.", "Send concise approval or follow-up tasks back through plan."},
 				},
 				{
@@ -1084,7 +1154,7 @@ This template references official Oh-My-OpenCode agent patterns such as Promethe
 					Description:      "Architecture specialist modeled after Oracle for read-mostly system guidance and escalation handling.",
 					AgentName:        "oracle",
 					AgentType:        "architect",
-					CommunicatesWith: communicationMap["architect"],
+					CommunicatesWith: omoCommunicationMap["architect"],
 					Responsibilities: []string{"Advise on system boundaries and risky tradeoffs.", "Unblock plan when implementation paths diverge.", "Provide stable interface guidance to frontend and backend."},
 				},
 				{
@@ -1092,7 +1162,7 @@ This template references official Oh-My-OpenCode agent patterns such as Promethe
 					Description:      "Design execution specialist aligned with visual-engineering style work and agentcom collaboration.",
 					AgentName:        "sisyphus-junior-design",
 					AgentType:        "sisyphus-junior/visual-engineering",
-					CommunicatesWith: communicationMap["design"],
+					CommunicatesWith: omoCommunicationMap["design"],
 					Responsibilities: []string{"Translate product intent into design-ready direction.", "Align closely with frontend on final handoff quality.", "Provide expected UX outcomes to review and architect."},
 				},
 			},

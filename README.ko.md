@@ -336,6 +336,14 @@ agentcom status
 agentcom skill create review-pr --agent all --scope project --description "일관된 PR 리뷰"
 ```
 
+진단, skill 검증, dry-run 미리보기:
+
+```bash
+agentcom doctor
+agentcom skill validate
+agentcom --json init --batch --dry-run --agents-md codex --template company
+```
+
 ## 명령별 상세 사용법
 
 ### `agentcom init`
@@ -363,6 +371,7 @@ agentcom --json init
 - 인터랙티브 터미널에서는 `agentcom init`가 기본적으로 onboarding wizard를 실행합니다.
 - `--batch`는 비대화형 흐름을 강제하며, `--json`일 때도 자동 적용됩니다.
 - `--force`는 `.agentcom.json`, instruction 파일, scaffold 파일, generated skill까지 `init`이 만드는 모든 산출물을 덮어씁니다.
+- `--dry-run`은 `init`이 create/update/overwrite 할 파일 목록을 미리 보여주고 실제 파일은 쓰지 않습니다.
 - `--agents-md`는 `all` 또는 `claude,codex,cursor` 같은 콤마 구분 agent 목록을 받습니다. `agentcom init --batch --agents-md`처럼 값 없이 쓰면 기존처럼 `AGENTS.md`를 생성합니다.
 - `--agents-md`를 다시 실행해도 기존 사용자 내용은 유지되고, agentcom이 관리하는 marker 블록만 갱신됩니다. 여러 agent가 같은 경로를 공유하면 agent별 marker 블록을 따로 유지하므로 한 agent 블록만 독립적으로 다시 쓸 수 있습니다.
 - `--template`는 `.agentcom/templates/<template>/COMMON.md`, `.agentcom/templates/<template>/template.json`, 각 지원 agent별 shared `agentcom/SKILL.md`, 그리고 `agentcom/<template>-frontend` 형태의 6개 namespaced role skill을 생성합니다.
@@ -372,7 +381,9 @@ agentcom --json init
 - `--from-file <path>`는 YAML 또는 JSON으로 정의한 custom template를 import 해서 `.agentcom/templates/<name>/`에 저장하고, 현재 active template로 scaffold 합니다.
 - `agentcom agents template --list`는 built-in/custom 템플릿을 함께 보여주고, `agentcom agents template --delete <name>`는 확인 후 custom 템플릿을 삭제합니다.
 - `agentcom agents template edit <name> add-role <role>`와 `remove-role <role>`는 기존 custom template를 수정하고 communication graph 및 관련 skill 파일을 다시 생성합니다.
+- `agentcom agents template export <name>`는 현재 템플릿 정의를 YAML로 내보내 공유하거나 `init --from-file`로 다시 가져올 수 있게 합니다.
 - JSON 출력에는 상황에 따라 `path`, `status`, `project`, `project_config_path`, `template`, `active_template`, `instruction_files`, `agents_md`, `memory_files`, `custom_template_path`, `generated_files`가 포함됩니다.
+- `--dry-run --json` 출력에는 `dry_run: true`와 `{action,path}` 형태의 `preview` 배열도 포함됩니다.
 - 현재 구현상 홈 디렉터리를 먼저 준비한 뒤 `init` 상태를 검사하므로, 새 경로에서도 `status`가 `already_initialized`로 보일 수 있습니다.
 
 ### `agentcom up`
@@ -598,7 +609,7 @@ agentcom --json task delegate <task-id> --to agt_xxx
 
 ### `agentcom status`
 
-에이전트 수, 메시지 수, unread 메시지 수, 전체 태스크 수, 상태별 태스크 수를 요약해서 보여줍니다.
+프로젝트 이름, active template, 관리 중인 역할 상태(`.agentcom/run/up.json`이 있을 때), 에이전트/메시지/태스크 요약, 그리고 수신 에이전트별 unread 메시지 수를 보여줍니다.
 
 사용 예시:
 
@@ -606,6 +617,8 @@ agentcom --json task delegate <task-id> --to agt_xxx
 agentcom status
 agentcom --json status
 ```
+
+JSON 출력에는 `template`, `role_status`, `unread_by_agent`가 포함됩니다.
 
 ### `agentcom skill`
 
@@ -619,6 +632,8 @@ agentcom skill create pairing-notes --agent cursor --scope project
 agentcom skill create docs-sync --agent github-copilot --scope user
 agentcom skill create release-check --agent all --scope user
 agentcom --json skill create docs-sync --agent gemini-cli --scope project
+agentcom skill validate
+agentcom --json skill validate
 ```
 
 플래그:
@@ -645,6 +660,7 @@ agentcom --json skill create docs-sync --agent gemini-cli --scope project
 - 기존 스킬 파일은 덮어쓰지 않습니다.
 - `--agent all`은 지원하는 모든 에이전트에 대해 파일을 생성하고, 첫 번째 쓰기 실패에서 즉시 중단합니다.
 - 출력 포맷은 agent마다 다릅니다. 대부분은 `SKILL.md`를 쓰고, `cursor`는 `.mdc`, `github-copilot`, `windsurf`, `devin`, `replit-agent`, `bolt`, `lovable`, `playcode-agent`는 `.md`를 사용합니다.
+- `skill validate`는 생성된 `SKILL.md`의 최소 길이, 필수 섹션, placeholder 누수, `agentcom` CLI 예시를 검사합니다.
 
 ### `agentcom agents template`
 
@@ -656,6 +672,7 @@ agentcom --json skill create docs-sync --agent gemini-cli --scope project
 agentcom agents template
 agentcom agents template company
 agentcom --json agents template oh-my-opencode
+agentcom agents template export company > company.yaml
 agentcom agents template edit my-team add-role devops
 agentcom agents template edit my-team remove-role design
 ```
@@ -668,7 +685,7 @@ agentcom agents template edit my-team remove-role design
 내장 템플릿:
 
 - `company` - Paperclip 역할 구조에서 영감을 받은 회사형 멀티 에이전트 워크플로우
-- `oh-my-opencode` - Prometheus, Momus, Oracle, Sisyphus-Junior 패턴에서 영감을 받은 planning 중심 워크플로우
+- `oh-my-opencode` - Prometheus, Momus, Oracle, Sisyphus-Junior 패턴에서 영감을 받은 planning 중심 워크플로우이며 `plan`이 허브 역할을 맡습니다.
 
 생성되는 scaffold:
 
@@ -679,6 +696,7 @@ agentcom agents template edit my-team remove-role design
 - 각 role skill은 먼저 shared `../SKILL.md`, 그다음 template `COMMON.md`를 읽도록 생성되며 role별 workflow, examples, anti-patterns, handoff guidance, communication map을 포함합니다.
 - `agentcom agents template edit`는 custom template에서만 사용할 수 있으며 `add-role`, `remove-role` 작업을 지원합니다.
 - `agentcom init --from-file <path>`는 YAML/JSON custom template를 가져오는 비대화형 경로입니다.
+- `agentcom agents template export <name>`는 현재 템플릿을 YAML로 내보내고 `agentcom init --from-file`로 다시 가져올 수 있게 합니다.
 
 ### `agentcom health`
 
@@ -690,6 +708,17 @@ agentcom agents template edit my-team remove-role design
 agentcom health
 agentcom --json health
 ```
+
+### `agentcom doctor`
+
+환경, 프로젝트 설정, communication graph, 생성된 문서, 관리 중인 런타임 상태를 한 번에 진단합니다.
+
+```bash
+agentcom doctor
+agentcom --json doctor
+```
+
+각 체크는 `pass`, `warn`, `fail` 중 하나로 표시되며, 실패 항목에는 바로 실행할 수 있는 수정 힌트가 포함됩니다.
 
 전체 태스크/메시지 집계보다 live agent 상태를 빠르게 보고 싶을 때 쓰면 됩니다.
 

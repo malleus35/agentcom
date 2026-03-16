@@ -22,17 +22,24 @@ type Result struct {
 
 // ApplyReport describes the filesystem changes produced by onboarding.
 type ApplyReport struct {
-	HomeDir            string   `json:"home_dir"`
-	DBPath             string   `json:"db_path"`
-	Status             string   `json:"status"`
-	Project            string   `json:"project,omitempty"`
-	ProjectConfigPath  string   `json:"project_config_path,omitempty"`
-	Template           string   `json:"template,omitempty"`
-	AgentsMDPath       string   `json:"agents_md,omitempty"`
-	InstructionFiles   []string `json:"instruction_files,omitempty"`
-	MemoryFiles        []string `json:"memory_files,omitempty"`
-	CustomTemplatePath string   `json:"custom_template_path,omitempty"`
-	GeneratedFiles     []string `json:"generated_files,omitempty"`
+	HomeDir            string          `json:"home_dir"`
+	DBPath             string          `json:"db_path"`
+	Status             string          `json:"status"`
+	DryRun             bool            `json:"dry_run,omitempty"`
+	Project            string          `json:"project,omitempty"`
+	ProjectConfigPath  string          `json:"project_config_path,omitempty"`
+	Template           string          `json:"template,omitempty"`
+	AgentsMDPath       string          `json:"agents_md,omitempty"`
+	InstructionFiles   []string        `json:"instruction_files,omitempty"`
+	MemoryFiles        []string        `json:"memory_files,omitempty"`
+	CustomTemplatePath string          `json:"custom_template_path,omitempty"`
+	GeneratedFiles     []string        `json:"generated_files,omitempty"`
+	PreviewActions     []PreviewAction `json:"preview,omitempty"`
+}
+
+type PreviewAction struct {
+	Action string `json:"action"`
+	Path   string `json:"path"`
 }
 
 // Validate checks whether the onboarding result can be applied safely.
