@@ -206,7 +206,7 @@ agentcom --json init --project myapp --template company
 
 `.agentcom.json` はカレントディレクトリまたは親ディレクトリから自動検出され、`project` と `template.active` を保持します。
 
-対象ファイルが既に存在していても、agentcom は自分の marker ブロックだけを append/update するため、既存のユーザー記述は保持されます。同じコマンドを再実行しても結果は idempotent です。
+対象ファイルが既に存在していても、agentcom は自分の marker ブロックだけを append/update するため、既存のユーザー記述は保持されます。`AGENTS.md` のように複数 agent が同じパスを共有する場合も、agent ID ごとの marker ブロックを別々に維持します。同じコマンドを再実行しても結果は idempotent です。
 
 共通指示と 6 つの役割スキルを含む内蔵テンプレートを生成:
 
@@ -214,9 +214,12 @@ agentcom --json init --project myapp --template company
 agentcom init --template company
 agentcom init --template oh-my-opencode
 agentcom init --template custom
+agentcom init --template custom --advanced
 ```
 
-テンプレート scaffold を再実行すると、shared/role `SKILL.md` は marker 管理領域だけをその場で更新し、`COMMON.md` と `template.json` は既存内容を維持します。
+`--template custom` の既定 wizard は、テンプレート名とロール一覧の 2 入力だけで残りを role defaults から自動生成します。従来の詳細 wizard が必要な場合は `--advanced` を使います。
+
+テンプレート scaffold を再実行すると、shared/role `SKILL.md` は marker 管理領域だけをその場で更新し、`COMMON.md` と `template.json` は既存内容を維持します。生成される role skill には、検証済み communication graph、詳細な primary contacts、request/response/escalation/report の具体例も含まれます。
 
 生成前に内蔵テンプレートを確認:
 
@@ -289,18 +292,20 @@ agentcom init --batch --agents-md claude,codex
 agentcom init --template company
 agentcom init --template oh-my-opencode
 agentcom init --template custom
+agentcom init --template custom --advanced
 agentcom --json init
 ```
 
 - 再実行しても安全です
 - インタラクティブ端末では `agentcom init` が既定でオンボーディング wizard を起動します
 - `--batch` は非対話フローを強制し、`--json` 時にも自動適用されます
+- `--force` は `.agentcom.json`、instruction ファイル、scaffold ファイル、generated skill を含む `init` の生成物すべてを上書きします
 - `--agents-md` は `all` または `claude,codex,cursor` のようなカンマ区切りの agent 一覧を受け取ります。`agentcom init --batch --agents-md` のように値なしで使うと従来どおり `AGENTS.md` を生成します
-- `--agents-md` を再実行しても既存のユーザー内容は保持され、agentcom が管理する marker ブロックだけが更新されます
+- `--agents-md` を再実行しても既存のユーザー内容は保持され、agentcom が管理する marker ブロックだけが更新されます。共有パスでは agent ごとの marker ブロックを分けるため、後で一部の agent だけを独立更新できます
 - `--template` は `.agentcom/templates/<template>/COMMON.md`、`.agentcom/templates/<template>/template.json`、各対応 agent 向けの shared `agentcom/SKILL.md`、および `agentcom/<template>-frontend` 形式の 6 つの namespaced role skill を生成します
 - `--template` を再実行すると、生成済み shared/role `SKILL.md` は idempotent に更新され、`COMMON.md` と `template.json` はそのまま残ります
 - `--template` を指定すると `.agentcom.json` に `template.active` も記録され、以後 `agentcom up` の既定入力として使われます
-- 組み込みテンプレートは `company` と `oh-my-opencode` で、`custom` はインタラクティブなテンプレート作成 wizard を起動します
+- 組み込みテンプレートは `company` と `oh-my-opencode` で、`custom` はインタラクティブなテンプレート作成 wizard を起動します。既定は高速な 2 項目 wizard で、従来の詳細フローは `--advanced` で利用できます
 - `agentcom agents template --list` は built-in/custom テンプレートをまとめて表示し、`agentcom agents template --delete <name>` は確認後に custom テンプレートを削除します
 - JSON 出力には必要に応じて `path`, `status`, `project`, `project_config_path`, `template`, `active_template`, `instruction_files`, `agents_md`, `memory_files`, `custom_template_path`, `generated_files` が含まれます
 - 現在の実装では事前にホームディレクトリを準備するため、新しいパスでも `status` が `already_initialized` になる場合があります
