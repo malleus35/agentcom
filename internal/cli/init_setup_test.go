@@ -42,10 +42,13 @@ func TestInitCommandRunsWizardByDefault(t *testing.T) {
 
 	oldPrompter := newOnboardPrompter
 	oldInteractive := isInteractiveInput
+	oldJSON := jsonOutput
 	defer func() {
 		newOnboardPrompter = oldPrompter
 		isInteractiveInput = oldInteractive
+		jsonOutput = oldJSON
 	}()
+	jsonOutput = false
 
 	newOnboardPrompter = func(accessible bool, advanced bool, input io.Reader, output io.Writer) onboard.Prompter {
 		return setupTestPrompter{result: onboard.Result{
@@ -93,12 +96,15 @@ func TestInitCommandNonInteractiveDefaultsToBatch(t *testing.T) {
 
 	oldInteractive := isInteractiveInput
 	oldApp := app
+	oldJSON := jsonOutput
 	defer func() {
 		isInteractiveInput = oldInteractive
 		app = oldApp
+		jsonOutput = oldJSON
 	}()
 	isInteractiveInput = func(_ io.Reader) bool { return false }
 	app = &appContext{cfg: &config.Config{HomeDir: homeDir}}
+	jsonOutput = false
 
 	buf := &bytes.Buffer{}
 	cmd := newInitCmd()
@@ -280,10 +286,13 @@ func TestInitCommandWizardGeneratesInstructionAndMemoryFiles(t *testing.T) {
 
 	oldPrompter := newOnboardPrompter
 	oldInteractive := isInteractiveInput
+	oldJSON := jsonOutput
 	defer func() {
 		newOnboardPrompter = oldPrompter
 		isInteractiveInput = oldInteractive
+		jsonOutput = oldJSON
 	}()
+	jsonOutput = false
 
 	newOnboardPrompter = func(accessible bool, advanced bool, input io.Reader, output io.Writer) onboard.Prompter {
 		return setupTestPrompter{result: onboard.Result{
@@ -439,5 +448,108 @@ func TestInitCommandForceOverwritesAllGeneratedFiles(t *testing.T) {
 		if strings.Contains(string(data), "FORCE-TEST") {
 			t.Fatalf("file %s was not overwritten: %s", path, string(data))
 		}
+	}
+}
+
+func TestInitCommandDryRunReportsPreviewWithoutWrites(t *testing.T) {
+	projectDir := t.TempDir()
+	homeDir := filepath.Join(t.TempDir(), ".agentcom-home")
+	if err := os.MkdirAll(homeDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(homeDir) error = %v", err)
+	}
+	agentsPath := filepath.Join(projectDir, "AGENTS.md")
+	original := "# Existing notes\n"
+	if err := os.WriteFile(agentsPath, []byte(original), 0o644); err != nil {
+		t.Fatalf("WriteFile(AGENTS.md) error = %v", err)
+	}
+
+	oldwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	defer func() {
+		if err := os.Chdir(oldwd); err != nil {
+			t.Fatalf("restore cwd: %v", err)
+		}
+	}()
+	if err := os.Chdir(projectDir); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+
+	oldApp := app
+	oldJSON := jsonOutput
+	oldInteractive := isInteractiveInput
+	oldProjectFlag := projectFlag
+	defer func() {
+		app = oldApp
+		jsonOutput = oldJSON
+		isInteractiveInput = oldInteractive
+		projectFlag = oldProjectFlag
+	}()
+	app = &appContext{cfg: &config.Config{HomeDir: homeDir}}
+	jsonOutput = true
+	isInteractiveInput = func(_ io.Reader) bool { return false }
+	projectFlag = "demo-app"
+
+	buf := &bytes.Buffer{}
+	cmd := newInitCmd()
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"--batch", "--dry-run", "--agents-md", "codex", "--template", "company"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("cmd.Execute() error = %v output=%s", err, buf.String())
+	}
+
+	if _, err := os.Stat(filepath.Join(projectDir, ".agentcom.json")); !os.IsNotExist(err) {
+		t.Fatalf(".agentcom.json should not be written in dry-run, stat err=%v", err)
+	}
+	if _, err := os.Stat(filepath.Join(projectDir, ".agentcom", "templates", "company", "template.json")); !os.IsNotExist(err) {
+		t.Fatalf("template.json should not be written in dry-run, stat err=%v", err)
+	}
+	data, err := os.ReadFile(agentsPath)
+	if err != nil {
+		t.Fatalf("ReadFile(AGENTS.md) error = %v", err)
+	}
+	if string(data) != original {
+		t.Fatalf("AGENTS.md changed during dry-run: %q", string(data))
+	}
+	for _, want := range []string{"\"dry_run\": true", "\"preview\"", "AGENTS.md", "template.json", "company-frontend"} {
+		if !strings.Contains(buf.String(), want) {
+			t.Fatalf("dry-run output missing %q: %s", want, buf.String())
+		}
+	}
+	if !strings.Contains(buf.String(), "\"action\": \"update\"") || !strings.Contains(buf.String(), "\"action\": \"create\"") {
+		t.Fatalf("dry-run output missing action types: %s", buf.String())
+	}
+}
+
+func TestInitSetupExecutorDryRunSkipsWrites(t *testing.T) {
+	projectDir := t.TempDir()
+	homeDir := filepath.Join(t.TempDir(), ".agentcom-test")
+	executor := &initSetupExecutor{projectDir: projectDir, dryRun: true}
+	result := onboard.Result{
+		HomeDir:           homeDir,
+		Project:           "dry-run-app",
+		Template:          "company",
+		WriteInstructions: true,
+		SelectedAgents:    []string{"codex"},
+		Confirmed:         true,
+	}
+
+	report, err := executor.Apply(context.Background(), result)
+	if err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+	if !report.DryRun {
+		t.Fatal("report.DryRun = false, want true")
+	}
+	if len(report.PreviewActions) == 0 {
+		t.Fatal("report.PreviewActions is empty, want planned writes")
+	}
+	if _, err := os.Stat(filepath.Join(homeDir, config.DBFileName)); !os.IsNotExist(err) {
+		t.Fatalf("DB should not be created in dry-run, stat err=%v", err)
+	}
+	if _, err := os.Stat(filepath.Join(projectDir, "AGENTS.md")); !os.IsNotExist(err) {
+		t.Fatalf("AGENTS.md should not be written in dry-run, stat err=%v", err)
 	}
 }

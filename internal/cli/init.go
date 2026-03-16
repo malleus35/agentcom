@@ -26,17 +26,33 @@ func newInitCmd() *cobra.Command {
 	var accessible bool
 	var advanced bool
 	var force bool
+	var dryRun bool
 
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Initialize agentcom home and optionally run onboarding wizard",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if app == nil {
+				cfg, err := config.Load()
+				if err != nil {
+					return fmt.Errorf("cli.newInitCmd: load config: %w", err)
+				}
+				app = &appContext{cfg: cfg}
+			}
 			agentsSelection, templateSelection, remainingArgs := consumeInitOptionalValues(agentsValue, templateName, args)
 			if len(remainingArgs) > 0 {
-				return fmt.Errorf("cli.newInitCmd: unexpected arguments: %s", strings.Join(remainingArgs, ", "))
+				return newUserError(
+					"Unexpected positional arguments were provided to init",
+					fmt.Sprintf("`agentcom init` does not accept %s here.", strings.Join(remainingArgs, ", ")),
+					"Remove the extra arguments or pass them through flags like `--template` or `--agents-md`.",
+				)
 			}
 			if fromFile != "" && templateSelection != "" {
-				return fmt.Errorf("cli.newInitCmd: --from-file cannot be combined with --template")
+				return newUserError(
+					"`--from-file` cannot be combined with `--template`",
+					"Both options define the template source, so using them together is ambiguous.",
+					"Use either `agentcom init --from-file template.yaml` or `agentcom init --template company`.",
+				)
 			}
 
 			if fromFile == "" && shouldRunWizard(cmd) {
@@ -72,7 +88,7 @@ func newInitCmd() *cobra.Command {
 
 				wizard := onboard.NewWizard(
 					newOnboardPrompter(accessible, advanced, cmd.InOrStdin(), cmd.OutOrStdout()),
-					newInitSetupExecutor(cwd, force),
+					newInitSetupExecutor(cwd, force, dryRun),
 				)
 				report, err := wizard.Run(cmd.Context(), defaults)
 				if err != nil {
@@ -99,6 +115,9 @@ func newInitCmd() *cobra.Command {
 			agentsMDPath := ""
 			generatedFiles := []string{}
 			customTemplatePath := ""
+			previewActions := []onboard.PreviewAction{}
+			projectConfigPath := ""
+			projectCfg := config.ProjectConfig{}
 			mode := writeModeAppend
 			if force {
 				mode = writeModeOverwrite
@@ -116,7 +135,24 @@ func newInitCmd() *cobra.Command {
 						return fmt.Errorf("cli.newInitCmd: resolve instruction agents: %w", err)
 					}
 				}
-				instructionFiles, err = writeAgentInstructions(cwd, selectedAgents, mode)
+				if dryRun {
+					seenPaths := make(map[string]struct{}, len(selectedAgents))
+					for _, agentID := range selectedAgents {
+						definition, ok := findInstructionDefinition(agentID)
+						if !ok {
+							return fmt.Errorf("cli.newInitCmd: unsupported instruction agent %q", agentID)
+						}
+						path := filepath.Join(cwd, definition.RelativePath)
+						if _, ok := seenPaths[path]; ok {
+							continue
+						}
+						seenPaths[path] = struct{}{}
+						instructionFiles = append(instructionFiles, path)
+						previewActions = append(previewActions, onboard.PreviewAction{Action: previewActionForPath(path, mode), Path: path})
+					}
+				} else {
+					instructionFiles, err = writeAgentInstructions(cwd, selectedAgents, mode)
+				}
 				if err != nil {
 					return fmt.Errorf("cli.newInitCmd: write instruction files: %w", err)
 				}
@@ -141,7 +177,14 @@ func newInitCmd() *cobra.Command {
 				if force {
 					writeModeForTemplate = writeModeOverwrite
 				}
-				customTemplatePath, err = writeCustomTemplate(cwd, definition, writeModeForTemplate)
+				if dryRun {
+					customTemplatePath = filepath.Join(cwd, ".agentcom", "templates", definition.Name)
+					for _, path := range []string{filepath.Join(customTemplatePath, "COMMON.md"), filepath.Join(customTemplatePath, "template.json")} {
+						previewActions = append(previewActions, onboard.PreviewAction{Action: previewActionForPath(path, writeModeForTemplate), Path: path})
+					}
+				} else {
+					customTemplatePath, err = writeCustomTemplate(cwd, definition, writeModeForTemplate)
+				}
 				if err != nil {
 					return fmt.Errorf("cli.newInitCmd: save imported template: %w", err)
 				}
@@ -153,7 +196,18 @@ func newInitCmd() *cobra.Command {
 				if err != nil {
 					return fmt.Errorf("cli.newInitCmd: getwd for template scaffold: %w", err)
 				}
-				generatedFiles, err = writeTemplateScaffold(cwd, templateSelection, mode)
+				if dryRun {
+					preview, previewErr := previewTemplateScaffold(cwd, templateSelection, mode)
+					if previewErr != nil {
+						return fmt.Errorf("cli.newInitCmd: preview template scaffold: %w", previewErr)
+					}
+					for _, action := range preview {
+						previewActions = append(previewActions, action)
+						generatedFiles = append(generatedFiles, action.Path)
+					}
+				} else {
+					generatedFiles, err = writeTemplateScaffold(cwd, templateSelection, mode)
+				}
 				if err != nil {
 					return fmt.Errorf("cli.newInitCmd: write template scaffold: %w", err)
 				}
@@ -163,7 +217,17 @@ func newInitCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("cli.newInitCmd: getwd for project config: %w", err)
 			}
-			projectConfigPath, projectCfg, err := ensureInitProjectConfig(cwd, force, templateSelection)
+			if dryRun {
+				projectConfigPath = filepath.Join(cwd, config.ProjectConfigFileName)
+				projectCfg.Project = projectFlag
+				if projectCfg.Project == "" {
+					projectCfg.Project, _ = defaultInitProject(cwd)
+				}
+				projectCfg.Template.Active = templateSelection
+				previewActions = append(previewActions, onboard.PreviewAction{Action: previewActionForPath(projectConfigPath, mode), Path: projectConfigPath})
+			} else {
+				projectConfigPath, projectCfg, err = ensureInitProjectConfig(cwd, force, templateSelection)
+			}
 			if err != nil {
 				return fmt.Errorf("cli.newInitCmd: ensure project config: %w", err)
 			}
@@ -173,8 +237,9 @@ func newInitCmd() *cobra.Command {
 				enc.SetIndent("", "  ")
 
 				payload := map[string]any{
-					"path":   app.cfg.HomeDir,
-					"status": status,
+					"path":    app.cfg.HomeDir,
+					"status":  status,
+					"dry_run": dryRun,
 				}
 				if len(instructionFiles) > 0 {
 					payload["instruction_files"] = instructionFiles
@@ -198,8 +263,19 @@ func newInitCmd() *cobra.Command {
 				if projectConfigPath != "" {
 					payload["project_config_path"] = projectConfigPath
 				}
+				if dryRun {
+					payload["preview"] = previewActions
+				}
 
 				return enc.Encode(payload)
+			}
+			if dryRun {
+				for _, action := range previewActions {
+					if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Would %s: %s\n", action.Action, action.Path); err != nil {
+						return err
+					}
+				}
+				return nil
 			}
 
 			for _, path := range instructionFiles {
@@ -242,6 +318,7 @@ func newInitCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&accessible, "accessible", false, "Use accessible text prompts for setup wizard")
 	cmd.Flags().BoolVar(&advanced, "advanced", false, "Use detailed custom template wizard with all fields")
 	cmd.Flags().BoolVar(&force, "force", false, "Overwrite all generated files (project config, instructions, scaffold, skills)")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview changes without writing files")
 	cmd.Flags().StringVar(&fromFile, "from-file", "", "Create template from a YAML or JSON file")
 	cmd.Flags().StringVar(&agentsValue, "agents-md", "", "Generate agent instruction files in the current directory")
 	cmd.Flags().StringVar(&templateName, "template", "", "Generate a project scaffold: company|oh-my-opencode|custom")
@@ -261,8 +338,9 @@ func writeInitReport(cmd *cobra.Command, report onboard.ApplyReport) error {
 		enc.SetIndent("", "  ")
 
 		payload := map[string]any{
-			"path":   report.HomeDir,
-			"status": report.Status,
+			"path":    report.HomeDir,
+			"status":  report.Status,
+			"dry_run": report.DryRun,
 		}
 		if len(report.InstructionFiles) > 0 {
 			payload["instruction_files"] = report.InstructionFiles
@@ -288,8 +366,20 @@ func writeInitReport(cmd *cobra.Command, report onboard.ApplyReport) error {
 		if report.CustomTemplatePath != "" {
 			payload["custom_template_path"] = report.CustomTemplatePath
 		}
+		if report.DryRun {
+			payload["preview"] = report.PreviewActions
+		}
 
 		return enc.Encode(payload)
+	}
+
+	if report.DryRun {
+		for _, action := range report.PreviewActions {
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Would %s: %s\n", action.Action, action.Path); err != nil {
+				return err
+			}
+		}
+		return nil
 	}
 
 	for _, path := range report.InstructionFiles {
