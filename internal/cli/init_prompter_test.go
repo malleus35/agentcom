@@ -131,6 +131,45 @@ func TestValidateWizardProjectName(t *testing.T) {
 	}
 }
 
+func TestValidateWizardProjectNameWithoutDatabase(t *testing.T) {
+	homeDir := t.TempDir()
+	projectDir := filepath.Join(t.TempDir(), "current-project")
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(projectDir) error = %v", err)
+	}
+
+	if err := validateWizardProjectName(projectDir, homeDir, "new-project"); err != nil {
+		t.Fatalf("validateWizardProjectName(no db) error = %v", err)
+	}
+}
+
+func TestValidateWizardProjectNameWithoutProjectsTable(t *testing.T) {
+	homeDir := t.TempDir()
+	projectDir := filepath.Join(t.TempDir(), "current-project")
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(projectDir) error = %v", err)
+	}
+
+	cfg := &config.Config{
+		HomeDir:     homeDir,
+		DBPath:      filepath.Join(homeDir, config.DBFileName),
+		SocketsPath: filepath.Join(homeDir, config.SocketsDir),
+	}
+	if err := cfg.EnsureDirs(); err != nil {
+		t.Fatalf("EnsureDirs() error = %v", err)
+	}
+
+	database, err := db.Open(cfg.DBPath)
+	if err != nil {
+		t.Fatalf("db.Open() error = %v", err)
+	}
+	defer database.Close()
+
+	if err := validateWizardProjectName(projectDir, homeDir, "new-project"); err != nil {
+		t.Fatalf("validateWizardProjectName(missing projects table) error = %v", err)
+	}
+}
+
 func TestSimplifiedWizardGeneratesValidTemplate(t *testing.T) {
 	definition, err := buildSimplifiedCustomTemplateDefinition("test-team", []string{"frontend", "backend", "plan"}, nil)
 	if err != nil {

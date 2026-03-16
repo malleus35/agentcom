@@ -120,6 +120,14 @@ func knownProjectNames(homeDir string) (map[string]struct{}, error) {
 	}
 	defer database.Close()
 
+	projectsTableExists, err := database.ProjectsTableExists(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	if !projectsTableExists {
+		return map[string]struct{}{}, nil
+	}
+
 	projects, err := database.ListProjects(context.Background())
 	if err != nil {
 		return nil, err

@@ -404,6 +404,15 @@ func (d *DB) ListProjects(ctx context.Context) ([]string, error) {
 	return projects, nil
 }
 
+func (d *DB) ProjectsTableExists(ctx context.Context) (bool, error) {
+	var count int
+	if err := d.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, "projects").Scan(&count); err != nil {
+		return false, fmt.Errorf("db.ProjectsTableExists: query: %w", err)
+	}
+
+	return count > 0, nil
+}
+
 func (d *DB) EnsureProject(ctx context.Context, project string) error {
 	if project == "" {
 		return nil
