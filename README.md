@@ -87,8 +87,8 @@ If you want the easiest install path across macOS, Linux, and Windows, use one o
 Recommended for most end users. Release archives can be built for:
 
 - macOS: `darwin/amd64`, `darwin/arm64`
-- Linux: `linux/amd64`
-- Windows: `windows/amd64`
+- Linux: `linux/amd64`, `linux/arm64`
+- Windows: `windows/amd64`, `windows/arm64`
 
 Download the matching archive from GitHub Releases, extract it, and put the binary on your `PATH`.
 

@@ -29,6 +29,14 @@
 
 ## 이번 세션에서 마무리한 작업
 
+- linux/windows arm64 release matrix 확장 완료
+  - `.github/workflows/release.yml`: `linux/arm64`, `windows/arm64` asset 빌드 엔트리 추가
+  - `linux/arm64`: Ubuntu runner에서 `gcc-aarch64-linux-gnu`, `g++-aarch64-linux-gnu`, `libc6-dev-arm64-cross`로 CGO cross-build 경로 정의
+  - `windows/arm64`: Ubuntu runner에서 `mstorsjo/llvm-mingw` UCRT toolchain을 내려받아 `aarch64-w64-mingw32-gcc/g++`로 CGO cross-build 경로 정의
+  - `scripts/install.ps1`: Windows PowerShell installer가 `amd64`뿐 아니라 `arm64`도 감지하도록 수정
+  - `README.md`, `README.ko.md`, `README.ja.md`, `README.zh.md`: GitHub Releases 지원 아카이브 목록에 `linux/arm64`, `windows/arm64` 추가
+  - 제약 기록: 현재 `packaging/scoop/agentcom.json`은 최신 공개 릴리스 기준 정적 manifest라 unreleased arm64 URL/hash를 먼저 넣지 않았음. 다음 arm64 포함 릴리스 시 실제 checksum으로 갱신 필요
+
 - Step 3 known-project lookup recoverability 수정 완료
   - `internal/cli/init_prompter.go`: `knownProjectNames()`가 DB 파일이 있어도 `projects` 테이블이 없는 recoverable 상태를 빈 known-project 집합으로 처리하도록 보강
   - `internal/db/agent.go`: `ProjectsTableExists(ctx)` helper 추가로 schema readiness를 명시적으로 확인
