@@ -11,7 +11,7 @@
 - **P10 상태**: 구현/문서/테스트 완료, 관련 변경은 현재 브랜치에 포함됨
 - **P11 상태**: 구현 완료, 테스트/수동 QA/README 반영 완료, develop 머지 및 release 대기
 - **계획 문서 상태**: `AGENTCOM_IMPROVEMENT_PROPOSAL.md` 기반 후속 개선안 분석 완료, PH1~PH4 상세 실행 계획 문서 작성 완료
-- **다음 작업**: PH1~PH4 계획 문서 검토 후 우선순위 확정, 구현 시작 시 task 단위로 feature 브랜치 분리
+- **다음 작업**: PH1~PH4 계획 문서 검토 후 우선순위 확정, 구현 시작 시 task 단위로 feature 브랜치 분리, release workflow와 README 기준을 맞춰 `linux/arm64`·`windows/arm64` 지원 여부를 확정하고 문서/배포 설정을 정리
 - **워킹트리**: 계획 문서 4개와 MEMORY 업데이트가 존재, 그 외 release/README 관련 별도 수정도 남아 있음
 
 ## 완료된 태스크
@@ -173,6 +173,7 @@
 - Homebrew는 remote tap이 최신이어도 local tap checkout이 stale하거나 formula가 pin 되어 있으면 `brew upgrade agentcom`이 새 릴리스를 보지 못할 수 있음
 - `scripts/install.sh`, `scripts/install.ps1`, `packaging/scoop/agentcom.json`은 아직 `v0.1.5` 기준으로 고정돼 있어 다음 공개 릴리스 전에 버전/URL/hash 갱신이 필요
 - 현재 `release.yml` build matrix는 `linux/amd64`, `darwin/amd64`, `windows/amd64`만 자동 생성한다. README의 `arm64` 설명 및 기존 수동 업로드 경험과 차이가 있어 릴리스 시 확인 필요
+- 현재 `README*.md`는 실제 공개 릴리스 기준으로 `linux/arm64`, `windows/arm64`를 제외하고 있지만, `.goreleaser.yml`은 여전히 arm64 전반을 암시한다. 다음 작업에서 release workflow/문서/배포 타깃을 한 기준으로 통일할 필요가 있음
 
 ## 메모
 
