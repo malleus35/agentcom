@@ -21,7 +21,7 @@ func saveCustomTemplate(projectDir string, definition templateDefinition) (strin
 	manifestPath := filepath.Join(baseDir, "template.json")
 
 	commonContent := renderTemplateCommonContent(definition)
-	if err := writeScaffoldFile(commonPath, commonContent); err != nil {
+	if err := writeScaffoldFile(commonPath, commonContent, writeModeCreate); err != nil {
 		return "", fmt.Errorf("write custom template common markdown: %w", err)
 	}
 
@@ -29,7 +29,7 @@ func saveCustomTemplate(projectDir string, definition templateDefinition) (strin
 	if err != nil {
 		return "", fmt.Errorf("render custom template manifest: %w", err)
 	}
-	if err := writeScaffoldFile(manifestPath, manifestContent); err != nil {
+	if err := writeScaffoldFile(manifestPath, manifestContent, writeModeCreate); err != nil {
 		return "", fmt.Errorf("write custom template manifest: %w", err)
 	}
 

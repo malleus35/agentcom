@@ -335,3 +335,41 @@ func TestInitCommandWizardGeneratesInstructionAndMemoryFiles(t *testing.T) {
 		t.Fatalf("projects = %#v, want [wizard-app]", projects)
 	}
 }
+
+func TestInitSetupReInitPreservesContent(t *testing.T) {
+	projectDir := t.TempDir()
+	homeDir := filepath.Join(t.TempDir(), ".agentcom-test")
+	userContent := "# My Project\n\n## Team Rules\n\n- Always write tests first.\n"
+	agentsPath := filepath.Join(projectDir, "AGENTS.md")
+	if err := os.WriteFile(agentsPath, []byte(userContent), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	executor := &initSetupExecutor{projectDir: projectDir}
+	result := onboard.Result{HomeDir: homeDir, Project: "test-project", WriteInstructions: true, SelectedAgents: []string{"codex"}}
+	if _, err := executor.Apply(context.Background(), result); err != nil {
+		t.Fatalf("first Apply() error = %v", err)
+	}
+	data1, err := os.ReadFile(agentsPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	content1 := string(data1)
+	if !strings.Contains(content1, "# My Project") {
+		t.Fatal("user content lost after first init")
+	}
+	if !strings.Contains(content1, agentcomMarkerStart) {
+		t.Fatal("agentcom markers missing after first init")
+	}
+
+	if _, err := executor.Apply(context.Background(), result); err != nil {
+		t.Fatalf("second Apply() error = %v", err)
+	}
+	data2, err := os.ReadFile(agentsPath)
+	if err != nil {
+		t.Fatalf("ReadFile() second read error = %v", err)
+	}
+	if string(data1) != string(data2) {
+		t.Fatal("second init changed content")
+	}
+}

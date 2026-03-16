@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -121,7 +122,7 @@ func newSkillCreateCmd() *cobra.Command {
 			}
 
 			for _, target := range targets {
-				if err := writeSkillFile(target.Path, renderSkillContent(name, desc)); err != nil {
+				if err := writeSkillFile(target.Path, renderSkillContent(name, desc), writeModeCreate); err != nil {
 					return fmt.Errorf("cli.newSkillCreateCmd: write %s skill: %w", target.Agent, err)
 				}
 			}
@@ -281,22 +282,53 @@ func skillFileRelativePath(fileName skillFileName, skillName string) string {
 	}
 }
 
-func writeSkillFile(path string, content string) error {
+func writeSkillFile(path string, content string, mode writeMode) error {
+	markerContent := wrapWithMarkers(content)
+	exists := false
 	if _, err := os.Stat(path); err == nil {
-		return fmt.Errorf("SKILL.md already exists: %s", path)
+		exists = true
 	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("stat SKILL.md: %w", err)
+		return fmt.Errorf("cli.writeSkillFile: stat: %w", err)
 	}
 
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("mkdir skill dir: %w", err)
+		return fmt.Errorf("cli.writeSkillFile: mkdir: %w", err)
 	}
 
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		return fmt.Errorf("write SKILL.md: %w", err)
+	if !exists {
+		if err := os.WriteFile(path, []byte(markerContent), 0o644); err != nil {
+			return fmt.Errorf("cli.writeSkillFile: write: %w", err)
+		}
+		return nil
 	}
 
-	return nil
+	switch mode {
+	case writeModeOverwrite:
+		if err := os.WriteFile(path, []byte(markerContent), 0o644); err != nil {
+			return fmt.Errorf("cli.writeSkillFile: overwrite: %w", err)
+		}
+		return nil
+	case writeModeAppend:
+		existing, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("cli.writeSkillFile: read existing: %w", err)
+		}
+		existingStr := string(existing)
+		_, _, found := findMarkerBounds(existingStr)
+		result := appendMarkerBlock(existingStr, markerContent)
+		if found {
+			slog.Debug("updating existing agentcom marker block", "path", path)
+			result = replaceMarkerBlock(existingStr, markerContent)
+		} else {
+			slog.Debug("appending agentcom configuration to existing file", "path", path)
+		}
+		if err := os.WriteFile(path, []byte(result), 0o644); err != nil {
+			return fmt.Errorf("cli.writeSkillFile: write append result: %w", err)
+		}
+		return nil
+	default:
+		return fmt.Errorf("cli.writeSkillFile: skill file already exists: %s (use --force to overwrite)", path)
+	}
 }
 
 func renderSkillContent(name string, description string) string {
