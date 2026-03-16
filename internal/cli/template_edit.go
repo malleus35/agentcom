@@ -88,7 +88,7 @@ func addRoleToTemplate(templateName string, roleName string) ([]string, error) {
 	if _, err := writeCustomTemplate(projectDir, definition, writeModeOverwrite); err != nil {
 		return nil, err
 	}
-	generated, err := writeTemplateScaffold(projectDir, templateName, writeModeOverwrite)
+	generated, err := writeTemplateScaffold(projectDir, templateName, writeModeOverwrite, nil)
 	if err != nil {
 		return nil, fmt.Errorf("regenerate scaffold: %w", err)
 	}
@@ -133,7 +133,7 @@ func removeRoleFromTemplate(templateName string, roleName string) ([]string, err
 	if _, err := writeCustomTemplate(projectDir, definition, writeModeOverwrite); err != nil {
 		return nil, err
 	}
-	generated, err := writeTemplateScaffold(projectDir, templateName, writeModeOverwrite)
+	generated, err := writeTemplateScaffold(projectDir, templateName, writeModeOverwrite, nil)
 	if err != nil {
 		return nil, fmt.Errorf("regenerate scaffold: %w", err)
 	}

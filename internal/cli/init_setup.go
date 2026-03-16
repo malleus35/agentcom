@@ -172,7 +172,7 @@ func (e *initSetupExecutor) Apply(ctx context.Context, result onboard.Result) (o
 	}
 
 	if result.Template != "" {
-		generatedFiles, err := writeTemplateScaffold(e.projectDir, result.Template, mode)
+		generatedFiles, err := writeTemplateScaffold(e.projectDir, result.Template, mode, result.SelectedAgents)
 		if err != nil {
 			return onboard.ApplyReport{}, fmt.Errorf("cli.initSetupExecutor.Apply: write template scaffold: %w", err)
 		}
@@ -264,7 +264,7 @@ func previewInitSetup(projectDir string, result onboard.Result, mode writeMode) 
 	}
 
 	if result.Template != "" {
-		paths, err := previewTemplateScaffold(projectDir, result.Template, mode)
+		paths, err := previewTemplateScaffold(projectDir, result.Template, mode, result.SelectedAgents)
 		if err != nil {
 			return nil, nil, nil, nil, "", "", "", err
 		}
@@ -280,7 +280,7 @@ func previewInitSetup(projectDir string, result onboard.Result, mode writeMode) 
 	return preview, generatedFiles, instructionFiles, memoryFiles, agentsMDPath, projectConfigPath, customTemplatePath, nil
 }
 
-func previewTemplateScaffold(projectDir string, templateName string, mode writeMode) ([]onboard.PreviewAction, error) {
+func previewTemplateScaffold(projectDir string, templateName string, mode writeMode, selectedAgents []string) ([]onboard.PreviewAction, error) {
 	definition, err := resolveTemplateDefinition(templateName)
 	if err != nil {
 		return nil, err
@@ -289,7 +289,7 @@ func previewTemplateScaffold(projectDir string, templateName string, mode writeM
 		filepath.Join(projectDir, ".agentcom", "templates", definition.Name, "COMMON.md"),
 		filepath.Join(projectDir, ".agentcom", "templates", definition.Name, "template.json"),
 	}
-	sharedTargets, err := resolveTemplateSkillTargets("project", "agentcom")
+	sharedTargets, err := resolveTemplateSkillTargetsForSelectedAgents("project", "agentcom", selectedAgents)
 	if err != nil {
 		return nil, err
 	}
@@ -297,7 +297,7 @@ func previewTemplateScaffold(projectDir string, templateName string, mode writeM
 		paths = append(paths, target.Path)
 	}
 	for _, role := range definition.Roles {
-		targets, err := resolveTemplateSkillTargets("project", filepath.Join("agentcom", templateRoleSkillName(definition.Name, role.Name)))
+		targets, err := resolveTemplateSkillTargetsForSelectedAgents("project", filepath.Join("agentcom", templateRoleSkillName(definition.Name, role.Name)), selectedAgents)
 		if err != nil {
 			return nil, err
 		}
