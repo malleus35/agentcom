@@ -7,11 +7,12 @@
 - **Phase**: P11 구현/문서 완료, release 준비 중
 - **마지막 작업**: P11 `up`/`down` 라이프사이클 구현 + README 전면 갱신 + atomic commit 정리
 - **현재 브랜치**: `feature/P11-up-down-agent-lifecycle-plan`
-- **현재 버전**: v0.1.5가 최신 공개 릴리스, 다음 릴리스 버전은 아직 미확정
+- **현재 버전**: v0.1.7이 최신 공개 릴리스, 다음 릴리스 버전은 아직 미확정
 - **P10 상태**: 구현/문서/테스트 완료, 관련 변경은 현재 브랜치에 포함됨
 - **P11 상태**: 구현 완료, 테스트/수동 QA/README 반영 완료, develop 머지 및 release 대기
-- **다음 작업**: 릴리스 버전 확정 → develop 머지 → 태그/릴리스 → Scoop/Homebrew 반영 검증
-- **워킹트리**: clean, P11 관련 6개 커밋으로 정리 완료
+- **계획 문서 상태**: `AGENTCOM_IMPROVEMENT_PROPOSAL.md` 기반 후속 개선안 분석 완료, PH1~PH4 상세 실행 계획 문서 작성 완료
+- **다음 작업**: PH1~PH4 계획 문서 검토 후 우선순위 확정, 구현 시작 시 task 단위로 feature 브랜치 분리
+- **워킹트리**: 계획 문서 4개와 MEMORY 업데이트가 존재, 그 외 release/README 관련 별도 수정도 남아 있음
 
 ## 완료된 태스크
 
@@ -27,6 +28,23 @@
 - P10 project column 핵심 구현 완료
 
 ## 이번 세션에서 마무리한 작업
+
+- 개선 제안서 기반 후속 계획 문서화 완료
+  - `.agents/plans/AGENTCOM_IMPROVEMENT_PROPOSAL.md`를 전체 검토하고 실제 소스 기준으로 불일치/과장 포인트를 재정리
+  - plan agent 결과를 바탕으로 `.agents/plans/PHASE1-critical-fixes.md` 작성 완료
+  - `.agents/plans/PHASE2-core-improvements.md` 작성 완료
+  - `.agents/plans/PHASE3-documentation-polish.md` 작성 완료
+  - `.agents/plans/PHASE4-enhanced-ux.md` 작성 완료
+  - Phase 번호는 기존 P0~P11과 충돌하지 않도록 `PH1`~`PH4` 체계 사용
+  - 총 계획 규모: 22 tasks / 75 subtasks / 약 68시간 추정
+  - 핵심 정정 사항: overwrite 버그는 1개가 아니라 3개 write 함수에 존재, `generateInstructionFiles()`가 아니라 `writeAgentInstructions()`가 실제 엔트리포인트, `doctor`와 `verify`는 통합 대상으로 재정의
+
+- v0.1.7 릴리스 요약
+  - `feature/init-step3-project-onboarding`를 `develop`에 머지한 뒤 `main`에 릴리스 머지 완료
+  - GitHub release/tag `v0.1.7` 발행 및 기본 release asset(`darwin/amd64`, `linux/amd64`, `windows/amd64`) 업로드 확인
+  - 누락됐던 `darwin/arm64` asset을 수동 빌드/업로드해 install script와 Homebrew arm64 설치 경로 복구
+  - `scripts/install.sh`, `scripts/install.ps1`, `packaging/scoop/agentcom.json`, `malleus35/homebrew-tap` formula를 모두 `0.1.7` 기준으로 갱신
+  - Homebrew `brew upgrade agentcom`과 shell install script로 `0.1.7` 수동 QA 완료
 
 - 템플릿 스캐폴드 up/down 문구 정렬 완료
   - `internal/cli/agents.go`의 shared `agentcom/SKILL.md` 생성 문구에 기본 흐름 `init -> up -> down` 추가
