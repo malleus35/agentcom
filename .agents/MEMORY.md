@@ -4,15 +4,15 @@
 
 ## 현재 상태
 
-- **Phase**: PH2 core improvements 구현/검증 완료, develop 머지 준비 중
-- **마지막 작업**: PH2 communication graph validation, custom template quick wizard, `--force` 전면 확장, shared-path agent marker 분기, README/MEMORY 갱신
-- **현재 브랜치**: `feature/PH2-core-improvements`
+- **Phase**: PH3 documentation polish 구현/검증 완료, 후속 정리 대기
+- **마지막 작업**: PH3 문서 렌더링 확장, template edit 명령, `init --from-file` YAML/JSON import, 테스트/수동 QA 완료
+- **현재 브랜치**: `develop`
 - **현재 버전**: v0.1.7이 최신 공개 릴리스, 다음 릴리스 버전은 아직 미확정
 - **P10 상태**: 구현/문서/테스트 완료, 관련 변경은 현재 브랜치에 포함됨
 - **P11 상태**: 구현 완료, 테스트/수동 QA/README 반영 완료, develop 머지 및 release 대기
 - **계획 문서 상태**: `AGENTCOM_IMPROVEMENT_PROPOSAL.md` 기반 후속 개선안 분석 완료, PH1 구현 완료, PH2~PH4 계획 유지
-- **다음 작업**: PH2 브랜치를 develop에 머지하고, 이후 PH3 documentation polish 또는 release target 정리 작업으로 진행
-- **워킹트리**: PH2 구현 파일과 README/MEMORY 갱신이 존재
+- **다음 작업**: PH3 변경 커밋/PR 정리 또는 PH4 enhanced UX 계획 실행
+- **워킹트리**: PH3 구현 파일과 go.mod/go.sum 갱신이 존재
 
 ## 완료된 태스크
 
@@ -28,6 +28,17 @@
 - P10 project column 핵심 구현 완료
 
 ## 이번 세션에서 마무리한 작업
+
+- PH3 documentation polish 구현 완료
+  - `internal/cli/agents.go`: shared `agentcom/SKILL.md`, role `SKILL.md`, built-in `COMMON.md` 렌더링을 대폭 확장하고 workflow/examples/anti-patterns/handoff 섹션 추가
+  - `internal/cli/template_edit.go`: `agentcom agents template edit <template> <add-role|remove-role> <role>` 명령 추가, custom template role add/remove 및 skill 재생성/정리 지원
+  - `internal/cli/template_import.go`, `internal/cli/init.go`, `internal/cli/template_store.go`: `init --from-file` YAML/JSON custom template import, overwrite 저장, scaffold 연동 추가
+  - `internal/cli/agents_test.go`, `internal/cli/template_edit_test.go`, `internal/cli/template_import_test.go`: content quality, template edit, import 시나리오 테스트 추가
+  - `go.mod`, `go.sum`: `gopkg.in/yaml.v3` 의존성 추가
+  - 검증 완료: `go test ./internal/cli/... -count=1`, `go test ./...`, `go build ./...`
+  - 수동 QA 완료:
+    - `/tmp/agentcom-ph3-qa/project`에서 `agentcom --json init --batch --project qa-demo --from-file /tmp/agentcom-ph3-qa/template.yaml` 실행 후 imported custom template/scaffold 생성 확인
+    - 같은 경로에서 `agentcom --json agents template edit qa-team add-role devops`, `agentcom --json agents template edit qa-team remove-role backend` 실행 후 `template.json`에 `frontend`/`devops`만 남고 role skill 재생성 반영 확인
 
 - PH2 core improvements 구현 완료
   - `internal/cli/agents.go`, `internal/cli/template_store.go`: communication graph validation 추가, built-in graph 대칭화, richer role communication rendering 적용
