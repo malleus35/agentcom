@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -34,6 +35,53 @@ func TestResolveTemplateDefinition(t *testing.T) {
 	}
 }
 
+func TestComputeEscalationTargets(t *testing.T) {
+	tests := []struct {
+		name             string
+		roleName         string
+		communicatesWith []string
+		want             []string
+	}{
+		{name: "architect excludes self keeps plan", roleName: "architect", communicatesWith: []string{"plan", "frontend", "backend", "design", "review"}, want: []string{"plan"}},
+		{name: "plan excludes self keeps architect", roleName: "plan", communicatesWith: []string{"architect", "frontend", "backend", "design", "review"}, want: []string{"architect"}},
+		{name: "frontend gets architect only", roleName: "frontend", communicatesWith: []string{"design", "backend", "review", "architect"}, want: []string{"architect"}},
+		{name: "backend gets both preferred targets", roleName: "backend", communicatesWith: []string{"frontend", "architect", "review", "plan"}, want: []string{"plan", "architect"}},
+		{name: "fallback contacts", roleName: "worker", communicatesWith: []string{"helper", "monitor"}, want: []string{"helper", "monitor"}},
+		{name: "empty contacts", roleName: "solo", communicatesWith: []string{}, want: []string{}},
+		{name: "only self in contacts", roleName: "recursive", communicatesWith: []string{"recursive"}, want: []string{}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := computeEscalationTargets(tt.roleName, tt.communicatesWith)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("computeEscalationTargets() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRenderEscalationLine(t *testing.T) {
+	tests := []struct {
+		name    string
+		targets []string
+		want    string
+	}{
+		{name: "empty", targets: []string{}, want: ""},
+		{name: "single", targets: []string{"plan"}, want: "- Escalate blockers to `plan` when requirements or system boundaries change.\n"},
+		{name: "double", targets: []string{"plan", "architect"}, want: "- Escalate blockers to `plan` and `architect` when requirements or system boundaries change.\n"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := renderEscalationLine(tt.targets)
+			if got != tt.want {
+				t.Fatalf("renderEscalationLine() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestWriteTemplateScaffold(t *testing.T) {
 	projectDir := t.TempDir()
 	oldwd, err := os.Getwd()
@@ -49,7 +97,7 @@ func TestWriteTemplateScaffold(t *testing.T) {
 		t.Fatalf("Chdir() error = %v", err)
 	}
 
-	paths, err := writeTemplateScaffold(projectDir, "company")
+	paths, err := writeTemplateScaffold(projectDir, "company", writeModeAppend)
 	if err != nil {
 		t.Fatalf("writeTemplateScaffold() error = %v", err)
 	}
@@ -121,9 +169,118 @@ func TestWriteTemplateScaffold(t *testing.T) {
 	if !strings.Contains(content, "keep `agentcom register` for advanced standalone sessions") {
 		t.Fatalf("skill missing standalone register guidance: %s", content)
 	}
+	if strings.Contains(content, "send --from <sender>") {
+		t.Fatalf("skill still contains sender placeholder: %s", content)
+	}
+	if !strings.Contains(content, "send --from frontend") {
+		t.Fatalf("skill missing concrete sender name: %s", content)
+	}
+	if !strings.Contains(content, "Escalate blockers to `architect`") {
+		t.Fatalf("frontend skill missing expected escalation target: %s", content)
+	}
 
-	if _, err := writeTemplateScaffold(projectDir, "company"); err == nil {
-		t.Fatal("writeTemplateScaffold() second call error = nil, want error")
+	architectSkillPath := filepath.Join(projectDir, ".agents", "skills", "agentcom", "company-architect", "SKILL.md")
+	architectSkillData, err := os.ReadFile(architectSkillPath)
+	if err != nil {
+		t.Fatalf("ReadFile(architect skill) error = %v", err)
+	}
+	architectContent := string(architectSkillData)
+	if strings.Contains(architectContent, "Escalate blockers to `plan` and `architect`") {
+		t.Fatal("architect skill has self-referential escalation")
+	}
+	if !strings.Contains(architectContent, "Escalate blockers to `plan`") {
+		t.Fatalf("architect skill missing escalation to plan: %s", architectContent)
+	}
+
+	planSkillPath := filepath.Join(projectDir, ".agents", "skills", "agentcom", "company-plan", "SKILL.md")
+	planSkillData, err := os.ReadFile(planSkillPath)
+	if err != nil {
+		t.Fatalf("ReadFile(plan skill) error = %v", err)
+	}
+	planContent := string(planSkillData)
+	if strings.Contains(planContent, "Escalate blockers to `plan`") {
+		t.Fatal("plan skill has self-referential escalation")
+	}
+	if !strings.Contains(planContent, "Escalate blockers to `architect`") {
+		t.Fatalf("plan skill missing escalation to architect: %s", planContent)
+	}
+
+	paths2, err := writeTemplateScaffold(projectDir, "company", writeModeAppend)
+	if err != nil {
+		t.Fatalf("writeTemplateScaffold() second call error = %v, want nil", err)
+	}
+	if len(paths2) != 30 {
+		t.Fatalf("second call len(paths) = %d, want 30", len(paths2))
+	}
+	commonData2, err := os.ReadFile(commonPath)
+	if err != nil {
+		t.Fatalf("ReadFile(common) second read error = %v", err)
+	}
+	if string(commonData) != string(commonData2) {
+		t.Fatal("COMMON.md changed on second scaffold write")
+	}
+	skillData2, err := os.ReadFile(skillPath)
+	if err != nil {
+		t.Fatalf("ReadFile(skill) second read error = %v", err)
+	}
+	if !strings.Contains(string(skillData2), agentcomMarkerStart) {
+		t.Fatal("skill file missing marker after second scaffold write")
+	}
+	if strings.Count(string(skillData2), agentcomMarkerStart) != 1 {
+		t.Fatal("skill file has duplicate marker blocks")
+	}
+}
+
+func TestTemplateScaffoldReInit(t *testing.T) {
+	projectDir := t.TempDir()
+	oldwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	defer func() {
+		if err := os.Chdir(oldwd); err != nil {
+			t.Fatalf("restore cwd: %v", err)
+		}
+	}()
+	if err := os.Chdir(projectDir); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+
+	paths1, err := writeTemplateScaffold(projectDir, "company", writeModeAppend)
+	if err != nil {
+		t.Fatalf("first scaffold error = %v", err)
+	}
+	skillPath := filepath.Join(projectDir, ".agents", "skills", "agentcom", "company-frontend", "SKILL.md")
+	data1, err := os.ReadFile(skillPath)
+	if err != nil {
+		t.Fatalf("ReadFile(skill) error = %v", err)
+	}
+	commonPath := filepath.Join(projectDir, ".agentcom", "templates", "company", "COMMON.md")
+	common1, err := os.ReadFile(commonPath)
+	if err != nil {
+		t.Fatalf("ReadFile(common) error = %v", err)
+	}
+
+	paths2, err := writeTemplateScaffold(projectDir, "company", writeModeAppend)
+	if err != nil {
+		t.Fatalf("second scaffold error = %v", err)
+	}
+	if len(paths1) != len(paths2) {
+		t.Fatalf("path count mismatch: %d vs %d", len(paths1), len(paths2))
+	}
+	data2, err := os.ReadFile(skillPath)
+	if err != nil {
+		t.Fatalf("ReadFile(skill) second read error = %v", err)
+	}
+	if string(data1) != string(data2) {
+		t.Fatal("skill file content changed on re-scaffold")
+	}
+	common2, err := os.ReadFile(commonPath)
+	if err != nil {
+		t.Fatalf("ReadFile(common) second read error = %v", err)
+	}
+	if string(common1) != string(common2) {
+		t.Fatal("COMMON.md changed on re-scaffold")
 	}
 }
 
