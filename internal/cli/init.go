@@ -23,6 +23,7 @@ func newInitCmd() *cobra.Command {
 	var agentsValue string
 	var templateName string
 	var accessible bool
+	var advanced bool
 	var force bool
 
 	cmd := &cobra.Command{
@@ -66,8 +67,8 @@ func newInitCmd() *cobra.Command {
 				}
 
 				wizard := onboard.NewWizard(
-					newOnboardPrompter(accessible, cmd.InOrStdin(), cmd.OutOrStdout()),
-					newInitSetupExecutor(cwd),
+					newOnboardPrompter(accessible, advanced, cmd.InOrStdin(), cmd.OutOrStdout()),
+					newInitSetupExecutor(cwd, force),
 				)
 				report, err := wizard.Run(cmd.Context(), defaults)
 				if err != nil {
@@ -93,6 +94,10 @@ func newInitCmd() *cobra.Command {
 			instructionFiles := []string{}
 			agentsMDPath := ""
 			generatedFiles := []string{}
+			mode := writeModeAppend
+			if force {
+				mode = writeModeOverwrite
+			}
 			if agentsSelection != "" {
 				cwd, err := os.Getwd()
 				if err != nil {
@@ -106,7 +111,7 @@ func newInitCmd() *cobra.Command {
 						return fmt.Errorf("cli.newInitCmd: resolve instruction agents: %w", err)
 					}
 				}
-				instructionFiles, err = writeAgentInstructions(cwd, selectedAgents, writeModeAppend)
+				instructionFiles, err = writeAgentInstructions(cwd, selectedAgents, mode)
 				if err != nil {
 					return fmt.Errorf("cli.newInitCmd: write instruction files: %w", err)
 				}
@@ -123,7 +128,7 @@ func newInitCmd() *cobra.Command {
 				if err != nil {
 					return fmt.Errorf("cli.newInitCmd: getwd for template scaffold: %w", err)
 				}
-				generatedFiles, err = writeTemplateScaffold(cwd, templateSelection, writeModeAppend)
+				generatedFiles, err = writeTemplateScaffold(cwd, templateSelection, mode)
 				if err != nil {
 					return fmt.Errorf("cli.newInitCmd: write template scaffold: %w", err)
 				}
@@ -202,7 +207,8 @@ func newInitCmd() *cobra.Command {
 
 	cmd.Flags().BoolVar(&batch, "batch", false, "Run init without the onboarding wizard")
 	cmd.Flags().BoolVar(&accessible, "accessible", false, "Use accessible text prompts for setup wizard")
-	cmd.Flags().BoolVar(&force, "force", false, "Overwrite project configuration if it already exists")
+	cmd.Flags().BoolVar(&advanced, "advanced", false, "Use detailed custom template wizard with all fields")
+	cmd.Flags().BoolVar(&force, "force", false, "Overwrite all generated files (project config, instructions, scaffold, skills)")
 	cmd.Flags().StringVar(&agentsValue, "agents-md", "", "Generate agent instruction files in the current directory")
 	cmd.Flags().StringVar(&templateName, "template", "", "Generate a project scaffold: company|oh-my-opencode|custom")
 	if flag := cmd.Flags().Lookup("agents-md"); flag != nil {

@@ -47,7 +47,7 @@ func TestInitCommandRunsWizardByDefault(t *testing.T) {
 		isInteractiveInput = oldInteractive
 	}()
 
-	newOnboardPrompter = func(accessible bool, input io.Reader, output io.Writer) onboard.Prompter {
+	newOnboardPrompter = func(accessible bool, advanced bool, input io.Reader, output io.Writer) onboard.Prompter {
 		return setupTestPrompter{result: onboard.Result{
 			HomeDir:           homeDir,
 			Template:          "company",
@@ -285,7 +285,7 @@ func TestInitCommandWizardGeneratesInstructionAndMemoryFiles(t *testing.T) {
 		isInteractiveInput = oldInteractive
 	}()
 
-	newOnboardPrompter = func(accessible bool, input io.Reader, output io.Writer) onboard.Prompter {
+	newOnboardPrompter = func(accessible bool, advanced bool, input io.Reader, output io.Writer) onboard.Prompter {
 		return setupTestPrompter{result: onboard.Result{
 			HomeDir:           homeDir,
 			Project:           "wizard-app",
@@ -358,8 +358,8 @@ func TestInitSetupReInitPreservesContent(t *testing.T) {
 	if !strings.Contains(content1, "# My Project") {
 		t.Fatal("user content lost after first init")
 	}
-	if !strings.Contains(content1, agentcomMarkerStart) {
-		t.Fatal("agentcom markers missing after first init")
+	if !strings.Contains(content1, agentMarkerStart("codex")) {
+		t.Fatal("codex markers missing after first init")
 	}
 
 	if _, err := executor.Apply(context.Background(), result); err != nil {
@@ -371,5 +371,73 @@ func TestInitSetupReInitPreservesContent(t *testing.T) {
 	}
 	if string(data1) != string(data2) {
 		t.Fatal("second init changed content")
+	}
+}
+
+func TestInitCommandForceOverwritesAllGeneratedFiles(t *testing.T) {
+	projectDir := t.TempDir()
+	homeDir := filepath.Join(t.TempDir(), ".agentcom-home")
+	if err := os.MkdirAll(homeDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(homeDir) error = %v", err)
+	}
+
+	oldwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	defer func() {
+		if err := os.Chdir(oldwd); err != nil {
+			t.Fatalf("restore cwd: %v", err)
+		}
+	}()
+	if err := os.Chdir(projectDir); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+
+	oldApp := app
+	oldJSON := jsonOutput
+	oldInteractive := isInteractiveInput
+	app = &appContext{cfg: &config.Config{HomeDir: homeDir}}
+	jsonOutput = false
+	isInteractiveInput = func(_ io.Reader) bool { return false }
+	defer func() {
+		app = oldApp
+		jsonOutput = oldJSON
+		isInteractiveInput = oldInteractive
+	}()
+
+	cmd := newInitCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"--batch", "--agents-md", "codex", "--template", "company"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("first cmd.Execute() error = %v", err)
+	}
+
+	agentsPath := filepath.Join(projectDir, "AGENTS.md")
+	commonPath := filepath.Join(projectDir, ".agentcom", "templates", "company", "COMMON.md")
+	skillPath := filepath.Join(projectDir, ".agents", "skills", "agentcom", "company-frontend", "SKILL.md")
+	for _, path := range []string{agentsPath, commonPath, skillPath} {
+		if err := os.WriteFile(path, []byte("FORCE-TEST"), 0o644); err != nil {
+			t.Fatalf("WriteFile(%s) error = %v", path, err)
+		}
+	}
+
+	cmd = newInitCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"--batch", "--agents-md", "codex", "--template", "company", "--force"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("second cmd.Execute() error = %v", err)
+	}
+
+	for _, path := range []string{agentsPath, commonPath, skillPath} {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("ReadFile(%s) error = %v", path, err)
+		}
+		if strings.Contains(string(data), "FORCE-TEST") {
+			t.Fatalf("file %s was not overwritten: %s", path, string(data))
+		}
 	}
 }
