@@ -87,6 +87,10 @@ func (e *initSetupExecutor) Apply(ctx context.Context, result onboard.Result) (o
 		Template: result.Template,
 	}
 
+	if err := database.EnsureProject(ctx, result.Project); err != nil {
+		return onboard.ApplyReport{}, fmt.Errorf("cli.initSetupExecutor.Apply: ensure project: %w", err)
+	}
+
 	if result.Project != "" || result.Template != "" {
 		path, err := config.SaveProjectConfig(e.projectDir, config.ProjectConfig{
 			Project: result.Project,
