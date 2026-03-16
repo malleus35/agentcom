@@ -85,8 +85,8 @@ agentcom version
 这是最适合普通用户的方式。按当前发布配置，可生成以下目标包：
 
 - macOS: `darwin/amd64`, `darwin/arm64`
-- Linux: `linux/amd64`, `linux/arm64`
-- Windows: `windows/amd64`, `windows/arm64`
+- Linux: `linux/amd64`
+- Windows: `windows/amd64`
 
 从 GitHub Releases 下载对应系统和架构的压缩包，解压后将二进制放到 `PATH` 中即可。
 
