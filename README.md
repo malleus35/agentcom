@@ -238,6 +238,8 @@ agentcom init --agents-md
 agentcom init --batch --agents-md claude,codex
 ```
 
+If the target file already exists, agentcom appends or updates only its own marker-wrapped block so your existing notes stay intact. Re-running the same command is idempotent.
+
 Scaffold a built-in project template with shared instructions and six role skills:
 
 ```bash
@@ -247,6 +249,8 @@ agentcom init --template custom
 ```
 
 The generated `COMMON.md`, shared `agentcom/SKILL.md`, and namespaced role skills all describe the default template workflow as `init -> up -> down`. Any remaining `register` guidance is framed as the low-level path for a standalone manually managed agent.
+
+Re-running template scaffold generation now updates marker-managed `SKILL.md` content in place and skips regenerating unchanged scaffold files such as `COMMON.md` and `template.json`.
 
 Inspect the built-in templates before generating one:
 
@@ -339,6 +343,7 @@ agentcom --json init
 Notes:
 
 - Running it repeatedly is safe.
+- Re-running `init --agents-md ...` preserves existing user content and updates the agentcom-managed marker block in place.
 - On an interactive terminal, `agentcom init` now runs the onboarding wizard by default.
 - `--batch` forces the legacy non-interactive flow and is also implied by `--json`.
 - `--project <name>` writes `.agentcom.json` in the current directory and scopes later commands to that project.
@@ -346,6 +351,7 @@ Notes:
 - `--accessible` switches the setup wizard to accessible text prompts.
 - `--agents-md` now accepts `all` or a comma-separated agent list such as `claude,codex,cursor`; `agentcom init --batch --agents-md` without a value keeps the legacy `AGENTS.md` behavior.
 - `--template` writes `.agentcom/templates/<template>/COMMON.md`, `.agentcom/templates/<template>/template.json`, a shared `agentcom/SKILL.md` per supported agent, and six namespaced role skills: `agentcom/<template>-frontend`, `agentcom/<template>-backend`, `agentcom/<template>-plan`, `agentcom/<template>-review`, `agentcom/<template>-architect`, and `agentcom/<template>-design`.
+- Re-running `--template` updates generated shared/role `SKILL.md` files idempotently while leaving existing `COMMON.md` and `template.json` in place.
 - Generated scaffold instructions treat `agentcom init --template <name>` -> `agentcom up` -> `agentcom down` as the default team lifecycle, with `agentcom register` reserved for low-level standalone use.
 - When `--template` is set, `.agentcom.json` also records `template.active` so `agentcom up` can start the same template later without repeating the flag.
 - Supported built-in templates are `company` and `oh-my-opencode`; `custom` launches a template-creation wizard in interactive mode.
