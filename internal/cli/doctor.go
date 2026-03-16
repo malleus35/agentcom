@@ -1,0 +1,389 @@
+package cli
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"text/tabwriter"
+
+	"github.com/malleus35/agentcom/internal/config"
+	"github.com/spf13/cobra"
+)
+
+type doctorCheck struct {
+	Category string `json:"category"`
+	Name     string `json:"name"`
+	Status   string `json:"status"`
+	Message  string `json:"message"`
+	Fix      string `json:"fix,omitempty"`
+}
+
+func newDoctorCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "doctor",
+		Short: "Diagnose project setup and agent configuration",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			checks, err := runDoctorChecks(cmd)
+			if err != nil {
+				return fmt.Errorf("cli.newDoctorCmd: %w", err)
+			}
+			return writeDoctorReport(cmd, checks)
+		},
+	}
+}
+
+func runDoctorChecks(cmd *cobra.Command) ([]doctorCheck, error) {
+	projectDir, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("run doctor checks: getwd: %w", err)
+	}
+
+	checks := make([]doctorCheck, 0, 16)
+	checks = append(checks, checkEnvironment(cmd)...)
+
+	projectChecks, projectCfg, configPath, definition := checkProjectAndTemplate(projectDir)
+	checks = append(checks, projectChecks...)
+
+	if definition.Name != "" {
+		checks = append(checks, checkCommunication(definition)...)
+		checks = append(checks, checkDocumentation(projectDir, definition)...)
+	}
+
+	checks = append(checks, checkRuntime(cmd, projectDir, configPath, projectCfg)...)
+	return checks, nil
+}
+
+func checkEnvironment(cmd *cobra.Command) []doctorCheck {
+	checks := make([]doctorCheck, 0, 3)
+	checks = append(checks, pathCheck("environment", "home_dir", app.cfg.HomeDir, "Run `agentcom init` to create the agentcom home directory."))
+	checks = append(checks, dbCheck(cmd))
+	checks = append(checks, pathCheck("environment", "sockets_dir", app.cfg.SocketsPath, "Run `agentcom init` to create the sockets directory."))
+	return checks
+}
+
+func checkProjectAndTemplate(projectDir string) ([]doctorCheck, config.ProjectConfig, string, templateDefinition) {
+	checks := make([]doctorCheck, 0, 5)
+	projectCfg, configPath, err := config.LoadProjectConfig(projectDir)
+	if err != nil {
+		checks = append(checks, doctorCheck{
+			Category: "project",
+			Name:     "project_config",
+			Status:   "fail",
+			Message:  err.Error(),
+			Fix:      "Run `agentcom init --project <name>` in this repository.",
+		})
+		return checks, config.ProjectConfig{}, "", templateDefinition{}
+	}
+	if configPath == "" {
+		checks = append(checks, doctorCheck{
+			Category: "project",
+			Name:     "project_config",
+			Status:   "fail",
+			Message:  fmt.Sprintf("%s is missing", config.ProjectConfigFileName),
+			Fix:      "Run `agentcom init --project <name>` in this repository.",
+		})
+		return checks, config.ProjectConfig{}, "", templateDefinition{}
+	}
+
+	checks = append(checks, doctorCheck{
+		Category: "project",
+		Name:     "project_config",
+		Status:   "pass",
+		Message:  fmt.Sprintf("Loaded project config from %s", configPath),
+	})
+
+	if strings.TrimSpace(projectCfg.Project) == "" {
+		checks = append(checks, doctorCheck{
+			Category: "project",
+			Name:     "project_name",
+			Status:   "fail",
+			Message:  "Project name is empty.",
+			Fix:      "Re-run `agentcom init --project <name>` to store a valid project name.",
+		})
+	} else {
+		checks = append(checks, doctorCheck{
+			Category: "project",
+			Name:     "project_name",
+			Status:   "pass",
+			Message:  fmt.Sprintf("Project name is %q", projectCfg.Project),
+		})
+	}
+
+	if strings.TrimSpace(projectCfg.Template.Active) == "" {
+		checks = append(checks, doctorCheck{
+			Category: "project",
+			Name:     "active_template",
+			Status:   "fail",
+			Message:  "No active template is configured.",
+			Fix:      "Run `agentcom init --template company` or `agentcom init --template oh-my-opencode`.",
+		})
+		return checks, projectCfg, configPath, templateDefinition{}
+	}
+
+	checks = append(checks, doctorCheck{
+		Category: "project",
+		Name:     "active_template",
+		Status:   "pass",
+		Message:  fmt.Sprintf("Active template is %q", projectCfg.Template.Active),
+	})
+
+	definition, err := resolveTemplateDefinition(projectCfg.Template.Active)
+	if err != nil {
+		checks = append(checks, doctorCheck{
+			Category: "project",
+			Name:     "template_files",
+			Status:   "fail",
+			Message:  err.Error(),
+			Fix:      fmt.Sprintf("Re-run `agentcom init --template %s --force` to regenerate scaffold files.", projectCfg.Template.Active),
+		})
+		return checks, projectCfg, configPath, templateDefinition{}
+	}
+
+	baseDir := filepath.Join(projectDir, ".agentcom", "templates", definition.Name)
+	required := []string{
+		filepath.Join(baseDir, "COMMON.md"),
+		filepath.Join(baseDir, "template.json"),
+	}
+	missing := make([]string, 0, len(required))
+	for _, path := range required {
+		if _, err := os.Stat(path); err != nil {
+			missing = append(missing, path)
+		}
+	}
+	if len(missing) > 0 {
+		checks = append(checks, doctorCheck{
+			Category: "project",
+			Name:     "template_files",
+			Status:   "fail",
+			Message:  fmt.Sprintf("Template scaffold is missing %s", strings.Join(missing, ", ")),
+			Fix:      fmt.Sprintf("Re-run `agentcom init --template %s --force` to regenerate scaffold files.", definition.Name),
+		})
+		return checks, projectCfg, configPath, templateDefinition{}
+	}
+
+	checks = append(checks, doctorCheck{
+		Category: "project",
+		Name:     "template_files",
+		Status:   "pass",
+		Message:  fmt.Sprintf("Template scaffold exists for %q", definition.Name),
+	})
+	return checks, projectCfg, configPath, definition
+}
+
+func checkCommunication(definition templateDefinition) []doctorCheck {
+	issues := validateCommunicationGraph(definition.Roles)
+	if hasGraphErrors(issues) {
+		messages := make([]string, 0, len(issues))
+		for _, issue := range issues {
+			if issue.Severity == "error" {
+				messages = append(messages, issue.Message)
+			}
+		}
+		return []doctorCheck{{
+			Category: "communication",
+			Name:     "template_graph",
+			Status:   "fail",
+			Message:  strings.Join(messages, "; "),
+			Fix:      "Update the template communication map so every referenced role exists and self-references are removed.",
+		}}
+	}
+	if len(issues) > 0 {
+		messages := make([]string, 0, len(issues))
+		for _, issue := range issues {
+			messages = append(messages, issue.Message)
+		}
+		return []doctorCheck{{
+			Category: "communication",
+			Name:     "template_graph",
+			Status:   "warn",
+			Message:  strings.Join(messages, "; "),
+			Fix:      "Consider making the communication graph symmetric for clearer handoffs.",
+		}}
+	}
+	return []doctorCheck{{
+		Category: "communication",
+		Name:     "template_graph",
+		Status:   "pass",
+		Message:  fmt.Sprintf("Communication graph is valid for template %q", definition.Name),
+	}}
+}
+
+func checkDocumentation(projectDir string, definition templateDefinition) []doctorCheck {
+	checks := make([]doctorCheck, 0, 4)
+
+	sharedTargets, err := resolveTemplateSkillTargets("project", "agentcom")
+	if err != nil {
+		checks = append(checks, doctorCheck{
+			Category: "documentation",
+			Name:     "shared_skills",
+			Status:   "fail",
+			Message:  err.Error(),
+			Fix:      fmt.Sprintf("Re-run `agentcom init --template %s --force` from the project directory.", definition.Name),
+		})
+	} else {
+		checks = append(checks, fileGroupCheck("documentation", "shared_skills", sharedSkillPaths(sharedTargets), fmt.Sprintf("Re-run `agentcom init --template %s --force` to regenerate shared skills.", definition.Name)))
+	}
+
+	rolePaths := make([]string, 0, len(definition.Roles)*4)
+	for _, role := range definition.Roles {
+		targets, err := resolveTemplateSkillTargets("project", filepath.Join("agentcom", templateRoleSkillName(definition.Name, role.Name)))
+		if err != nil {
+			checks = append(checks, doctorCheck{
+				Category: "documentation",
+				Name:     "role_skills",
+				Status:   "fail",
+				Message:  err.Error(),
+				Fix:      fmt.Sprintf("Re-run `agentcom init --template %s --force` to regenerate role skills.", definition.Name),
+			})
+			break
+		}
+		rolePaths = append(rolePaths, sharedSkillPaths(targets)...)
+	}
+	if len(rolePaths) > 0 {
+		checks = append(checks, fileGroupCheck("documentation", "role_skills", rolePaths, fmt.Sprintf("Re-run `agentcom init --template %s --force` to regenerate role skills.", definition.Name)))
+	}
+
+	baseDir := filepath.Join(projectDir, ".agentcom", "templates", definition.Name)
+	checks = append(checks, pathCheck("documentation", "common_md", filepath.Join(baseDir, "COMMON.md"), fmt.Sprintf("Re-run `agentcom init --template %s --force` to regenerate COMMON.md.", definition.Name)))
+	checks = append(checks, pathCheck("documentation", "template_manifest", filepath.Join(baseDir, "template.json"), fmt.Sprintf("Re-run `agentcom init --template %s --force` to regenerate template.json.", definition.Name)))
+	return checks
+}
+
+func checkRuntime(cmd *cobra.Command, projectDir string, configPath string, projectCfg config.ProjectConfig) []doctorCheck {
+	state, _, err := loadUpRuntimeState(projectDir)
+	if err != nil {
+		return []doctorCheck{{
+			Category: "runtime",
+			Name:     "managed_agents",
+			Status:   "fail",
+			Message:  err.Error(),
+			Fix:      "Delete the broken runtime file and re-run `agentcom up`.",
+		}}
+	}
+	if state.SupervisorPID == 0 || len(state.Agents) == 0 {
+		return nil
+	}
+
+	issues := make([]string, 0)
+	for _, agent := range state.Agents {
+		if !processAliveCheck(agent.PID) {
+			issues = append(issues, fmt.Sprintf("role %s pid %d is not alive", agent.Role, agent.PID))
+			continue
+		}
+		registered, err := app.db.FindAgentByNameAndProject(cmd.Context(), agent.Name, projectCfg.Project)
+		if err != nil {
+			issues = append(issues, fmt.Sprintf("role %s is missing from the agent registry", agent.Role))
+			continue
+		}
+		if registered.Status != "alive" {
+			issues = append(issues, fmt.Sprintf("role %s is registered with status %s", agent.Role, registered.Status))
+		}
+	}
+	if len(issues) > 0 {
+		return []doctorCheck{{
+			Category: "runtime",
+			Name:     "managed_agents",
+			Status:   "fail",
+			Message:  strings.Join(issues, "; "),
+			Fix:      fmt.Sprintf("Run `agentcom down --force` and then `agentcom up` in %s.", filepath.Dir(configPath)),
+		}}
+	}
+	return []doctorCheck{{
+		Category: "runtime",
+		Name:     "managed_agents",
+		Status:   "pass",
+		Message:  fmt.Sprintf("All %d managed agents are alive", len(state.Agents)),
+	}}
+}
+
+func writeDoctorReport(cmd *cobra.Command, checks []doctorCheck) error {
+	if jsonOutput {
+		enc := json.NewEncoder(cmd.OutOrStdout())
+		enc.SetIndent("", "  ")
+		return enc.Encode(checks)
+	}
+
+	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+	if _, err := fmt.Fprintln(tw, "CATEGORY\tNAME\tSTATUS\tMESSAGE\tFIX"); err != nil {
+		return fmt.Errorf("write doctor header: %w", err)
+	}
+	for _, check := range checks {
+		if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", check.Category, check.Name, strings.ToUpper(check.Status), check.Message, check.Fix); err != nil {
+			return fmt.Errorf("write doctor row: %w", err)
+		}
+	}
+	if err := tw.Flush(); err != nil {
+		return fmt.Errorf("flush doctor report: %w", err)
+	}
+	return nil
+}
+
+func dbCheck(cmd *cobra.Command) doctorCheck {
+	if _, err := scalarInt(cmd, "SELECT 1"); err != nil {
+		return doctorCheck{
+			Category: "environment",
+			Name:     "sqlite_db",
+			Status:   "fail",
+			Message:  err.Error(),
+			Fix:      "Run `agentcom init` to recreate the SQLite database.",
+		}
+	}
+	return doctorCheck{
+		Category: "environment",
+		Name:     "sqlite_db",
+		Status:   "pass",
+		Message:  fmt.Sprintf("SQLite database is accessible at %s", app.cfg.DBPath),
+	}
+}
+
+func pathCheck(category string, name string, path string, fix string) doctorCheck {
+	if _, err := os.Stat(path); err != nil {
+		return doctorCheck{
+			Category: category,
+			Name:     name,
+			Status:   "fail",
+			Message:  fmt.Sprintf("Missing %s", path),
+			Fix:      fix,
+		}
+	}
+	return doctorCheck{
+		Category: category,
+		Name:     name,
+		Status:   "pass",
+		Message:  fmt.Sprintf("Found %s", path),
+	}
+}
+
+func fileGroupCheck(category string, name string, paths []string, fix string) doctorCheck {
+	missing := make([]string, 0)
+	for _, path := range paths {
+		if _, err := os.Stat(path); err != nil {
+			missing = append(missing, path)
+		}
+	}
+	if len(missing) > 0 {
+		return doctorCheck{
+			Category: category,
+			Name:     name,
+			Status:   "fail",
+			Message:  fmt.Sprintf("Missing %s", strings.Join(missing, ", ")),
+			Fix:      fix,
+		}
+	}
+	return doctorCheck{
+		Category: category,
+		Name:     name,
+		Status:   "pass",
+		Message:  fmt.Sprintf("Found %d file(s)", len(paths)),
+	}
+}
+
+func sharedSkillPaths(targets []skillTarget) []string {
+	paths := make([]string, 0, len(targets))
+	for _, target := range targets {
+		paths = append(paths, target.Path)
+	}
+	return paths
+}
