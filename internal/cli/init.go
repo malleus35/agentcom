@@ -22,6 +22,7 @@ func newInitCmd() *cobra.Command {
 	var batch bool
 	var agentsValue string
 	var templateName string
+	var fromFile string
 	var accessible bool
 	var advanced bool
 	var force bool
@@ -34,8 +35,11 @@ func newInitCmd() *cobra.Command {
 			if len(remainingArgs) > 0 {
 				return fmt.Errorf("cli.newInitCmd: unexpected arguments: %s", strings.Join(remainingArgs, ", "))
 			}
+			if fromFile != "" && templateSelection != "" {
+				return fmt.Errorf("cli.newInitCmd: --from-file cannot be combined with --template")
+			}
 
-			if shouldRunWizard(cmd) {
+			if fromFile == "" && shouldRunWizard(cmd) {
 				defaults, err := onboard.DetectDefaults()
 				if err != nil {
 					return fmt.Errorf("cli.newInitCmd: detect onboarding defaults: %w", err)
@@ -94,6 +98,7 @@ func newInitCmd() *cobra.Command {
 			instructionFiles := []string{}
 			agentsMDPath := ""
 			generatedFiles := []string{}
+			customTemplatePath := ""
 			mode := writeModeAppend
 			if force {
 				mode = writeModeOverwrite
@@ -121,6 +126,26 @@ func newInitCmd() *cobra.Command {
 						break
 					}
 				}
+			}
+
+			if fromFile != "" {
+				cwd, err := os.Getwd()
+				if err != nil {
+					return fmt.Errorf("cli.newInitCmd: getwd for template import: %w", err)
+				}
+				definition, err := loadTemplateDefinitionFromFile(fromFile)
+				if err != nil {
+					return fmt.Errorf("cli.newInitCmd: load template definition: %w", err)
+				}
+				writeModeForTemplate := writeModeCreate
+				if force {
+					writeModeForTemplate = writeModeOverwrite
+				}
+				customTemplatePath, err = writeCustomTemplate(cwd, definition, writeModeForTemplate)
+				if err != nil {
+					return fmt.Errorf("cli.newInitCmd: save imported template: %w", err)
+				}
+				templateSelection = definition.Name
 			}
 
 			if templateSelection != "" && templateSelection != promptTemplateSelection {
@@ -161,6 +186,9 @@ func newInitCmd() *cobra.Command {
 					payload["template"] = templateSelection
 					payload["generated_files"] = generatedFiles
 				}
+				if customTemplatePath != "" {
+					payload["custom_template_path"] = customTemplatePath
+				}
 				if projectCfg.Project != "" {
 					payload["project"] = projectCfg.Project
 				}
@@ -189,6 +217,11 @@ func newInitCmd() *cobra.Command {
 					return err
 				}
 			}
+			if customTemplatePath != "" {
+				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "saved custom template at %s\n", customTemplatePath); err != nil {
+					return err
+				}
+			}
 			if projectConfigPath != "" {
 				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "generated project config at %s\n", projectConfigPath); err != nil {
 					return err
@@ -209,6 +242,7 @@ func newInitCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&accessible, "accessible", false, "Use accessible text prompts for setup wizard")
 	cmd.Flags().BoolVar(&advanced, "advanced", false, "Use detailed custom template wizard with all fields")
 	cmd.Flags().BoolVar(&force, "force", false, "Overwrite all generated files (project config, instructions, scaffold, skills)")
+	cmd.Flags().StringVar(&fromFile, "from-file", "", "Create template from a YAML or JSON file")
 	cmd.Flags().StringVar(&agentsValue, "agents-md", "", "Generate agent instruction files in the current directory")
 	cmd.Flags().StringVar(&templateName, "template", "", "Generate a project scaffold: company|oh-my-opencode|custom")
 	if flag := cmd.Flags().Lookup("agents-md"); flag != nil {
