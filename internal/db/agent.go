@@ -38,6 +38,9 @@ func (d *DB) InsertAgent(ctx context.Context, agent *Agent) error {
 		}
 		agent.ID = "agt_" + id
 	}
+	if err := d.EnsureProject(ctx, agent.Project); err != nil {
+		return fmt.Errorf("db.InsertAgent: ensure project: %w", err)
+	}
 
 	stmt, err := d.PrepareContext(ctx, `
 		INSERT INTO agents (
@@ -71,6 +74,10 @@ func (d *DB) InsertAgent(ctx context.Context, agent *Agent) error {
 
 // UpdateAgent updates mutable fields for an existing agent.
 func (d *DB) UpdateAgent(ctx context.Context, agent *Agent) error {
+	if err := d.EnsureProject(ctx, agent.Project); err != nil {
+		return fmt.Errorf("db.UpdateAgent: ensure project: %w", err)
+	}
+
 	stmt, err := d.PrepareContext(ctx, `
 		UPDATE agents
 		SET name = ?, type = ?, pid = ?, socket_path = ?, capabilities = ?, workdir = ?, project = ?, status = ?
@@ -363,6 +370,58 @@ func (d *DB) ListAliveAgentsByProject(ctx context.Context, project string) ([]*A
 	}
 
 	return agents, nil
+}
+
+func (d *DB) ListProjects(ctx context.Context) ([]string, error) {
+	stmt, err := d.PrepareContext(ctx, `
+		SELECT name
+		FROM projects
+		ORDER BY name ASC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("db.ListProjects: prepare: %w", err)
+	}
+	defer stmt.Close()
+
+	rows, err := stmt.QueryContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("db.ListProjects: query: %w", err)
+	}
+	defer rows.Close()
+
+	projects := make([]string, 0)
+	for rows.Next() {
+		var project string
+		if err := rows.Scan(&project); err != nil {
+			return nil, fmt.Errorf("db.ListProjects: scan: %w", err)
+		}
+		projects = append(projects, project)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("db.ListProjects: rows: %w", err)
+	}
+
+	return projects, nil
+}
+
+func (d *DB) EnsureProject(ctx context.Context, project string) error {
+	if project == "" {
+		return nil
+	}
+
+	stmt, err := d.PrepareContext(ctx, `
+		INSERT OR IGNORE INTO projects (name) VALUES (?)
+	`)
+	if err != nil {
+		return fmt.Errorf("db.EnsureProject: prepare: %w", err)
+	}
+	defer stmt.Close()
+
+	if _, err := stmt.ExecContext(ctx, project); err != nil {
+		return fmt.Errorf("db.EnsureProject: exec: %w", err)
+	}
+
+	return nil
 }
 
 // UpdateHeartbeat updates an agent heartbeat and marks it alive.
