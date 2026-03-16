@@ -108,6 +108,7 @@ func newAgentsTemplateCmd() *cobra.Command {
 
 	cmd.Flags().BoolVar(&listFlag, "list", false, "List built-in and custom templates")
 	cmd.Flags().StringVar(&deleteName, "delete", "", "Delete a custom template by name")
+	cmd.AddCommand(newTemplateEditCmd())
 
 	return cmd
 }
@@ -360,12 +361,322 @@ description: Shared agentcom skill instructions for generated template roles
 
 # Agentcom
 
-- Use this shared skill as the common base for generated agentcom template role skills.
-- Default template lifecycle: run ` + "`agentcom init --template <template>`" + ` once, start the managed roles with ` + "`agentcom up`" + `, and stop them with ` + "`agentcom down`" + `.
-- Use ` + "`agentcom register`" + ` only as the low-level path for manually running one standalone agent session.
-- Coordinate with ` + "`agentcom send`" + `, ` + "`agentcom inbox`" + `, ` + "`agentcom task create`" + `, and ` + "`agentcom task delegate`" + `.
-- Read the role-specific skill under this directory for template and responsibility details.
+## Overview
+
+agentcom is a CLI for real-time coordination between parallel AI coding agents.
+It stores durable team state in SQLite and uses Unix Domain Sockets for low-latency local delivery.
+Each role registers with a stable agent name and communicates through messages and tasks.
+The generated template files in this repository are designed to give every role the same shared operating model.
+Read this file first, then read your template ` + "`COMMON.md`" + `, then read your role-specific skill.
+
+## Lifecycle
+
+Default template lifecycle:
+
+1. Run ` + "`agentcom init --template company`" + ` or ` + "`agentcom init --template oh-my-opencode`" + ` once per project.
+2. Start the active template roles with ` + "`agentcom up`" + `.
+3. Coordinate work with messages, inbox polling, broadcasts, and task handoffs.
+4. Stop the managed team with ` + "`agentcom down`" + ` when the session ends.
+5. Use ` + "`agentcom register --name frontend --type engineer-frontend`" + ` only as the low-level path for manually running one standalone agent session.
+
+## Message Format
+
+Send structured JSON messages whenever another role needs clear context:
+
+~~~bash
+agentcom send --from frontend backend '{"type":"request","subject":"need endpoint","body":"Please add GET /api/users"}'
+~~~
+
+Standard message types:
+- ` + "`request`" + ` - ask another role to perform work.
+- ` + "`response`" + ` - return a result to a prior request.
+- ` + "`escalation`" + ` - report blockers or scope conflicts.
+- ` + "`report`" + ` - broadcast progress, status, or completion.
+
+Prefer JSON payloads over plain text when the receiver needs stable fields.
+Keep the sender field aligned with your generated role agent name.
+
+## Task Lifecycle
+
+1. Create work with ` + "`agentcom task create \"Implement header\" --creator frontend --assign review --priority medium`" + `.
+2. Check inbox with ` + "`agentcom inbox --agent review --unread`" + ` to discover assigned work and follow-up messages.
+3. Mark active work with ` + "`agentcom task update task_123 --status in_progress --result \"started\"`" + `.
+4. Mark completed work with ` + "`agentcom task update task_123 --status completed --result \"verified locally\"`" + `.
+5. Reassign work with ` + "`agentcom task delegate task_123 --to backend`" + ` when ownership changes.
+
+Tasks are the durable handoff mechanism.
+Messages provide context around the task, but the task status is the team-visible source of truth.
+
+## Decision Guide
+
+- Work independently when the task stays inside your role scope and no other role is blocked by your decision.
+- Send a direct message when you need one specific role to act on a concrete dependency.
+- Broadcast when the whole team should know about a milestone, blocker removal, or state change.
+- Escalate when architecture, sequencing, or priority decisions exceed your role scope.
+- Prefer ` + "`agentcom up`" + ` and ` + "`agentcom down`" + ` for template teams; keep ` + "`register`" + ` as the advanced manual path.
+
+## Quick Reference
+
+| Action | Command |
+|--------|---------|
+| Send message | ` + "`agentcom send --from frontend backend '{\"type\":\"request\",\"subject\":\"need endpoint\"}'`" + ` |
+| Broadcast update | ` + "`agentcom broadcast --from plan --topic status '{\"phase\":\"review\"}'`" + ` |
+| Check inbox | ` + "`agentcom inbox --agent review --unread`" + ` |
+| Create task | ` + "`agentcom task create \"Review API contract\" --creator frontend --assign backend --priority high`" + ` |
+| Update task | ` + "`agentcom task update task_123 --status completed --result \"done\"`" + ` |
+| Delegate task | ` + "`agentcom task delegate task_123 --to architect`" + ` |
+| Show status | ` + "`agentcom status`" + ` |
+
+## Role Skills
+
+Every generated role skill in this directory adds role-specific workflow, examples, communication rules, and handoff guidance.
+Read the shared skill first so all roles operate from the same lifecycle and message model.
+Then read the role skill that matches your assigned identity.
 `
+}
+
+var roleWorkflows = map[string]string{
+	"frontend": `## Workflow
+
+1. Check inbox for task assignments and design handoffs with ` + "`agentcom inbox --agent frontend --unread`" + `.
+2. Review the latest design direction and confirm any ambiguous states with design.
+3. Confirm API assumptions with backend before changing UI contracts.
+4. Implement components and pages within the agreed scope.
+5. Run local verification before handoff.
+6. Send a review-ready update to review and notify plan if scope changed.`,
+	"backend": `## Workflow
+
+1. Check inbox for assigned work and dependency requests.
+2. Review the requested contract and confirm payload shape with frontend.
+3. Implement services, schemas, endpoints, or migrations.
+4. Run build, test, and migration verification locally.
+5. Notify frontend and review about any contract changes.
+6. Update the task with verification notes before completion.`,
+	"plan": `## Workflow
+
+1. Check inbox for new requests, blockers, and completion reports.
+2. Break requests into concrete tasks with clear owners.
+3. Sequence frontend, backend, design, review, and architect handoffs.
+4. Track progress and unblock stalled work.
+5. Broadcast major plan changes to the full team.
+6. Close the loop when all dependent tasks are complete.`,
+	"review": `## Workflow
+
+1. Check inbox for review-ready updates and task assignments.
+2. Review the implementation summary, changed files, and verification notes.
+3. Reproduce the expected behavior or run the requested checks.
+4. Send clear approval or follow-up requests.
+5. Escalate cross-role gaps to plan or architect when needed.
+6. Mark the review task complete only when evidence is sufficient.`,
+	"architect": `## Workflow
+
+1. Check inbox for escalations, system-boundary questions, and risky proposals.
+2. Review the current template workflow and impacted roles.
+3. Clarify interfaces, constraints, and architectural tradeoffs.
+4. Respond with stable guidance that execution roles can follow.
+5. Coordinate with plan if the decision changes sequencing.
+6. Notify review when the architecture guidance becomes part of acceptance criteria.`,
+	"design": `## Workflow
+
+1. Check inbox for design requests, open questions, and handoff feedback.
+2. Clarify user flows, states, copy, and visual expectations.
+3. Coordinate closely with frontend on implementation feasibility.
+4. Record expected behavior for review and architect when edge cases matter.
+5. Send explicit handoff notes once the direction is stable.
+6. Stay available for refinement until review closes the work.`,
+}
+
+var roleExamples = map[string]string{
+	"frontend": `## Examples
+
+### Example 1: start a UI task
+
+~~~bash
+agentcom inbox --agent frontend --unread
+agentcom task update task_101 --status in_progress --result "starting header implementation"
+~~~
+
+### Example 2: request backend support
+
+~~~bash
+agentcom task create "Add GET /api/users endpoint" --creator frontend --assign backend --priority medium
+agentcom send --from frontend backend '{"type":"request","subject":"need endpoint","endpoint":"GET /api/users"}'
+~~~`,
+	"backend": `## Examples
+
+### Example 1: acknowledge an API request
+
+~~~bash
+agentcom inbox --agent backend --unread
+agentcom task update task_202 --status in_progress --result "implementing users endpoint"
+~~~
+
+### Example 2: notify frontend about a contract
+
+~~~bash
+agentcom send --from backend frontend '{"type":"response","subject":"endpoint ready","endpoint":"GET /api/users","status":"ready for integration"}'
+agentcom broadcast --from backend --topic api '{"status":"users endpoint ready"}'
+~~~`,
+	"plan": `## Examples
+
+### Example 1: create coordinated work
+
+~~~bash
+agentcom task create "Design dashboard filters" --creator plan --assign design --priority high
+agentcom task create "Implement dashboard filters" --creator plan --assign frontend --priority high
+~~~
+
+### Example 2: broadcast a sequence change
+
+~~~bash
+agentcom broadcast --from plan --topic priority '{"status":"backend contract must land before frontend handoff"}'
+agentcom send --from plan review '{"type":"report","subject":"review later","body":"Hold review until backend task_310 completes"}'
+~~~`,
+	"review": `## Examples
+
+### Example 1: request missing evidence
+
+~~~bash
+agentcom send --from review frontend '{"type":"request","subject":"need verification","body":"Please share build output and screenshots"}'
+agentcom task update task_404 --status in_progress --result "awaiting verification details"
+~~~
+
+### Example 2: approve work
+
+~~~bash
+agentcom send --from review plan '{"type":"response","subject":"approved","task_id":"task_404","status":"approved"}'
+agentcom task update task_404 --status completed --result "review approved"
+~~~`,
+	"architect": `## Examples
+
+### Example 1: answer an escalation
+
+~~~bash
+agentcom inbox --agent architect --unread
+agentcom send --from architect backend '{"type":"response","subject":"architecture guidance","body":"Keep the existing service boundary and add a dedicated repository method"}'
+~~~
+
+### Example 2: notify plan about a boundary change
+
+~~~bash
+agentcom send --from architect plan '{"type":"report","subject":"sequence change","body":"Frontend should wait until backend schema migration lands"}'
+agentcom broadcast --from architect --topic architecture '{"status":"service boundary updated"}'
+~~~`,
+	"design": `## Examples
+
+### Example 1: hand off design direction
+
+~~~bash
+agentcom send --from design frontend '{"type":"request","subject":"design handoff","body":"Use a two-column settings layout with inline validation states"}'
+agentcom task update task_515 --status in_progress --result "shared first-pass UX direction"
+~~~
+
+### Example 2: clarify review expectations
+
+~~~bash
+agentcom send --from design review '{"type":"report","subject":"expected behavior","body":"Empty state should show action copy and a primary CTA"}'
+agentcom broadcast --from design --topic ux '{"status":"interaction notes shared"}'
+~~~`,
+}
+
+var roleAntiPatterns = map[string]string{
+	"frontend": `## Anti-patterns
+
+- Do not implement backend persistence or schema changes yourself.
+- Do not skip review-ready verification notes before handoff.
+- Do not change product direction without design or plan alignment.`,
+	"backend": `## Anti-patterns
+
+- Do not change request or response contracts silently.
+- Do not push architectural tradeoffs onto frontend without architect input.
+- Do not mark a task complete before verification succeeds.`,
+	"plan": `## Anti-patterns
+
+- Do not assign ambiguous tasks without clear owners and outcomes.
+- Do not hide priority changes from the rest of the team.
+- Do not make architectural calls that belong to architect.`,
+	"review": `## Anti-patterns
+
+- Do not approve work without concrete verification evidence.
+- Do not rewrite requirements during review without involving plan.
+- Do not hold feedback privately when another role is blocked.`,
+	"architect": `## Anti-patterns
+
+- Do not expand scope with speculative refactors.
+- Do not override role ownership for routine implementation details.
+- Do not leave escalations unresolved when system boundaries are affected.`,
+	"design": `## Anti-patterns
+
+- Do not hand off vague UX direction without concrete states.
+- Do not bypass frontend when implementation constraints change.
+- Do not treat review as optional for user-facing behavior changes.`,
+}
+
+func defaultRoleWorkflow(roleName string) string {
+	return fmt.Sprintf(`## Workflow
+
+1. Check inbox for assigned work with `+"`agentcom inbox --agent %s --unread`"+`.
+2. Review the request and confirm the expected outcome.
+3. Execute the work within your role scope.
+4. Run verification steps appropriate to your domain.
+5. Report completion and any follow-up needs to the requesting role.`, roleName)
+}
+
+func defaultRoleExamples(roleName string) string {
+	return fmt.Sprintf(`## Examples
+
+### Example 1: start assigned work
+
+~~~bash
+agentcom inbox --agent %[1]s --unread
+agentcom task update task_100 --status in_progress --result "starting %[1]s work"
+~~~
+
+### Example 2: report completion
+
+~~~bash
+agentcom send --from %[1]s plan '{"type":"report","subject":"work complete","body":"%[1]s task is ready for the next handoff"}'
+agentcom task update task_100 --status completed --result "completed %[1]s scope"
+~~~`, roleName)
+}
+
+func defaultRoleAntiPatterns(roleName string) string {
+	return fmt.Sprintf(`## Anti-patterns
+
+- Do not work outside the agreed %[1]s scope without coordination.
+- Do not close tasks without recording verification notes.
+- Do not keep blockers local when another role can unblock them.`, roleName)
+}
+
+func roleWorkflowContent(role templateRole) string {
+	if content, ok := roleWorkflows[role.Name]; ok {
+		return content
+	}
+	return defaultRoleWorkflow(role.AgentName)
+}
+
+func roleExamplesContent(role templateRole) string {
+	if content, ok := roleExamples[role.Name]; ok {
+		return content
+	}
+	return defaultRoleExamples(role.AgentName)
+}
+
+func roleAntiPatternsContent(role templateRole) string {
+	if content, ok := roleAntiPatterns[role.Name]; ok {
+		return content
+	}
+	return defaultRoleAntiPatterns(role.AgentName)
+}
+
+func renderHandoffProtocol(role templateRole) string {
+	return fmt.Sprintf(`## Handoff Protocol
+
+1. Update your current task before the handoff with `+"`agentcom task update task_123 --status in_progress --result \"handoff prepared\"`"+`.
+2. Create or delegate the next task with clear ownership and priority.
+3. Send a direct message with the exact context the next role needs.
+4. Watch your inbox with `+"`agentcom inbox --agent %s --unread`"+` for follow-up questions.
+5. Do not treat the handoff as complete until the receiving role has enough context to continue.`, role.AgentName)
 }
 
 func renderContactDetails(role templateRole, allRoles []templateRole) string {
@@ -398,23 +709,23 @@ func renderCollaborationProtocol(role templateRole) string {
 	var sb strings.Builder
 	sb.WriteString("### Request\n\n")
 	sb.WriteString("When you need work from another role, create a task:\n")
-	sb.WriteString(fmt.Sprintf("```\nagentcom task create \"<description>\" --creator %s --assign %s --priority medium\n```\n\n", agentName, requestTarget))
+	sb.WriteString(fmt.Sprintf("```\nagentcom task create \"Coordinate dependency\" --creator %s --assign %s --priority medium\n```\n\n", agentName, requestTarget))
 
 	sb.WriteString("### Response\n\n")
 	sb.WriteString("When completing a task assigned to you, update status and notify:\n")
-	sb.WriteString(fmt.Sprintf("```\nagentcom task update <task-id> --status completed --result \"<summary>\"\nagentcom send --from %s %s '{\"type\":\"response\",\"task_id\":\"<id>\",\"status\":\"completed\"}'\n```\n\n", agentName, responseTarget))
+	sb.WriteString(fmt.Sprintf("```\nagentcom task update task_123 --status completed --result \"verified and ready\"\nagentcom send --from %s %s '{\"type\":\"response\",\"task_id\":\"task_123\",\"status\":\"completed\"}'\n```\n\n", agentName, responseTarget))
 
 	sb.WriteString("### Escalation\n\n")
 	if len(escalationTargets) > 0 {
 		sb.WriteString(fmt.Sprintf("When blocked or when decisions exceed your role scope, escalate to %s:\n", strings.Join(escalationTargets, " or ")))
-		sb.WriteString(fmt.Sprintf("```\nagentcom send --from %s %s '{\"type\":\"escalation\",\"blocker\":\"<description>\"}'\n```\n\n", agentName, escalationTargets[0]))
+		sb.WriteString(fmt.Sprintf("```\nagentcom send --from %s %s '{\"type\":\"escalation\",\"blocker\":\"need decision on system boundary\"}'\n```\n\n", agentName, escalationTargets[0]))
 	} else {
 		sb.WriteString("No escalation targets defined for this role. Resolve blockers independently or broadcast for help.\n\n")
 	}
 
 	sb.WriteString("### Report\n\n")
 	sb.WriteString("Broadcast progress updates to the team:\n")
-	sb.WriteString(fmt.Sprintf("```\nagentcom broadcast --from %s --topic progress '{\"status\":\"in_progress\",\"summary\":\"<what-you-did>\"}'\n```\n", agentName))
+	sb.WriteString(fmt.Sprintf("```\nagentcom broadcast --from %s --topic progress '{\"status\":\"in_progress\",\"summary\":\"finished first verification pass\"}'\n```\n", agentName))
 
 	return sb.String()
 }
@@ -432,6 +743,12 @@ func renderRoleSkillContent(definition templateDefinition, role templateRole, ge
 	sb.WriteString(fmt.Sprintf("- Agent identity: `%s` / type `%s`\n", role.AgentName, role.AgentType))
 	sb.WriteString("\n## Responsibilities\n\n")
 	sb.WriteString(renderResponsibilities(role.Responsibilities))
+	sb.WriteString("\n\n")
+	sb.WriteString(roleWorkflowContent(role))
+	sb.WriteString("\n\n")
+	sb.WriteString(roleExamplesContent(role))
+	sb.WriteString("\n\n")
+	sb.WriteString(roleAntiPatternsContent(role))
 	sb.WriteString("\n\n## Communication\n\n")
 	sb.WriteString("### Primary Contacts\n\n")
 	if details := renderContactDetails(role, definition.Roles); details != "" {
@@ -439,7 +756,7 @@ func renderRoleSkillContent(definition templateDefinition, role templateRole, ge
 		sb.WriteString("\n\n")
 	}
 	sb.WriteString("### Coordination Commands\n\n")
-	sb.WriteString(fmt.Sprintf("- Direct message: `agentcom send --from %s %s <message-or-json>`\n", role.AgentName, directTarget))
+	sb.WriteString(fmt.Sprintf("- Direct message: `agentcom send --from %s %s '{\"type\":\"request\",\"subject\":\"coordination\"}'`\n", role.AgentName, directTarget))
 	sb.WriteString(fmt.Sprintf("- Check inbox: `agentcom inbox --agent %s --unread`\n", role.AgentName))
 	sb.WriteString("- For template-based teams, use `agentcom up` and `agentcom down` as the default lifecycle.\n")
 	sb.WriteString("- Use `agentcom register` only for advanced standalone sessions.\n\n")
@@ -450,6 +767,11 @@ func renderRoleSkillContent(definition templateDefinition, role templateRole, ge
 	if escalation := renderEscalationLine(computeEscalationTargets(role.Name, role.CommunicatesWith)); escalation != "" {
 		sb.WriteString("\n")
 		sb.WriteString(escalation)
+	}
+	sb.WriteString("\n")
+	sb.WriteString(renderHandoffProtocol(role))
+	if !strings.HasSuffix(sb.String(), "\n") {
+		sb.WriteString("\n")
 	}
 	return sb.String()
 }
@@ -590,12 +912,45 @@ func builtInTemplateDefinitions() []templateDefinition {
 			CommonTitle: "Company Template Common Instructions",
 			CommonBody: strings.TrimSpace(`Use this template when a small product team needs clear functional ownership.
 
-- Keep agent names stable across sessions.
-- Use ` + "`agentcom init --template company`" + ` to scaffold the template, ` + "`agentcom up`" + ` to start the managed roles, and ` + "`agentcom down`" + ` to stop them cleanly.
-- Use ` + "`agentcom register --name <name> --type <type>`" + ` only for low-level manual runs of a single standalone role.
-- Prefer direct role-to-role communication for execution details, and keep planning updates visible to the planning role.
+## Team Model
+
+- Keep agent names stable across sessions so task and message history stays readable.
+- The planning role leads sequencing and cross-role coordination.
+- The architect role handles system-boundary decisions and high-risk tradeoffs.
+- The review role is the quality gate before work is considered complete.
+- Frontend, backend, and design own their delivery domains and should coordinate directly on dependencies.
+
+## Standard Lifecycle
+
+- Run ` + "`agentcom init --template company`" + ` once per project.
+- Start managed roles with ` + "`agentcom up`" + `.
+- Use ` + "`agentcom down`" + ` to stop the session cleanly.
+- Use ` + "`agentcom register --name frontend --type engineer-frontend`" + ` only for low-level manual runs of a single standalone role.
+
+## Communication Norms
+
+- Use direct messages for one-to-one dependency work.
+- Use broadcasts for team-wide milestones, blockers, or sequencing changes.
+- Use tasks for durable ownership and status tracking.
 - Store structured payloads as JSON so review and architect can audit decisions.
-- This template is inspired by Paperclip's company/org model, but uses six delivery-focused roles: frontend, backend, plan, review, architect, and design.`),
+- If a dependency changes another role's plan, notify plan immediately.
+
+## Coding Standards
+
+- Prefer focused changes over broad refactors.
+- Keep commit messages scoped and descriptive.
+- Use branch names that map to one task or feature at a time.
+- Include verification notes when handing work to review.
+- Preserve existing project conventions unless architect approves a deviation.
+
+## Priority Rules
+
+- Follow plan's current sequence when priorities conflict.
+- Escalate to architect when a technical constraint invalidates the current plan.
+- Ask review to focus on the highest-risk change first when multiple items land together.
+- Do not start speculative work while a blocking dependency is unresolved.
+
+This template is inspired by Paperclip's company/org model, but uses six delivery-focused roles: frontend, backend, plan, review, architect, and design.`),
 			Roles: []templateRole{
 				{
 					Name:             "frontend",
@@ -654,12 +1009,43 @@ func builtInTemplateDefinitions() []templateDefinition {
 			CommonTitle: "Oh-My-OpenCode Template Common Instructions",
 			CommonBody: strings.TrimSpace(`Use this template when you want a planning-heavy workflow inspired by Oh-My-OpenCode.
 
-- Keep the planner, reviewer, and architect roles distinct from implementation roles.
-- Use ` + "`agentcom init --template oh-my-opencode`" + ` to scaffold the template, ` + "`agentcom up`" + ` to start the managed roles, and ` + "`agentcom down`" + ` to stop them cleanly.
-- Use ` + "`agentcom register --name <name> --type <type>`" + ` only as the advanced/manual path for a single standalone role.
-- Use ` + "`agentcom send`" + ` for targeted messages and ` + "`agentcom task`" + ` for explicit handoffs.
-- Treat role skills as execution guidance layered on top of the shared agentcom workflow.
-- This template references official Oh-My-OpenCode agent patterns such as Prometheus (planning), Momus (review), Oracle (architecture), and Sisyphus-Junior style execution specialists.`),
+## Team Model
+
+- Keep planner, reviewer, and architect roles distinct from execution roles.
+- Plan owns decomposition, sequencing, and routing.
+- Review is the explicit quality gate before completion.
+- Architect handles boundary changes, risky tradeoffs, and escalations.
+- Frontend, backend, and design execute once the plan is clear.
+
+## Standard Lifecycle
+
+- Run ` + "`agentcom init --template oh-my-opencode`" + ` once per project.
+- Start the managed team with ` + "`agentcom up`" + `.
+- Stop the managed team with ` + "`agentcom down`" + `.
+- Use ` + "`agentcom register --name oracle --type architect`" + ` only as the advanced manual path for a single role.
+
+## Planning-First Rules
+
+- Do not begin implementation before plan has defined the work and handoff order.
+- Break large work into explicit tasks before execution starts.
+- Broadcast plan changes when they affect more than one role.
+- If implementation reveals a hidden dependency, route it back through plan.
+
+## Review Gates
+
+- Review must see verification evidence before approval.
+- Execution roles should send concise file lists, outputs, and risk notes.
+- Review can reopen a task if the evidence is incomplete.
+- Plan should treat review feedback as part of the active sequence, not as optional commentary.
+
+## Architecture Checkpoints
+
+- Consult architect for system-boundary changes, major dependency shifts, or cross-cutting policy decisions.
+- Architect guidance should be shared early enough that frontend and backend do not diverge.
+- Review should verify that architectural guidance was actually followed.
+- Plan should re-sequence work if architect changes the dependency order.
+
+This template references official Oh-My-OpenCode agent patterns such as Prometheus (planning), Momus (review), Oracle (architecture), and Sisyphus-Junior style execution specialists.`),
 			Roles: []templateRole{
 				{
 					Name:             "frontend",
