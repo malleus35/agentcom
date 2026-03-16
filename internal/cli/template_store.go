@@ -53,6 +53,15 @@ func loadCustomTemplates(projectDir string) ([]templateDefinition, error) {
 		if err := json.Unmarshal(data, &definition); err != nil {
 			return nil, fmt.Errorf("unmarshal custom template manifest: %w", err)
 		}
+		if issues := validateCommunicationGraph(definition.Roles); hasGraphErrors(issues) {
+			messages := make([]string, 0, len(issues))
+			for _, issue := range issues {
+				if issue.Severity == "error" {
+					messages = append(messages, issue.Message)
+				}
+			}
+			return nil, fmt.Errorf("custom template manifest has communication graph errors: %s", strings.Join(messages, "; "))
+		}
 
 		commonPath := filepath.Join(filepath.Dir(manifestPath), "COMMON.md")
 		commonData, err := os.ReadFile(commonPath)
@@ -138,6 +147,15 @@ func validateCustomTemplateDefinition(definition templateDefinition) error {
 		if strings.TrimSpace(role.AgentType) == "" {
 			return fmt.Errorf("template role agent type is required")
 		}
+	}
+	if issues := validateCommunicationGraph(definition.Roles); hasGraphErrors(issues) {
+		messages := make([]string, 0, len(issues))
+		for _, issue := range issues {
+			if issue.Severity == "error" {
+				messages = append(messages, issue.Message)
+			}
+		}
+		return fmt.Errorf("communication graph errors: %s", strings.Join(messages, "; "))
 	}
 	return nil
 }
