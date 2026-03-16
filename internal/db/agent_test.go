@@ -183,3 +183,35 @@ func TestListProjects(t *testing.T) {
 		t.Fatalf("projects = %#v, want [project-a project-b]", projects)
 	}
 }
+
+func TestProjectsTableExists(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("missing before migrate", func(t *testing.T) {
+		database, err := Open(":memory:")
+		if err != nil {
+			t.Fatalf("Open() error = %v", err)
+		}
+		defer database.Close()
+
+		exists, err := database.ProjectsTableExists(ctx)
+		if err != nil {
+			t.Fatalf("ProjectsTableExists() error = %v", err)
+		}
+		if exists {
+			t.Fatal("ProjectsTableExists() = true, want false")
+		}
+	})
+
+	t.Run("present after migrate", func(t *testing.T) {
+		database := setupTestDB(t)
+
+		exists, err := database.ProjectsTableExists(ctx)
+		if err != nil {
+			t.Fatalf("ProjectsTableExists() error = %v", err)
+		}
+		if !exists {
+			t.Fatal("ProjectsTableExists() = false, want true")
+		}
+	})
+}
