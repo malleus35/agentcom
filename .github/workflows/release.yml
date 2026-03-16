@@ -35,24 +35,54 @@ jobs:
             archive: tar.gz
             binary: agentcom
             output: agentcom
+            cc: ''
+            cxx: ''
+            cgo_cflags: ''
+          - runner: ubuntu-latest
+            goos: linux
+            goarch: arm64
+            archive: tar.gz
+            binary: agentcom
+            output: agentcom
+            cc: aarch64-linux-gnu-gcc
+            cxx: aarch64-linux-gnu-g++
+            cgo_cflags: ''
           - runner: macos-latest
             goos: darwin
             goarch: amd64
             archive: tar.gz
             binary: agentcom
             output: agentcom
+            cc: ''
+            cxx: ''
+            cgo_cflags: ''
           - runner: macos-latest-xlarge
             goos: darwin
             goarch: arm64
             archive: tar.gz
             binary: agentcom
             output: agentcom
+            cc: ''
+            cxx: ''
+            cgo_cflags: ''
           - runner: windows-latest
             goos: windows
             goarch: amd64
             archive: zip
             binary: agentcom.exe
             output: agentcom.exe
+            cc: ''
+            cxx: ''
+            cgo_cflags: ''
+          - runner: ubuntu-latest
+            goos: windows
+            goarch: arm64
+            archive: zip
+            binary: agentcom.exe
+            output: agentcom.exe
+            cc: aarch64-w64-mingw32-gcc
+            cxx: aarch64-w64-mingw32-g++
+            cgo_cflags: -D_WIN32_WINNT=0x0A00
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
@@ -68,6 +98,24 @@ jobs:
           update: true
           install: mingw-w64-x86_64-gcc zip
 
+      - name: Setup Linux arm64 cross toolchain
+        if: matrix.goos == 'linux' && matrix.goarch == 'arm64'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libc6-dev-arm64-cross
+
+      - name: Setup llvm-mingw for windows arm64
+        if: matrix.goos == 'windows' && matrix.goarch == 'arm64'
+        shell: bash
+        run: |
+          LLVM_MINGW_VERSION=20260311
+          archive="llvm-mingw-${LLVM_MINGW_VERSION}-ucrt-ubuntu-22.04-x86_64.tar.xz"
+          url="https://github.com/mstorsjo/llvm-mingw/releases/download/${LLVM_MINGW_VERSION}/${archive}"
+          wget -q "$url" -O "$RUNNER_TEMP/$archive"
+          tar -xf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/llvm-mingw-${LLVM_MINGW_VERSION}-ucrt-ubuntu-22.04-x86_64/bin" >> "$GITHUB_PATH"
+
       - name: Add MinGW to PATH (Windows)
         if: runner.os == 'Windows'
         shell: bash
@@ -79,6 +127,10 @@ jobs:
           CGO_ENABLED: '1'
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+          CGO_CFLAGS: ${{ matrix.cgo_cflags }}
+          CGO_CXXFLAGS: ${{ matrix.cgo_cflags }}
         run: |
           mkdir -p dist
           go build \
@@ -94,14 +146,22 @@ jobs:
           tar -C dist -czf "$archive" "${{ matrix.binary }}"
           shasum -a 256 "$archive" > "$archive.sha256"
 
-      - name: Package zip (Windows)
-        if: matrix.archive == 'zip'
+      - name: Package zip (Windows host)
+        if: matrix.archive == 'zip' && runner.os == 'Windows'
         shell: powershell
         run: |
           $archive = "agentcom_$($env:GITHUB_REF_NAME.Substring(1))_${{ matrix.goos }}_${{ matrix.goarch }}.zip"
           Compress-Archive -Path "dist/${{ matrix.binary }}" -DestinationPath $archive
           $hash = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLower()
           "$hash  $archive" | Out-File -Encoding ascii "$archive.sha256"
+
+      - name: Package zip (Unix host)
+        if: matrix.archive == 'zip' && runner.os != 'Windows'
+        shell: bash
+        run: |
+          archive="agentcom_${GITHUB_REF_NAME#v}_${{ matrix.goos }}_${{ matrix.goarch }}.zip"
+          (cd dist && zip -q "../$archive" "${{ matrix.binary }}")
+          shasum -a 256 "$archive" > "$archive.sha256"
 
       - name: Upload release asset
         env:
