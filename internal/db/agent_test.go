@@ -155,3 +155,31 @@ func TestAgentCRUD(t *testing.T) {
 		t.Fatalf("FindAgentByID(deleted) error = %v, want %v", err, ErrAgentNotFound)
 	}
 }
+
+func TestListProjects(t *testing.T) {
+	database := setupTestDB(t)
+	ctx := context.Background()
+
+	agents := []*Agent{
+		{Name: "alpha", Type: "worker", Project: "project-b", Status: "alive"},
+		{Name: "beta", Type: "worker", Project: "project-a", Status: "alive"},
+		{Name: "gamma", Type: "worker", Project: "project-b", Status: "alive"},
+		{Name: "legacy", Type: "worker", Project: "", Status: "alive"},
+	}
+	for _, agent := range agents {
+		if err := database.InsertAgent(ctx, agent); err != nil {
+			t.Fatalf("InsertAgent(%s) error = %v", agent.Name, err)
+		}
+	}
+
+	projects, err := database.ListProjects(ctx)
+	if err != nil {
+		t.Fatalf("ListProjects() error = %v", err)
+	}
+	if len(projects) != 2 {
+		t.Fatalf("len(projects) = %d, want 2", len(projects))
+	}
+	if projects[0] != "project-a" || projects[1] != "project-b" {
+		t.Fatalf("projects = %#v, want [project-a project-b]", projects)
+	}
+}

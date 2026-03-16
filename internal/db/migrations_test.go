@@ -44,6 +44,9 @@ func TestMigrateFreshDatabase(t *testing.T) {
 	if !hasUniqueNameProjectIndex(t, database, ctx) {
 		t.Fatal("unique (name, project) index missing")
 	}
+	if !hasTable(t, database, ctx, "projects") {
+		t.Fatal("projects table missing")
+	}
 }
 
 func TestMigrateLegacyAgentsTable(t *testing.T) {
