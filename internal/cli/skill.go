@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -21,6 +22,13 @@ var skillNamePattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 type skillTarget struct {
 	Agent string `json:"agent"`
 	Path  string `json:"path"`
+}
+
+type skillValidationReport struct {
+	Path   string   `json:"path"`
+	Status string   `json:"status"`
+	Checks []string `json:"checks,omitempty"`
+	Issues []string `json:"issues,omitempty"`
 }
 
 type skillFileName string
@@ -92,8 +100,38 @@ func newSkillCmd() *cobra.Command {
 	}
 
 	cmd.AddCommand(newSkillCreateCmd())
+	cmd.AddCommand(newSkillValidateCmd())
 
 	return cmd
+}
+
+func newSkillValidateCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "validate",
+		Short: "Validate skill documentation quality",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			reports, err := validateProjectSkills()
+			if err != nil {
+				return fmt.Errorf("cli.newSkillValidateCmd: %w", err)
+			}
+			if jsonOutput {
+				enc := json.NewEncoder(cmd.OutOrStdout())
+				enc.SetIndent("", "  ")
+				return enc.Encode(reports)
+			}
+			for _, report := range reports {
+				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\n", strings.ToUpper(report.Status), report.Path); err != nil {
+					return fmt.Errorf("cli.newSkillValidateCmd: write report: %w", err)
+				}
+				for _, issue := range report.Issues {
+					if _, err := fmt.Fprintf(cmd.OutOrStdout(), "  - %s\n", issue); err != nil {
+						return fmt.Errorf("cli.newSkillValidateCmd: write issue: %w", err)
+					}
+				}
+			}
+			return nil
+		},
+	}
 }
 
 func newSkillCreateCmd() *cobra.Command {
@@ -108,7 +146,7 @@ func newSkillCreateCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 			if err := validateSkillName(name); err != nil {
-				return fmt.Errorf("cli.newSkillCreateCmd: %w", err)
+				return commandError("cli.newSkillCreateCmd", err)
 			}
 
 			targets, err := resolveSkillTargets(scope, agentType, name)
@@ -158,7 +196,11 @@ func newSkillCreateCmd() *cobra.Command {
 
 func validateSkillName(name string) error {
 	if !skillNamePattern.MatchString(name) {
-		return fmt.Errorf("invalid skill name %q: use lowercase letters, numbers, and single hyphens only", name)
+		return newUserError(
+			fmt.Sprintf("Skill name %q is invalid", name),
+			"Skill names may use only lowercase letters, numbers, and single hyphens.",
+			"Rename it like `my-skill` and re-run `agentcom skill create <name>`.",
+		)
 	}
 	return nil
 }
@@ -327,7 +369,11 @@ func writeSkillFile(path string, content string, mode writeMode) error {
 		}
 		return nil
 	default:
-		return fmt.Errorf("cli.writeSkillFile: skill file already exists: %s (use --force to overwrite)", path)
+		return newUserError(
+			fmt.Sprintf("Skill file already exists at %s", path),
+			"Create mode never overwrites an existing skill file.",
+			"Re-run with `--force` or choose a different skill name.",
+		)
 	}
 }
 
@@ -358,4 +404,101 @@ func titleWords(s string) string {
 		parts[i] = string(runes)
 	}
 	return strings.Join(parts, " ")
+}
+
+func validateProjectSkills() ([]skillValidationReport, error) {
+	projectDir, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("getwd: %w", err)
+	}
+	reports := make([]skillValidationReport, 0)
+	err = filepath.WalkDir(projectDir, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if filepath.Base(path) != "SKILL.md" {
+			return nil
+		}
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		reports = append(reports, validateSkillFile(path, string(content)))
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("walk skills: %w", err)
+	}
+	sort.Slice(reports, func(i, j int) bool { return reports[i].Path < reports[j].Path })
+	return reports, nil
+}
+
+func validateSkillFile(path string, content string) skillValidationReport {
+	report := skillValidationReport{Path: path, Status: "pass"}
+	checks := make([]string, 0, 4)
+	issues := make([]string, 0, 4)
+	lineCount := len(strings.Split(content, "\n"))
+	shared := isSharedSkillPath(path)
+	minLines := 50
+	if shared {
+		minLines = 60
+	}
+	if lineCount >= minLines {
+		checks = append(checks, fmt.Sprintf("line_count>=%d", minLines))
+	} else {
+		issues = append(issues, fmt.Sprintf("line count %d is below %d", lineCount, minLines))
+	}
+
+	requiredSections := []string{"## Communication"}
+	if shared {
+		requiredSections = append(requiredSections, "## Lifecycle")
+	} else {
+		requiredSections = append(requiredSections, "## Workflow")
+	}
+	missingSections := make([]string, 0)
+	for _, section := range requiredSections {
+		if !strings.Contains(content, section) {
+			missingSections = append(missingSections, section)
+		}
+	}
+	if len(missingSections) == 0 {
+		checks = append(checks, "required_sections")
+	} else {
+		issues = append(issues, fmt.Sprintf("missing sections: %s", strings.Join(missingSections, ", ")))
+	}
+
+	placeholders := []string{"<sender>", "<target>", "<name>"}
+	foundPlaceholders := make([]string, 0)
+	for _, placeholder := range placeholders {
+		if strings.Contains(content, placeholder) {
+			foundPlaceholders = append(foundPlaceholders, placeholder)
+		}
+	}
+	if len(foundPlaceholders) == 0 {
+		checks = append(checks, "no_placeholders")
+	} else {
+		issues = append(issues, fmt.Sprintf("contains placeholders: %s", strings.Join(foundPlaceholders, ", ")))
+	}
+
+	if strings.Contains(content, "agentcom ") {
+		checks = append(checks, "cli_examples")
+	} else {
+		issues = append(issues, "missing agentcom CLI examples")
+	}
+
+	if len(issues) > 0 {
+		report.Status = "fail"
+		report.Issues = issues
+	} else {
+		report.Checks = checks
+	}
+	return report
+}
+
+func isSharedSkillPath(path string) bool {
+	clean := filepath.ToSlash(path)
+	return strings.HasSuffix(clean, "/agentcom/SKILL.md")
 }
