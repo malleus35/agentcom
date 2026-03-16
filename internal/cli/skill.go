@@ -215,7 +215,15 @@ func resolveSkillTargets(scope string, agentType string, name string) ([]skillTa
 }
 
 func resolveTemplateSkillTargets(scope string, name string) ([]skillTarget, error) {
-	return resolveSkillTargetsForAgents(scope, []string{"claude", "codex", "gemini", "opencode"}, name)
+	return resolveTemplateSkillTargetsForSelectedAgents(scope, name, nil)
+}
+
+func resolveTemplateSkillTargetsForSelectedAgents(scope string, name string, selectedAgents []string) ([]skillTarget, error) {
+	agents := append([]string(nil), selectedAgents...)
+	if len(agents) == 0 {
+		agents = []string{"claude", "codex", "gemini", "opencode"}
+	}
+	return resolveSkillTargetsForAgents(scope, agents, name)
 }
 
 func resolveSkillTargetsForAgents(scope string, agents []string, name string) ([]skillTarget, error) {

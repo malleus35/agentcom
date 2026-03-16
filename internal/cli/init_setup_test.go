@@ -553,3 +553,105 @@ func TestInitSetupExecutorDryRunSkipsWrites(t *testing.T) {
 		t.Fatalf("AGENTS.md should not be written in dry-run, stat err=%v", err)
 	}
 }
+
+func TestInitSetupExecutorTemplateScaffoldUsesSelectedAgents(t *testing.T) {
+	projectDir := t.TempDir()
+	homeDir := filepath.Join(t.TempDir(), ".agentcom-home")
+	oldwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	defer func() {
+		if err := os.Chdir(oldwd); err != nil {
+			t.Fatalf("restore cwd: %v", err)
+		}
+	}()
+	if err := os.Chdir(projectDir); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+
+	executor := &initSetupExecutor{projectDir: projectDir}
+	result := onboard.Result{
+		HomeDir:           homeDir,
+		Project:           "selected-agent-app",
+		Template:          "company",
+		WriteInstructions: true,
+		SelectedAgents:    []string{"claude", "opencode"},
+		Confirmed:         true,
+	}
+
+	if _, err := executor.Apply(context.Background(), result); err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+
+	for _, path := range []string{
+		filepath.Join(projectDir, ".claude", "skills", "agentcom", "SKILL.md"),
+		filepath.Join(projectDir, ".opencode", "skills", "agentcom", "SKILL.md"),
+	} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("Stat(%s) error = %v", path, err)
+		}
+	}
+
+	for _, path := range []string{
+		filepath.Join(projectDir, ".agents", "skills", "agentcom", "SKILL.md"),
+		filepath.Join(projectDir, ".gemini", "skills", "agentcom", "SKILL.md"),
+	} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("Stat(%s) err = %v, want not exist", path, err)
+		}
+	}
+}
+
+func TestInitSetupExecutorDryRunTemplatePreviewUsesSelectedAgents(t *testing.T) {
+	projectDir := t.TempDir()
+	homeDir := filepath.Join(t.TempDir(), ".agentcom-home")
+	oldwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	defer func() {
+		if err := os.Chdir(oldwd); err != nil {
+			t.Fatalf("restore cwd: %v", err)
+		}
+	}()
+	if err := os.Chdir(projectDir); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+
+	executor := &initSetupExecutor{projectDir: projectDir, dryRun: true}
+	result := onboard.Result{
+		HomeDir:           homeDir,
+		Project:           "selected-agent-preview-app",
+		Template:          "company",
+		WriteInstructions: true,
+		SelectedAgents:    []string{"claude", "opencode"},
+		Confirmed:         true,
+	}
+
+	report, err := executor.Apply(context.Background(), result)
+	if err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+
+	preview := strings.Join(func() []string {
+		items := make([]string, 0, len(report.PreviewActions))
+		for _, action := range report.PreviewActions {
+			items = append(items, action.Path)
+		}
+		return items
+	}(), "\n")
+
+	if !strings.Contains(preview, filepath.Join(projectDir, ".claude", "skills", "agentcom", "SKILL.md")) {
+		t.Fatalf("preview missing claude shared skill: %s", preview)
+	}
+	if !strings.Contains(preview, filepath.Join(projectDir, ".opencode", "skills", "agentcom", "SKILL.md")) {
+		t.Fatalf("preview missing opencode shared skill: %s", preview)
+	}
+	if strings.Contains(preview, filepath.Join(projectDir, ".agents", "skills", "agentcom", "SKILL.md")) {
+		t.Fatalf("preview unexpectedly contains codex shared skill: %s", preview)
+	}
+	if strings.Contains(preview, filepath.Join(projectDir, ".gemini", "skills", "agentcom", "SKILL.md")) {
+		t.Fatalf("preview unexpectedly contains gemini shared skill: %s", preview)
+	}
+}

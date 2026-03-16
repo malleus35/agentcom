@@ -4,15 +4,15 @@
 
 ## 현재 상태
 
-- **Phase**: PH4 enhanced UX 구현/검증 완료, 커밋/merge 진행 중
-- **마지막 작업**: structured user error, `doctor`, built-in template topology 분화, template export/import, enhanced `status`, `init --dry-run`, `skill validate`, README 갱신, 테스트/수동 QA 완료
-- **현재 브랜치**: `feature/PH4-enhanced-ux`
+- **Phase**: selected-agent template scaffold fix 구현/검증 완료, 커밋/merge 진행 중
+- **마지막 작업**: `init --template` scaffold가 선택되지 않은 `.gemini` 등 agent skill까지 생성하던 문제를 selected agents 기준으로 제한
+- **현재 브랜치**: `feature/init-template-selected-skill-targets`
 - **현재 버전**: v0.1.7이 최신 공개 릴리스, 다음 릴리스 버전은 아직 미확정
 - **P10 상태**: 구현/문서/테스트 완료, 관련 변경은 현재 브랜치에 포함됨
 - **P11 상태**: 구현 완료, 테스트/수동 QA/README 반영 완료, develop 머지 및 release 대기
 - **계획 문서 상태**: `AGENTCOM_IMPROVEMENT_PROPOSAL.md` 기반 후속 개선안 분석 완료, PH1 구현 완료, PH2~PH4 계획 유지
-- **다음 작업**: PH4 변경 원자 커밋 정리 후 `develop` 머지
-- **워킹트리**: PH4 관련 CLI/README 변경 존재
+- **다음 작업**: selected-agent template scaffold fix 원자 커밋 정리 후 `develop` 머지
+- **워킹트리**: template scaffold selected-agents 관련 CLI/test 변경 존재
 
 ## 완료된 태스크
 
@@ -28,6 +28,13 @@
 - P10 project column 핵심 구현 완료
 
 ## 이번 세션에서 마무리한 작업
+
+- selected-agent template scaffold fix 구현 완료
+  - `internal/cli/skill.go`: template skill target resolver를 selected agents 기반 helper로 분리하고, 선택값이 없을 때만 기본 4개 agent fallback 사용
+  - `internal/cli/agents.go`, `internal/cli/init.go`, `internal/cli/init_setup.go`, `internal/cli/template_edit.go`: template scaffold/preview/init 경로에 selected agents 전달 배선 추가
+  - `internal/cli/agents_test.go`, `internal/cli/init_setup_test.go`, `internal/cli/skill_test.go`, `internal/cli/template_edit_test.go`: selected agents만 scaffold/preview 되는 회귀 테스트 추가 및 기존 호출부 시그니처 갱신
+  - 검증 완료: `go test ./internal/cli/... -run 'TestWriteTemplateScaffold|TestTemplateScaffoldReInit|TestWriteTemplateScaffoldSelectedAgents|TestInitSetupExecutorTemplateScaffoldUsesSelectedAgents|TestInitSetupExecutorDryRunTemplatePreviewUsesSelectedAgents|TestResolveTemplateSkillTargetsSelectedAgents|TestSkillValidatePassesAfterPhase3' -count=1`, `go test ./...`, `go build ./...`
+  - 환경 제약: `make lint`는 로컬에 `golangci-lint`가 없어 실행 실패 (`No such file or directory`)
 
 - linux/windows arm64 release matrix 확장 완료
   - `.github/workflows/release.yml`: `linux/arm64`, `windows/arm64` asset 빌드 엔트리 추가
@@ -230,6 +237,7 @@
 | 2026-03-15 | P11 `up`/`down` 계획: 옵션 A(init=플랫폼, up=런타임)를 기본 방향으로, 옵션 B(up이 init 흡수) 요소도 검토 | Oracle 상담 + 업계 CLI 벤치마크 결과. init→up 레이어 분리가 Terraform/Dapr 패턴과 일치하고 기존 코드 변경 최소 |
 | 2026-03-15 | `up`은 .agentcom.json의 template.active를 읽고, template.json에서 역할 목록을 로드하여 subprocess supervisor로 일괄 register | register가 블로킹이므로 supervisor가 자식 프로세스로 각 register를 fork하는 구조가 자연스러움 |
 | 2026-03-15 | 런타임 상태는 .agentcom/run/up.json에 PID/socket/role 매핑으로 기록 | SQLite는 진실의 원천이지만 프로세스 종료는 PID 없이 정확히 못 하므로 별도 런타임 파일 필요 |
+| 2026-03-16 | template scaffold skill 생성 범위는 selected agents가 있으면 그 집합을 우선하고, 없을 때만 core 4-agent fallback을 사용 | wizard/batch에서 사용자가 고른 agent와 실제 생성 산출물을 일치시키면서 기존 `--template` 단독 실행의 기본 동작은 유지하기 위해 |
 
 ## 발견된 이슈
 

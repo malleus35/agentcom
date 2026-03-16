@@ -197,7 +197,7 @@ func newInitCmd() *cobra.Command {
 					return fmt.Errorf("cli.newInitCmd: getwd for template scaffold: %w", err)
 				}
 				if dryRun {
-					preview, previewErr := previewTemplateScaffold(cwd, templateSelection, mode)
+					preview, previewErr := previewTemplateScaffold(cwd, templateSelection, mode, nil)
 					if previewErr != nil {
 						return fmt.Errorf("cli.newInitCmd: preview template scaffold: %w", previewErr)
 					}
@@ -206,7 +206,7 @@ func newInitCmd() *cobra.Command {
 						generatedFiles = append(generatedFiles, action.Path)
 					}
 				} else {
-					generatedFiles, err = writeTemplateScaffold(cwd, templateSelection, mode)
+					generatedFiles, err = writeTemplateScaffold(cwd, templateSelection, mode, nil)
 				}
 				if err != nil {
 					return fmt.Errorf("cli.newInitCmd: write template scaffold: %w", err)
