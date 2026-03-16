@@ -263,7 +263,11 @@
 - `agentcom agents template`는 interactive tty에서 검색어 기반 템플릿 선택을 지원하고, non-interactive/JSON 모드에서는 기존 목록/상세 출력 동작을 유지
 - 템플릿 role skill 생성 경로는 `.claude/skills/agentcom/<template>-<role>/SKILL.md` 등 각 agent 네임스페이스 구조로 변경됐고, shared file은 `.claude/skills/agentcom/SKILL.md` 형태로 생성
 - onboard wizard PRD: `.agents/plans/P8-01-onboard-setup-wizard.md`
-- CEO 중심 라우팅 vs direct-to-user 응답 모델은 아직 계획 단계이며, 현 구현에는 특수 `user` recipient를 추가하지 않음
+- CEO 중심 라우팅 vs direct-to-user 응답 모델: **Option C (하이브리드) 채택 결정됨** → `.agents/plans/user-endpoint-plan.md` (P12 PRD, 690행)
+  - 내부: pseudo-agent 패턴 (type="human", socket_path=nil), 외부: `agentcom user` CLI + MCP `send_to_user`/`get_user_messages`
+  - 스키마 변경 0, 라우팅 변경 0, guard 2개 (heartbeat skip + broadcast exclusion)
+  - Metis(Plan 컨설턴트) + Oracle(GPT-5.4) 독립 교차검증 완료: Metis→Option C, Oracle→Option B, 최종 Option C 채택 (agentcom 설계원칙 "에이전트 유형 자유" 준수)
+  - 6 Phase, 10 Tasks, 32 Subtasks, ultrawork 4-wave 병렬 실행 설계
 - `develop`, `release/v0.1.2`, `main`, `feature/init-template-scaffold` 브랜치와 `v0.1.2` 태그는 원격 반영 완료
 - `release/v0.1.3`, `main`, `develop`, `v0.1.3` 태그는 원격 반영 완료
 - `main`, `develop`, `v0.1.4` 태그와 GitHub release는 원격 반영 완료
@@ -278,4 +282,8 @@
 
 ## 진행 중 작업 체크리스트
 
-- 현재 후속 우선순위: 릴리스 버전 확정 → develop 머지 → 태그/릴리스 → Scoop/Homebrew 반영 검증
+- [x] init template selected skill targets 버그 수정 (feature 브랜치 → develop 머지 완료)
+- [x] supervisor user context 조사 완료 (supervisor는 프로세스 매니저, 메시지 수신자 아님)
+- [x] P12 user-endpoint plan 문서 작성 완료 (Metis + Oracle 교차검증)
+- [ ] **P12 user-endpoint 구현**: `feature/P12-user-endpoint` 브랜치 생성 → TDD 기반 구현 (다음 작업)
+- 현재 후속 우선순위: P12 구현 → 릴리스 버전 확정 → develop 머지 → 태그/릴리스 → Scoop/Homebrew 반영 검증
