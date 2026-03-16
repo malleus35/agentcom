@@ -278,7 +278,7 @@ func resolveTemplateDefinition(name string) (templateDefinition, error) {
 	)
 }
 
-func writeTemplateScaffold(projectDir string, templateName string, mode writeMode) ([]string, error) {
+func writeTemplateScaffold(projectDir string, templateName string, mode writeMode, selectedAgents []string) ([]string, error) {
 	definition, err := resolveTemplateDefinition(templateName)
 	if err != nil {
 		return nil, err
@@ -302,7 +302,7 @@ func writeTemplateScaffold(projectDir string, templateName string, mode writeMod
 		return nil, fmt.Errorf("write template manifest: %w", err)
 	}
 
-	sharedTargets, err := resolveTemplateSkillTargets("project", "agentcom")
+	sharedTargets, err := resolveTemplateSkillTargetsForSelectedAgents("project", "agentcom", selectedAgents)
 	if err != nil {
 		return nil, fmt.Errorf("resolve shared agentcom skill targets: %w", err)
 	}
@@ -321,7 +321,7 @@ func writeTemplateScaffold(projectDir string, templateName string, mode writeMod
 
 	for _, role := range definition.Roles {
 		generatedSkillName := templateRoleSkillName(definition.Name, role.Name)
-		targets, err := resolveTemplateSkillTargets("project", filepath.Join("agentcom", generatedSkillName))
+		targets, err := resolveTemplateSkillTargetsForSelectedAgents("project", filepath.Join("agentcom", generatedSkillName), selectedAgents)
 		if err != nil {
 			return nil, fmt.Errorf("resolve role skill targets for %s: %w", role.Name, err)
 		}
