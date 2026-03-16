@@ -139,6 +139,33 @@ func TestResolveSkillAgents(t *testing.T) {
 	}
 }
 
+func TestResolveTemplateSkillTargetsSelectedAgents(t *testing.T) {
+	projectDir := t.TempDir()
+	oldwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	defer func() {
+		if err := os.Chdir(oldwd); err != nil {
+			t.Fatalf("restore cwd: %v", err)
+		}
+	}()
+	if err := os.Chdir(projectDir); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+
+	targets, err := resolveTemplateSkillTargetsForSelectedAgents("project", "agentcom", []string{"claude", "opencode"})
+	if err != nil {
+		t.Fatalf("resolveTemplateSkillTargets() error = %v", err)
+	}
+	if len(targets) != 2 {
+		t.Fatalf("len(targets) = %d, want 2", len(targets))
+	}
+	if targets[0].Agent != "claude" || targets[1].Agent != "opencode" {
+		t.Fatalf("targets = %#v, want claude/opencode", targets)
+	}
+}
+
 func TestWriteSkillFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), ".claude", "skills", "my-skill", "SKILL.md")
 	content := renderSkillContent("my-skill", defaultSkillDescription)
@@ -263,7 +290,7 @@ func TestSkillValidatePassesAfterPhase3(t *testing.T) {
 	if err := os.Chdir(projectDir); err != nil {
 		t.Fatalf("Chdir() error = %v", err)
 	}
-	if _, err := writeTemplateScaffold(projectDir, "company", writeModeAppend); err != nil {
+	if _, err := writeTemplateScaffold(projectDir, "company", writeModeAppend, nil); err != nil {
 		t.Fatalf("writeTemplateScaffold() error = %v", err)
 	}
 
