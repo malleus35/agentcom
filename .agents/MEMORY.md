@@ -4,15 +4,15 @@
 
 ## 현재 상태
 
-- **Phase**: PH1 critical fixes 구현/검증 완료, develop 머지 준비 중
-- **마지막 작업**: PH1 marker 기반 re-init 안전성, role-aware escalation, scaffold/skill append 일관성 구현 + README/계획 문서 갱신
-- **현재 브랜치**: `feature/PH1-critical-fixes`
+- **Phase**: PH2 core improvements 구현/검증 완료, develop 머지 준비 중
+- **마지막 작업**: PH2 communication graph validation, custom template quick wizard, `--force` 전면 확장, shared-path agent marker 분기, README/MEMORY 갱신
+- **현재 브랜치**: `feature/PH2-core-improvements`
 - **현재 버전**: v0.1.7이 최신 공개 릴리스, 다음 릴리스 버전은 아직 미확정
 - **P10 상태**: 구현/문서/테스트 완료, 관련 변경은 현재 브랜치에 포함됨
 - **P11 상태**: 구현 완료, 테스트/수동 QA/README 반영 완료, develop 머지 및 release 대기
 - **계획 문서 상태**: `AGENTCOM_IMPROVEMENT_PROPOSAL.md` 기반 후속 개선안 분석 완료, PH1 구현 완료, PH2~PH4 계획 유지
-- **다음 작업**: PH1을 develop에 머지한 뒤 PH2 착수 여부 결정, release workflow와 README 기준을 맞춰 `linux/arm64`·`windows/arm64` 지원 여부를 확정하고 문서/배포 설정을 정리
-- **워킹트리**: PH1 구현 파일, 계획 md 3개, README 갱신이 존재
+- **다음 작업**: PH2 브랜치를 develop에 머지하고, 이후 PH3 documentation polish 또는 release target 정리 작업으로 진행
+- **워킹트리**: PH2 구현 파일과 README/MEMORY 갱신이 존재
 
 ## 완료된 태스크
 
@@ -28,6 +28,18 @@
 - P10 project column 핵심 구현 완료
 
 ## 이번 세션에서 마무리한 작업
+
+- PH2 core improvements 구현 완료
+  - `internal/cli/agents.go`, `internal/cli/template_store.go`: communication graph validation 추가, built-in graph 대칭화, richer role communication rendering 적용
+  - `internal/cli/role_defaults.go`: known role defaults + mesh communication 기반 quick custom template 생성 추가
+  - `internal/cli/init_prompter.go`, `internal/cli/init.go`, `internal/cli/init_setup.go`: 2-field custom wizard, `--advanced` detailed wizard fallback, `--force` write mode 전파
+  - `internal/cli/instruction.go`: shared-path instruction file에 agent-specific marker block 추가, overwrite 시 다중 block 보존
+  - `internal/cli/*_test.go`: graph validation, richer skill rendering, role defaults, simplified wizard, force overwrite, agent-specific marker regression 테스트 추가/갱신
+  - `README.md`, `README.ko.md`, `README.ja.md`, `README.zh.md`: quick custom wizard, `--advanced`, expanded `--force`, shared-path markers 문서화
+  - 검증 완료: `go test ./internal/cli/... -count=1`, `go test ./...`, `go build ./...`
+  - 수동 QA 완료:
+    - `/tmp/agentcom-ph2-qa/project`에서 `agentcom init --batch --agents-md codex,opencode --template company --force` 실행 후 `AGENTS.md`에 codex/opencode marker block 2개 생성 확인
+    - `/tmp/agentcom-ph2-qa/wizard-project`에서 `agentcom init --template custom --accessible` interactive flow로 `demo-team` 생성 후 `template.json`에 `frontend, backend, plan` role defaults / mesh graph 반영 확인
 
 - PH1 critical fixes 구현 완료
   - `.agents/plans/PH1-item-1-instruction-file-append.md`, `.agents/plans/PH1-item-2-escalation-rendering.md`, `.agents/plans/PH1-item-3-scaffold-skill-consistency.md` 작성
