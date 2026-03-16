@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/malleus35/agentcom/internal/config"
+	"github.com/malleus35/agentcom/internal/db"
 	"github.com/malleus35/agentcom/internal/onboard"
 )
 
@@ -287,6 +288,7 @@ func TestInitCommandWizardGeneratesInstructionAndMemoryFiles(t *testing.T) {
 	newOnboardPrompter = func(accessible bool, input io.Reader, output io.Writer) onboard.Prompter {
 		return setupTestPrompter{result: onboard.Result{
 			HomeDir:           homeDir,
+			Project:           "wizard-app",
 			WriteInstructions: true,
 			WriteMemory:       true,
 			SelectedAgents:    []string{"claude", "codex"},
@@ -311,5 +313,25 @@ func TestInitCommandWizardGeneratesInstructionAndMemoryFiles(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(projectDir, ".agents", "MEMORY.md")); err != nil {
 		t.Fatalf("Stat(MEMORY.md) error = %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(projectDir, ".agentcom.json"))
+	if err != nil {
+		t.Fatalf("ReadFile(.agentcom.json) error = %v", err)
+	}
+	if !strings.Contains(string(data), `"project": "wizard-app"`) {
+		t.Fatalf("project config = %s, want wizard-app", string(data))
+	}
+
+	database, err := db.Open(filepath.Join(homeDir, config.DBFileName))
+	if err != nil {
+		t.Fatalf("db.Open() error = %v", err)
+	}
+	defer database.Close()
+	projects, err := database.ListProjects(context.Background())
+	if err != nil {
+		t.Fatalf("ListProjects() error = %v", err)
+	}
+	if len(projects) != 1 || projects[0] != "wizard-app" {
+		t.Fatalf("projects = %#v, want [wizard-app]", projects)
 	}
 }

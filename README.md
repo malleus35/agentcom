@@ -246,6 +246,8 @@ agentcom init --template oh-my-opencode
 agentcom init --template custom
 ```
 
+The generated `COMMON.md`, shared `agentcom/SKILL.md`, and namespaced role skills all describe the default template workflow as `init -> up -> down`. Any remaining `register` guidance is framed as the low-level path for a standalone manually managed agent.
+
 Inspect the built-in templates before generating one:
 
 ```bash
@@ -344,6 +346,7 @@ Notes:
 - `--accessible` switches the setup wizard to accessible text prompts.
 - `--agents-md` now accepts `all` or a comma-separated agent list such as `claude,codex,cursor`; `agentcom init --batch --agents-md` without a value keeps the legacy `AGENTS.md` behavior.
 - `--template` writes `.agentcom/templates/<template>/COMMON.md`, `.agentcom/templates/<template>/template.json`, a shared `agentcom/SKILL.md` per supported agent, and six namespaced role skills: `agentcom/<template>-frontend`, `agentcom/<template>-backend`, `agentcom/<template>-plan`, `agentcom/<template>-review`, `agentcom/<template>-architect`, and `agentcom/<template>-design`.
+- Generated scaffold instructions treat `agentcom init --template <name>` -> `agentcom up` -> `agentcom down` as the default team lifecycle, with `agentcom register` reserved for low-level standalone use.
 - When `--template` is set, `.agentcom.json` also records `template.active` so `agentcom up` can start the same template later without repeating the flag.
 - Supported built-in templates are `company` and `oh-my-opencode`; `custom` launches a template-creation wizard in interactive mode.
 - `agentcom agents template --list` shows built-in and custom templates, and `agentcom agents template --delete <name>` removes a custom template after confirmation.
@@ -646,6 +649,7 @@ Generated scaffold details:
 - Project-level shared template skills are generated at `.claude/skills/agentcom/SKILL.md`, `.agents/skills/agentcom/SKILL.md`, `.gemini/skills/agentcom/SKILL.md`, and `.opencode/skills/agentcom/SKILL.md`.
 - Role skills are generated under the same namespace, for example `.agents/skills/agentcom/company-frontend/SKILL.md`.
 - Each generated role skill reads the shared `../SKILL.md` first, then the template `COMMON.md`, and includes the communication map for `frontend`, `backend`, `plan`, `review`, `architect`, and `design`.
+- Generated scaffold wording is aligned so the default onboarding path is `init -> up -> down`; `register` only appears as an advanced/manual standalone workflow.
 
 ### `agentcom status`
 

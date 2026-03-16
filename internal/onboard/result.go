@@ -3,6 +3,8 @@ package onboard
 import (
 	"fmt"
 	"path/filepath"
+
+	"github.com/malleus35/agentcom/internal/config"
 )
 
 // Result captures the selections made during onboarding.
@@ -40,6 +42,9 @@ func (r Result) Validate() error {
 	}
 	if !filepath.IsAbs(r.HomeDir) {
 		return fmt.Errorf("onboard.Result.Validate: home directory must be an absolute path")
+	}
+	if err := config.ValidateProjectName(r.Project); err != nil {
+		return fmt.Errorf("onboard.Result.Validate: %w", err)
 	}
 	if r.WriteInstructions && len(r.SelectedAgents) == 0 {
 		return fmt.Errorf("onboard.Result.Validate: at least one selected agent is required when writing instructions")

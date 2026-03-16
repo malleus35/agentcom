@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -11,6 +12,8 @@ import (
 	"strings"
 
 	"charm.land/huh/v2"
+	"github.com/malleus35/agentcom/internal/config"
+	"github.com/malleus35/agentcom/internal/db"
 	"github.com/malleus35/agentcom/internal/onboard"
 )
 
@@ -18,6 +21,113 @@ type initPrompter struct {
 	accessible bool
 	input      io.Reader
 	output     io.Writer
+}
+
+const (
+	agentToolsTitle       = "Agent tools"
+	agentToolsDescription = "Select the agents you want to generate project instructions for. Space to select, Enter to continue."
+	agentToolsError       = "select at least one agent tool to continue"
+	projectNameError      = "project name is required"
+)
+
+func validateAgentToolsSelection(value []string) error {
+	if len(value) == 0 {
+		return errors.New(agentToolsError)
+	}
+	return nil
+}
+
+func defaultWizardProjectName(projectDir string, configured string) string {
+	trimmed := strings.TrimSpace(configured)
+	if trimmed != "" {
+		return trimmed
+	}
+
+	suggested := strings.ToLower(filepath.Base(projectDir))
+	if err := config.ValidateProjectName(suggested); err != nil {
+		return ""
+	}
+	return suggested
+}
+
+func normalizeWizardProjectName(current string, value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed != "" {
+		return trimmed
+	}
+	return strings.TrimSpace(current)
+}
+
+func validateWizardProjectName(projectDir string, homeDir string, value string) error {
+	trimmed := normalizeWizardProjectName("", value)
+	if trimmed == "" {
+		return errors.New(projectNameError)
+	}
+	if err := config.ValidateProjectName(trimmed); err != nil {
+		return err
+	}
+
+	existingCfg, err := loadExactProjectConfig(projectDir)
+	if err != nil {
+		return fmt.Errorf("load project config: %w", err)
+	}
+	if existingCfg.Project == trimmed {
+		return nil
+	}
+
+	projects, err := knownProjectNames(homeDir)
+	if err != nil {
+		return fmt.Errorf("list known projects: %w", err)
+	}
+	if _, ok := projects[trimmed]; ok {
+		return fmt.Errorf("project %q already exists", trimmed)
+	}
+
+	return nil
+}
+
+func loadExactProjectConfig(projectDir string) (config.ProjectConfig, error) {
+	path := filepath.Join(projectDir, config.ProjectConfigFileName)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return config.ProjectConfig{}, nil
+		}
+		return config.ProjectConfig{}, err
+	}
+
+	var cfg config.ProjectConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return config.ProjectConfig{}, err
+	}
+	return cfg, nil
+}
+
+func knownProjectNames(homeDir string) (map[string]struct{}, error) {
+	dbPath := filepath.Join(homeDir, config.DBFileName)
+	if _, err := os.Stat(dbPath); err != nil {
+		if os.IsNotExist(err) {
+			return map[string]struct{}{}, nil
+		}
+		return nil, err
+	}
+
+	database, err := db.Open(dbPath)
+	if err != nil {
+		return nil, err
+	}
+	defer database.Close()
+
+	projects, err := database.ListProjects(context.Background())
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(map[string]struct{}, len(projects))
+	for _, project := range projects {
+		result[project] = struct{}{}
+	}
+	return result, nil
 }
 
 func newInitPrompter(accessible bool, input io.Reader, output io.Writer) onboard.Prompter {
@@ -36,6 +146,7 @@ func (p *initPrompter) Run(ctx context.Context, defaults onboard.Result) (onboar
 	}
 
 	homeDir := defaults.HomeDir
+	projectName := defaultWizardProjectName(projectDir, defaults.Project)
 	selectedAgents := append([]string(nil), defaults.SelectedAgents...)
 	writeInstructions := defaults.WriteInstructions || defaults.WriteAgentsMD || len(selectedAgents) > 0
 	writeMemory := defaults.WriteMemory
@@ -58,7 +169,7 @@ func (p *initPrompter) Run(ctx context.Context, defaults onboard.Result) (onboar
 		if writeMemory {
 			memory = "yes"
 		}
-		return fmt.Sprintf("home: %s\nagents: %s\nwrite instructions: %s\nwrite memory: %s\ntemplate: %s", homeDir, agents, instructions, memory, templateChoice)
+		return fmt.Sprintf("home: %s\nproject: %s\nagents: %s\nwrite instructions: %s\nwrite memory: %s\ntemplate: %s", homeDir, projectName, agents, instructions, memory, templateChoice)
 	}
 
 	form := huh.NewForm(
@@ -80,12 +191,20 @@ func (p *initPrompter) Run(ctx context.Context, defaults onboard.Result) (onboar
 		).Title("Step 1: Environment"),
 		huh.NewGroup(
 			huh.NewMultiSelect[string]().
-				Title("Agent tools").
-				Description("Select the agents you want to generate project instructions for.").
+				Title(agentToolsTitle).
+				Description(agentToolsDescription).
 				Options(initInstructionOptions(selectedAgents)...).
+				Validate(validateAgentToolsSelection).
 				Value(&selectedAgents),
 		).Title("Step 2: Agent Tools"),
 		huh.NewGroup(
+			huh.NewInput().
+				Title("Project name").
+				Placeholder(defaultWizardProjectName(projectDir, "")).
+				Value(&projectName).
+				Validate(func(value string) error {
+					return validateWizardProjectName(projectDir, homeDir, normalizeWizardProjectName(projectName, value))
+				}),
 			huh.NewConfirm().
 				Title("Generate instruction files for the selected agents?").
 				Affirmative("Yes").
@@ -104,7 +223,7 @@ func (p *initPrompter) Run(ctx context.Context, defaults onboard.Result) (onboar
 				Value(&templateChoice),
 		).Title("Step 4: Template"),
 		huh.NewGroup(
-			huh.NewNote().Title("Review selections").DescriptionFunc(summary, []any{&homeDir, &selectedAgents, &writeInstructions, &writeMemory, &templateChoice}),
+			huh.NewNote().Title("Review selections").DescriptionFunc(summary, []any{&homeDir, &projectName, &selectedAgents, &writeInstructions, &writeMemory, &templateChoice}),
 			huh.NewConfirm().
 				Title("Apply these settings?").
 				Affirmative("Apply").
@@ -142,6 +261,7 @@ func (p *initPrompter) Run(ctx context.Context, defaults onboard.Result) (onboar
 
 	return onboard.Result{
 		HomeDir:           homeDir,
+		Project:           strings.TrimSpace(projectName),
 		Template:          templateChoice,
 		WriteAgentsMD:     containsString(selectedAgents, "codex"),
 		SelectedAgents:    selectedAgents,

@@ -73,6 +73,14 @@ var migrations = []string{
 	ALTER TABLE agents_new RENAME TO agents;
 	CREATE INDEX idx_agents_status ON agents(status);
 	CREATE INDEX idx_agents_project ON agents(project);`,
+	`CREATE TABLE IF NOT EXISTS projects (
+		name       TEXT PRIMARY KEY,
+		created_at TEXT NOT NULL DEFAULT (datetime('now'))
+	);
+	INSERT OR IGNORE INTO projects (name)
+	SELECT DISTINCT project
+	FROM agents
+	WHERE project IS NOT NULL AND project <> '';`,
 }
 
 // Migrate applies all pending schema migrations.
