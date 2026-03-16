@@ -221,6 +221,15 @@ agentcom init --template custom --advanced
 
 テンプレート scaffold を再実行すると、shared/role `SKILL.md` は marker 管理領域だけをその場で更新し、`COMMON.md` と `template.json` は既存内容を維持します。生成される role skill には、検証済み communication graph、詳細な primary contacts、request/response/escalation/report の具体例も含まれます。
 
+interactive wizard を使わずに YAML または JSON ファイルから custom template を取り込むこともできます。
+
+```bash
+agentcom init --batch --from-file template.yaml
+agentcom --json init --batch --project myapp --from-file template.json
+```
+
+import したテンプレートは検証後に `.agentcom/templates/<name>/` へ保存され、現在の project の active template として scaffold されます。
+
 生成前に内蔵テンプレートを確認:
 
 ```bash
@@ -230,6 +239,15 @@ agentcom --json agents template oh-my-opencode
 ```
 
 インタラクティブ端末でテンプレート名なしに `agentcom agents template` を実行すると、検索語を入力して番号でテンプレートを選択できます。
+
+作成済みの custom template は、あとからロールを追加・削除して編集できます。
+
+```bash
+agentcom agents template edit my-team add-role devops
+agentcom agents template edit my-team remove-role design
+```
+
+この編集コマンドは `.agentcom/templates/<name>/template.json` を更新し、communication graph を保ったまま影響を受ける role skill を再生成します。
 
 テンプレート定義済みエージェントをまとめて起動します。
 
@@ -293,6 +311,7 @@ agentcom init --template company
 agentcom init --template oh-my-opencode
 agentcom init --template custom
 agentcom init --template custom --advanced
+agentcom init --batch --from-file template.yaml
 agentcom --json init
 ```
 
@@ -306,7 +325,9 @@ agentcom --json init
 - `--template` を再実行すると、生成済み shared/role `SKILL.md` は idempotent に更新され、`COMMON.md` と `template.json` はそのまま残ります
 - `--template` を指定すると `.agentcom.json` に `template.active` も記録され、以後 `agentcom up` の既定入力として使われます
 - 組み込みテンプレートは `company` と `oh-my-opencode` で、`custom` はインタラクティブなテンプレート作成 wizard を起動します。既定は高速な 2 項目 wizard で、従来の詳細フローは `--advanced` で利用できます
+- `--from-file <path>` は YAML または JSON の custom template 定義を import し、`.agentcom/templates/<name>/` に保存したうえで現在の active template として scaffold します
 - `agentcom agents template --list` は built-in/custom テンプレートをまとめて表示し、`agentcom agents template --delete <name>` は確認後に custom テンプレートを削除します
+- `agentcom agents template edit <name> add-role <role>` と `remove-role <role>` は既存 custom template を更新し、communication graph と関連 skill ファイルを再生成します
 - JSON 出力には必要に応じて `path`, `status`, `project`, `project_config_path`, `template`, `active_template`, `instruction_files`, `agents_md`, `memory_files`, `custom_template_path`, `generated_files` が含まれます
 - 現在の実装では事前にホームディレクトリを準備するため、新しいパスでも `status` が `already_initialized` になる場合があります
 
@@ -494,6 +515,8 @@ agentcom --json skill create docs-sync --agent gemini-cli --scope project
 agentcom agents template
 agentcom agents template company
 agentcom --json agents template oh-my-opencode
+agentcom agents template edit my-team add-role devops
+agentcom agents template edit my-team remove-role design
 ```
 
 インタラクティブ動作:
@@ -512,7 +535,9 @@ agentcom --json agents template oh-my-opencode
 - テンプレートメタデータ: `.agentcom/templates/<template>/template.json`
 - project レベルの shared template skill: `.claude/skills/agentcom/SKILL.md`、`.agents/skills/agentcom/SKILL.md`、`.gemini/skills/agentcom/SKILL.md`、`.opencode/skills/agentcom/SKILL.md`
 - role skill は同じ namespace 配下、たとえば `.agents/skills/agentcom/company-frontend/SKILL.md` 形式で生成されます。
-- 各 role skill はまず shared `../SKILL.md`、次に template `COMMON.md` を参照し、`frontend`、`backend`、`plan`、`review`、`architect`、`design` 間の communication map を含みます。
+- 各 role skill はまず shared `../SKILL.md`、次に template `COMMON.md` を参照し、role ごとの workflow、examples、anti-patterns、handoff guidance、communication map を含みます。
+- `agentcom agents template edit` は custom template 専用で、`add-role` と `remove-role` をサポートします。
+- `agentcom init --from-file <path>` は YAML/JSON から custom template を import する非対話フローです。
 
 ### `agentcom health`
 

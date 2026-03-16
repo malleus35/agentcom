@@ -244,7 +244,7 @@ func TestRenderCollaborationProtocol(t *testing.T) {
 			t.Fatalf("renderCollaborationProtocol() missing %q: %s", section, protocol)
 		}
 	}
-	if !strings.Contains(protocol, "agentcom task create \"<description>\" --creator prometheus") {
+	if !strings.Contains(protocol, "agentcom task create \"Coordinate dependency\" --creator prometheus") {
 		t.Fatalf("renderCollaborationProtocol() missing concrete request command: %s", protocol)
 	}
 	if !strings.Contains(protocol, "agentcom send --from prometheus architect") {
@@ -252,6 +252,66 @@ func TestRenderCollaborationProtocol(t *testing.T) {
 	}
 	if strings.Contains(protocol, "--from <sender>") {
 		t.Fatalf("renderCollaborationProtocol() still contains sender placeholder: %s", protocol)
+	}
+}
+
+func TestSharedSkillContentQuality(t *testing.T) {
+	content := renderAgentcomSharedSkillContent()
+	lines := strings.Split(content, "\n")
+	if len(lines) < 60 {
+		t.Fatalf("shared SKILL.md has %d lines, want at least 60", len(lines))
+	}
+	for _, section := range []string{"## Overview", "## Lifecycle", "## Message Format", "## Task Lifecycle", "## Decision Guide", "## Quick Reference"} {
+		if !strings.Contains(content, section) {
+			t.Fatalf("shared SKILL.md missing section: %s", section)
+		}
+	}
+	for _, placeholder := range []string{"<sender>", "<target>", "<task-id>"} {
+		if strings.Contains(content, placeholder) {
+			t.Fatalf("shared SKILL.md contains placeholder: %s", placeholder)
+		}
+	}
+}
+
+func TestRoleSkillContentQuality(t *testing.T) {
+	definitions := builtInTemplateDefinitions()
+	for _, def := range definitions {
+		for _, role := range def.Roles {
+			role := role
+			t.Run(def.Name+"/"+role.Name, func(t *testing.T) {
+				content := renderRoleSkillContent(def, role, templateRoleSkillName(def.Name, role.Name), ".agentcom/templates/"+def.Name+"/COMMON.md")
+				lines := strings.Split(content, "\n")
+				if len(lines) < 50 {
+					t.Fatalf("role %s/%s SKILL.md has %d lines, want at least 50", def.Name, role.Name, len(lines))
+				}
+				for _, section := range []string{"## Workflow", "## Examples", "## Anti-patterns", "## Communication", "## Handoff Protocol"} {
+					if !strings.Contains(content, section) {
+						t.Fatalf("role %s/%s SKILL.md missing section: %s", def.Name, role.Name, section)
+					}
+				}
+				for _, placeholder := range []string{"<sender>", "<target>", "<task-id>"} {
+					if strings.Contains(content, placeholder) {
+						t.Fatalf("role %s/%s SKILL.md contains placeholder: %s", def.Name, role.Name, placeholder)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestTemplateCommonContentQuality(t *testing.T) {
+	definitions := builtInTemplateDefinitions()
+	contents := make(map[string]string, len(definitions))
+	for _, def := range definitions {
+		content := renderTemplateCommonContent(def)
+		contents[def.Name] = content
+		lines := strings.Split(content, "\n")
+		if len(lines) < 25 {
+			t.Fatalf("COMMON.md for %s has %d lines, want at least 25", def.Name, len(lines))
+		}
+	}
+	if contents["company"] == contents["oh-my-opencode"] {
+		t.Fatal("COMMON.md content should differ by template")
 	}
 }
 
