@@ -2,7 +2,7 @@ $ErrorActionPreference = 'Stop'
 
 $Owner = 'malleus35'
 $Repo = 'agentcom'
-$Version = if ($env:VERSION) { $env:VERSION } else { 'v0.2.1' }
+$Version = if ($env:VERSION) { $env:VERSION } else { 'v0.2.2' }
 $InstallDir = if ($env:INSTALL_DIR) { $env:INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA 'Programs\agentcom' }
 
 $osArch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
