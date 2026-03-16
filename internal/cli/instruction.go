@@ -2,10 +2,24 @@ package cli
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+)
+
+const (
+	agentcomMarkerStart = "<!-- AGENTCOM:START -->"
+	agentcomMarkerEnd   = "<!-- AGENTCOM:END -->"
+)
+
+type writeMode int
+
+const (
+	writeModeCreate writeMode = iota
+	writeModeAppend
+	writeModeOverwrite
 )
 
 type instructionFileDefinition struct {
@@ -161,7 +175,45 @@ func renderMemoryContent(agentID string) (string, error) {
 `, definition.MemoryFileName), nil
 }
 
-func writeAgentInstructions(projectDir string, agentIDs []string) ([]string, error) {
+func wrapWithMarkers(content string) string {
+	trimmed := strings.TrimRight(content, " \t\r\n")
+	return agentcomMarkerStart + "\n" + trimmed + "\n" + agentcomMarkerEnd + "\n"
+}
+
+func findMarkerBounds(existing string) (startIdx int, endIdx int, found bool) {
+	startIdx = strings.Index(existing, agentcomMarkerStart)
+	if startIdx < 0 {
+		return 0, 0, false
+	}
+
+	endMarkerIdx := strings.Index(existing[startIdx:], agentcomMarkerEnd)
+	if endMarkerIdx < 0 {
+		return 0, 0, false
+	}
+	endIdx = startIdx + endMarkerIdx + len(agentcomMarkerEnd)
+	if endIdx < len(existing) && existing[endIdx] == '\n' {
+		endIdx++
+	}
+	return startIdx, endIdx, true
+}
+
+func replaceMarkerBlock(existing string, newBlock string) string {
+	startIdx, endIdx, found := findMarkerBounds(existing)
+	if !found {
+		return existing
+	}
+	return existing[:startIdx] + newBlock + existing[endIdx:]
+}
+
+func appendMarkerBlock(existing string, newBlock string) string {
+	trimmed := strings.TrimRight(existing, " \t\r\n")
+	if trimmed == "" {
+		return newBlock
+	}
+	return trimmed + "\n\n" + newBlock
+}
+
+func writeAgentInstructions(projectDir string, agentIDs []string, mode writeMode) ([]string, error) {
 	projectName := filepath.Base(projectDir)
 	generated := make([]string, 0, len(agentIDs))
 	seenAgents := make(map[string]struct{}, len(agentIDs))
@@ -186,7 +238,7 @@ func writeAgentInstructions(projectDir string, agentIDs []string) ([]string, err
 		if _, ok := seenPaths[path]; ok {
 			continue
 		}
-		if err := writeInstructionFile(path, content); err != nil {
+		if err := writeInstructionFile(path, content, mode); err != nil {
 			return generated, fmt.Errorf("write instruction file for %s: %w", definition.AgentID, err)
 		}
 		seenPaths[path] = struct{}{}
@@ -197,7 +249,7 @@ func writeAgentInstructions(projectDir string, agentIDs []string) ([]string, err
 	return generated, nil
 }
 
-func writeAgentMemoryFiles(projectDir string, agentIDs []string) ([]string, error) {
+func writeAgentMemoryFiles(projectDir string, agentIDs []string, mode writeMode) ([]string, error) {
 	generated := make([]string, 0, len(agentIDs))
 	seen := make(map[string]struct{}, len(agentIDs))
 
@@ -220,7 +272,7 @@ func writeAgentMemoryFiles(projectDir string, agentIDs []string) ([]string, erro
 		}
 
 		path := filepath.Join(projectDir, definition.MemoryRelativePath)
-		if err := writeInstructionFile(path, content); err != nil {
+		if err := writeInstructionFile(path, content, mode); err != nil {
 			return generated, fmt.Errorf("write memory file for %s: %w", definition.AgentID, err)
 		}
 		generated = append(generated, path)
@@ -232,7 +284,7 @@ func writeAgentMemoryFiles(projectDir string, agentIDs []string) ([]string, erro
 
 func writeProjectAgentsMD(path string) error {
 	projectDir := filepath.Dir(path)
-	generated, err := writeAgentInstructions(projectDir, []string{"codex"})
+	generated, err := writeAgentInstructions(projectDir, []string{"codex"}, writeModeAppend)
 	if err != nil {
 		return err
 	}
@@ -242,22 +294,54 @@ func writeProjectAgentsMD(path string) error {
 	return nil
 }
 
-func writeInstructionFile(path string, content string) error {
+func writeInstructionFile(path string, content string, mode writeMode) error {
+	markerContent := wrapWithMarkers(content)
+
+	exists := false
 	if _, err := os.Stat(path); err == nil {
-		return fmt.Errorf("instruction file already exists: %s", path)
+		exists = true
 	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("stat instruction file: %w", err)
+		return fmt.Errorf("cli.writeInstructionFile: stat: %w", err)
 	}
 
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("mkdir instruction dir: %w", err)
+		return fmt.Errorf("cli.writeInstructionFile: mkdir: %w", err)
 	}
 
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		return fmt.Errorf("write instruction file: %w", err)
+	if !exists {
+		if err := os.WriteFile(path, []byte(markerContent), 0o644); err != nil {
+			return fmt.Errorf("cli.writeInstructionFile: write: %w", err)
+		}
+		return nil
 	}
 
-	return nil
+	switch mode {
+	case writeModeOverwrite:
+		if err := os.WriteFile(path, []byte(markerContent), 0o644); err != nil {
+			return fmt.Errorf("cli.writeInstructionFile: overwrite: %w", err)
+		}
+		return nil
+	case writeModeAppend:
+		existing, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("cli.writeInstructionFile: read existing: %w", err)
+		}
+		existingStr := string(existing)
+		_, _, found := findMarkerBounds(existingStr)
+		result := appendMarkerBlock(existingStr, markerContent)
+		if found {
+			slog.Debug("updating existing agentcom marker block", "path", path)
+			result = replaceMarkerBlock(existingStr, markerContent)
+		} else {
+			slog.Debug("appending agentcom configuration to existing file", "path", path)
+		}
+		if err := os.WriteFile(path, []byte(result), 0o644); err != nil {
+			return fmt.Errorf("cli.writeInstructionFile: write append result: %w", err)
+		}
+		return nil
+	default:
+		return fmt.Errorf("cli.writeInstructionFile: file already exists: %s (use --force to overwrite)", path)
+	}
 }
 
 func instructionWorkflowBody(projectName string) string {

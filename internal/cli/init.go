@@ -106,7 +106,7 @@ func newInitCmd() *cobra.Command {
 						return fmt.Errorf("cli.newInitCmd: resolve instruction agents: %w", err)
 					}
 				}
-				instructionFiles, err = writeAgentInstructions(cwd, selectedAgents)
+				instructionFiles, err = writeAgentInstructions(cwd, selectedAgents, writeModeAppend)
 				if err != nil {
 					return fmt.Errorf("cli.newInitCmd: write instruction files: %w", err)
 				}
@@ -123,7 +123,7 @@ func newInitCmd() *cobra.Command {
 				if err != nil {
 					return fmt.Errorf("cli.newInitCmd: getwd for template scaffold: %w", err)
 				}
-				generatedFiles, err = writeTemplateScaffold(cwd, templateSelection)
+				generatedFiles, err = writeTemplateScaffold(cwd, templateSelection, writeModeAppend)
 				if err != nil {
 					return fmt.Errorf("cli.newInitCmd: write template scaffold: %w", err)
 				}
