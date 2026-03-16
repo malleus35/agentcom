@@ -4,8 +4,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"os"
 	"text/tabwriter"
 
+	"github.com/malleus35/agentcom/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -15,6 +17,15 @@ func newStatusCmd() *cobra.Command {
 		Short: "Show system status summary",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			project := currentProjectFilter()
+			projectDir, err := os.Getwd()
+			if err != nil {
+				return fmt.Errorf("cli.newStatusCmd: getwd: %w", err)
+			}
+			projectCfg, _, err := config.LoadProjectConfig(projectDir)
+			if err != nil {
+				return fmt.Errorf("cli.newStatusCmd: load project config: %w", err)
+			}
+			templateName := projectCfg.Template.Active
 			totalAgents, err := scalarInt(cmd, `SELECT COUNT(*) FROM agents WHERE (? = '' OR project = ?)`, project, project)
 			if err != nil {
 				return fmt.Errorf("cli.newStatusCmd: total agents: %w", err)
@@ -85,14 +96,58 @@ func newStatusCmd() *cobra.Command {
 				return fmt.Errorf("cli.newStatusCmd: tasks by status rows: %w", err)
 			}
 
+			unreadByAgent := make(map[string]int)
+			messageRows, err := app.db.QueryContext(cmd.Context(), `
+				SELECT recipient.name, COUNT(*)
+				FROM messages m
+				JOIN agents recipient ON recipient.id = m.to_agent
+				WHERE m.read_at IS NULL AND (? = '' OR recipient.project = ?)
+				GROUP BY recipient.name
+				ORDER BY recipient.name
+			`, project, project)
+			if err != nil {
+				return fmt.Errorf("cli.newStatusCmd: unread by agent query: %w", err)
+			}
+			defer messageRows.Close()
+			for messageRows.Next() {
+				var agentName string
+				var count int
+				if err := messageRows.Scan(&agentName, &count); err != nil {
+					return fmt.Errorf("cli.newStatusCmd: unread by agent scan: %w", err)
+				}
+				unreadByAgent[agentName] = count
+			}
+			if err := messageRows.Err(); err != nil {
+				return fmt.Errorf("cli.newStatusCmd: unread by agent rows: %w", err)
+			}
+
+			roleStatus := make(map[string]string)
+			state, _, err := loadUpRuntimeState(projectDir)
+			if err != nil {
+				return fmt.Errorf("cli.newStatusCmd: load runtime state: %w", err)
+			}
+			for _, agent := range state.Agents {
+				status := "stopped"
+				if processAliveCheck(agent.PID) {
+					registered, findErr := app.db.FindAgentByNameAndProject(cmd.Context(), agent.Name, project)
+					if findErr == nil && registered.Status == "alive" {
+						status = "alive"
+					}
+				}
+				roleStatus[agent.Role] = status
+			}
+
 			payload := map[string]any{
 				"project":         project,
+				"template":        templateName,
 				"total_agents":    totalAgents,
 				"alive_agents":    aliveAgents,
 				"dead_agents":     deadAgents,
 				"total_messages":  totalMessages,
 				"unread_messages": unreadMessages,
+				"unread_by_agent": unreadByAgent,
 				"total_tasks":     totalTasks,
+				"role_status":     roleStatus,
 				"tasks_by_status": tasksByStatus,
 			}
 
@@ -107,6 +162,9 @@ func newStatusCmd() *cobra.Command {
 				return fmt.Errorf("cli.newStatusCmd: write header: %w", err)
 			}
 			if _, err := fmt.Fprintf(tw, "project\t%s\n", project); err != nil {
+				return fmt.Errorf("cli.newStatusCmd: write metric: %w", err)
+			}
+			if _, err := fmt.Fprintf(tw, "template\t%s\n", templateName); err != nil {
 				return fmt.Errorf("cli.newStatusCmd: write metric: %w", err)
 			}
 			if _, err := fmt.Fprintf(tw, "total_agents\t%d\n", totalAgents); err != nil {
@@ -130,6 +188,16 @@ func newStatusCmd() *cobra.Command {
 			for status, count := range tasksByStatus {
 				if _, err := fmt.Fprintf(tw, "tasks_%s\t%d\n", status, count); err != nil {
 					return fmt.Errorf("cli.newStatusCmd: write status metric: %w", err)
+				}
+			}
+			for agentName, count := range unreadByAgent {
+				if _, err := fmt.Fprintf(tw, "unread_%s\t%d\n", agentName, count); err != nil {
+					return fmt.Errorf("cli.newStatusCmd: write unread metric: %w", err)
+				}
+			}
+			for role, status := range roleStatus {
+				if _, err := fmt.Fprintf(tw, "role_%s\t%s\n", role, status); err != nil {
+					return fmt.Errorf("cli.newStatusCmd: write role metric: %w", err)
 				}
 			}
 
