@@ -368,8 +368,60 @@ description: Shared agentcom skill instructions for generated template roles
 `
 }
 
+func renderContactDetails(role templateRole, allRoles []templateRole) string {
+	var sb strings.Builder
+	for _, contactName := range role.CommunicatesWith {
+		for _, other := range allRoles {
+			if other.Name != contactName {
+				continue
+			}
+			sb.WriteString(fmt.Sprintf("- **%s** (%s): %s\n", other.Name, other.AgentName, other.Description))
+			break
+		}
+	}
+	return strings.TrimRight(sb.String(), "\n")
+}
+
+func primaryCommunicationTarget(role templateRole) string {
+	if len(role.CommunicatesWith) > 0 {
+		return role.CommunicatesWith[0]
+	}
+	return role.Name
+}
+
+func renderCollaborationProtocol(role templateRole) string {
+	agentName := role.AgentName
+	requestTarget := primaryCommunicationTarget(role)
+	responseTarget := requestTarget
+	escalationTargets := computeEscalationTargets(role.Name, role.CommunicatesWith)
+
+	var sb strings.Builder
+	sb.WriteString("### Request\n\n")
+	sb.WriteString("When you need work from another role, create a task:\n")
+	sb.WriteString(fmt.Sprintf("```\nagentcom task create \"<description>\" --creator %s --assign %s --priority medium\n```\n\n", agentName, requestTarget))
+
+	sb.WriteString("### Response\n\n")
+	sb.WriteString("When completing a task assigned to you, update status and notify:\n")
+	sb.WriteString(fmt.Sprintf("```\nagentcom task update <task-id> --status completed --result \"<summary>\"\nagentcom send --from %s %s '{\"type\":\"response\",\"task_id\":\"<id>\",\"status\":\"completed\"}'\n```\n\n", agentName, responseTarget))
+
+	sb.WriteString("### Escalation\n\n")
+	if len(escalationTargets) > 0 {
+		sb.WriteString(fmt.Sprintf("When blocked or when decisions exceed your role scope, escalate to %s:\n", strings.Join(escalationTargets, " or ")))
+		sb.WriteString(fmt.Sprintf("```\nagentcom send --from %s %s '{\"type\":\"escalation\",\"blocker\":\"<description>\"}'\n```\n\n", agentName, escalationTargets[0]))
+	} else {
+		sb.WriteString("No escalation targets defined for this role. Resolve blockers independently or broadcast for help.\n\n")
+	}
+
+	sb.WriteString("### Report\n\n")
+	sb.WriteString("Broadcast progress updates to the team:\n")
+	sb.WriteString(fmt.Sprintf("```\nagentcom broadcast --from %s --topic progress '{\"status\":\"in_progress\",\"summary\":\"<what-you-did>\"}'\n```\n", agentName))
+
+	return sb.String()
+}
+
 func renderRoleSkillContent(definition templateDefinition, role templateRole, generatedSkillName string, commonPath string) string {
 	bodyTitle := titleWords(strings.ReplaceAll(generatedSkillName, "-", " "))
+	directTarget := primaryCommunicationTarget(role)
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("---\nname: %s\ndescription: %s\n---\n\n", generatedSkillName, role.Description))
@@ -381,11 +433,22 @@ func renderRoleSkillContent(definition templateDefinition, role templateRole, ge
 	sb.WriteString("\n## Responsibilities\n\n")
 	sb.WriteString(renderResponsibilities(role.Responsibilities))
 	sb.WriteString("\n\n## Communication\n\n")
-	sb.WriteString(fmt.Sprintf("- Primary contacts: %s\n", strings.Join(role.CommunicatesWith, ", ")))
-	sb.WriteString("- For template-based teams, use `agentcom up` and `agentcom down` as the default lifecycle; keep `agentcom register` for advanced standalone sessions.\n")
-	sb.WriteString(fmt.Sprintf("- Use `agentcom send --from %s <target> <message-or-json>` for direct coordination.\n", role.AgentName))
-	sb.WriteString("- Use `agentcom task create`, `agentcom task delegate`, and `agentcom inbox --agent <name>` to coordinate handoffs.\n")
+	sb.WriteString("### Primary Contacts\n\n")
+	if details := renderContactDetails(role, definition.Roles); details != "" {
+		sb.WriteString(details)
+		sb.WriteString("\n\n")
+	}
+	sb.WriteString("### Coordination Commands\n\n")
+	sb.WriteString(fmt.Sprintf("- Direct message: `agentcom send --from %s %s <message-or-json>`\n", role.AgentName, directTarget))
+	sb.WriteString(fmt.Sprintf("- Check inbox: `agentcom inbox --agent %s --unread`\n", role.AgentName))
+	sb.WriteString("- For template-based teams, use `agentcom up` and `agentcom down` as the default lifecycle.\n")
+	sb.WriteString("- Use `agentcom register` only for advanced standalone sessions.\n\n")
+	sb.WriteString(renderCollaborationProtocol(role))
+	if !strings.HasSuffix(sb.String(), "\n") {
+		sb.WriteString("\n")
+	}
 	if escalation := renderEscalationLine(computeEscalationTargets(role.Name, role.CommunicatesWith)); escalation != "" {
+		sb.WriteString("\n")
 		sb.WriteString(escalation)
 	}
 	return sb.String()
@@ -401,6 +464,78 @@ func renderResponsibilities(items []string) string {
 		lines = append(lines, "- "+item)
 	}
 	return strings.Join(lines, "\n")
+}
+
+type graphIssue struct {
+	Severity string
+	Role     string
+	Message  string
+}
+
+func validateCommunicationGraph(roles []templateRole) []graphIssue {
+	issues := make([]graphIssue, 0)
+	roleNames := make(map[string]struct{}, len(roles))
+	communicationMap := make(map[string][]string, len(roles))
+	referenced := make(map[string]struct{}, len(roles))
+
+	for _, role := range roles {
+		roleNames[role.Name] = struct{}{}
+		communicationMap[role.Name] = role.CommunicatesWith
+	}
+
+	for _, role := range roles {
+		for _, target := range role.CommunicatesWith {
+			if target == role.Name {
+				issues = append(issues, graphIssue{
+					Severity: "error",
+					Role:     role.Name,
+					Message:  fmt.Sprintf("role %q lists itself in CommunicatesWith", role.Name),
+				})
+			}
+
+			if _, ok := roleNames[target]; !ok {
+				issues = append(issues, graphIssue{
+					Severity: "error",
+					Role:     role.Name,
+					Message:  fmt.Sprintf("role %q references unknown role %q", role.Name, target),
+				})
+				continue
+			}
+
+			referenced[target] = struct{}{}
+			if !containsString(communicationMap[target], role.Name) {
+				issues = append(issues, graphIssue{
+					Severity: "warning",
+					Role:     role.Name,
+					Message:  fmt.Sprintf("asymmetric: %q→%q exists but %q→%q missing", role.Name, target, target, role.Name),
+				})
+			}
+		}
+	}
+
+	for _, role := range roles {
+		if _, ok := referenced[role.Name]; ok {
+			continue
+		}
+		if len(role.CommunicatesWith) == 0 {
+			issues = append(issues, graphIssue{
+				Severity: "warning",
+				Role:     role.Name,
+				Message:  fmt.Sprintf("role %q is isolated: no incoming or outgoing connections", role.Name),
+			})
+		}
+	}
+
+	return issues
+}
+
+func hasGraphErrors(issues []graphIssue) bool {
+	for _, issue := range issues {
+		if issue.Severity == "error" {
+			return true
+		}
+	}
+	return false
 }
 
 func computeEscalationTargets(roleName string, communicatesWith []string) []string {
@@ -439,15 +574,15 @@ func renderEscalationLine(targets []string) string {
 
 func builtInTemplateDefinitions() []templateDefinition {
 	communicationMap := map[string][]string{
-		"frontend":  {"design", "backend", "review", "architect"},
+		"frontend":  {"design", "backend", "review", "architect", "plan"},
 		"backend":   {"frontend", "architect", "review", "plan"},
 		"plan":      {"architect", "frontend", "backend", "design", "review"},
-		"review":    {"frontend", "backend", "architect", "plan"},
+		"review":    {"frontend", "backend", "architect", "plan", "design"},
 		"architect": {"plan", "frontend", "backend", "design", "review"},
 		"design":    {"plan", "frontend", "architect", "review"},
 	}
 
-	return []templateDefinition{
+	definitions := []templateDefinition{
 		{
 			Name:        "company",
 			Description: "Company-style multi-agent template inspired by Paperclip org roles.",
@@ -577,6 +712,19 @@ func builtInTemplateDefinitions() []templateDefinition {
 			},
 		},
 	}
+
+	for _, definition := range definitions {
+		for _, issue := range validateCommunicationGraph(definition.Roles) {
+			slog.Warn("built-in template graph issue",
+				"template", definition.Name,
+				"severity", issue.Severity,
+				"role", issue.Role,
+				"message", issue.Message,
+			)
+		}
+	}
+
+	return definitions
 }
 
 func deleteCustomTemplate(cmd *cobra.Command, name string) error {

@@ -235,7 +235,7 @@ agentcom init --agents-md
 agentcom init --batch --agents-md claude,codex
 ```
 
-대상 파일이 이미 있어도 agentcom은 자기 marker 블록만 append/update 하므로 기존 사용자 메모는 유지됩니다. 같은 명령을 다시 실행해도 결과는 idempotent 합니다.
+대상 파일이 이미 있어도 agentcom은 자기 marker 블록만 append/update 하므로 기존 사용자 메모는 유지됩니다. `AGENTS.md`처럼 여러 agent가 같은 경로를 공유하는 경우에도 이제 agent ID별 marker 블록을 따로 유지합니다. 같은 명령을 다시 실행해도 결과는 idempotent 합니다.
 
 공통 지침과 6개 역할 스킬이 포함된 내장 템플릿 생성:
 
@@ -243,9 +243,12 @@ agentcom init --batch --agents-md claude,codex
 agentcom init --template company
 agentcom init --template oh-my-opencode
 agentcom init --template custom
+agentcom init --template custom --advanced
 ```
 
-템플릿 스캐폴드를 다시 생성하면 shared/role `SKILL.md`는 marker 기준으로 제자리 업데이트되고, `COMMON.md`와 `template.json`은 기존 파일을 그대로 둡니다.
+`--template custom`의 기본 wizard는 이제 템플릿 이름과 역할 목록 2가지만 묻고 나머지는 role defaults로 자동 생성합니다. 기존 상세 wizard가 필요하면 `--advanced`를 사용하면 됩니다.
+
+템플릿 스캐폴드를 다시 생성하면 shared/role `SKILL.md`는 marker 기준으로 제자리 업데이트되고, `COMMON.md`와 `template.json`은 기존 파일을 그대로 둡니다. 생성되는 role skill에는 검증된 communication graph, 상세 primary contacts, request/response/escalation/report 예시가 함께 들어갑니다.
 
 생성 전에 내장 템플릿 조회:
 
@@ -331,6 +334,7 @@ agentcom init --batch --agents-md claude,codex
 agentcom init --template company
 agentcom init --template oh-my-opencode
 agentcom init --template custom
+agentcom init --template custom --advanced
 agentcom --json init
 ```
 
@@ -339,12 +343,13 @@ agentcom --json init
 - 여러 번 실행해도 안전합니다.
 - 인터랙티브 터미널에서는 `agentcom init`가 기본적으로 onboarding wizard를 실행합니다.
 - `--batch`는 비대화형 흐름을 강제하며, `--json`일 때도 자동 적용됩니다.
+- `--force`는 `.agentcom.json`, instruction 파일, scaffold 파일, generated skill까지 `init`이 만드는 모든 산출물을 덮어씁니다.
 - `--agents-md`는 `all` 또는 `claude,codex,cursor` 같은 콤마 구분 agent 목록을 받습니다. `agentcom init --batch --agents-md`처럼 값 없이 쓰면 기존처럼 `AGENTS.md`를 생성합니다.
-- `--agents-md`를 다시 실행해도 기존 사용자 내용은 유지되고, agentcom이 관리하는 marker 블록만 갱신됩니다.
+- `--agents-md`를 다시 실행해도 기존 사용자 내용은 유지되고, agentcom이 관리하는 marker 블록만 갱신됩니다. 여러 agent가 같은 경로를 공유하면 agent별 marker 블록을 따로 유지하므로 한 agent 블록만 독립적으로 다시 쓸 수 있습니다.
 - `--template`는 `.agentcom/templates/<template>/COMMON.md`, `.agentcom/templates/<template>/template.json`, 각 지원 agent별 shared `agentcom/SKILL.md`, 그리고 `agentcom/<template>-frontend` 형태의 6개 namespaced role skill을 생성합니다.
 - `--template`를 다시 실행하면 생성된 shared/role `SKILL.md`는 idempotent 하게 갱신되고 `COMMON.md`, `template.json`은 유지됩니다.
 - `--template`를 지정하면 `.agentcom.json`에 `template.active`도 함께 기록되며, 이후 `agentcom up`이 이를 기본 입력으로 사용합니다.
-- 내장 템플릿은 `company`, `oh-my-opencode`이며, `custom`은 인터랙티브 템플릿 생성 wizard를 엽니다.
+- 내장 템플릿은 `company`, `oh-my-opencode`이며, `custom`은 인터랙티브 템플릿 생성 wizard를 엽니다. 기본값은 빠른 2-field wizard이고, 예전 상세 흐름은 `--advanced`로 사용할 수 있습니다.
 - `agentcom agents template --list`는 built-in/custom 템플릿을 함께 보여주고, `agentcom agents template --delete <name>`는 확인 후 custom 템플릿을 삭제합니다.
 - JSON 출력에는 상황에 따라 `path`, `status`, `project`, `project_config_path`, `template`, `active_template`, `instruction_files`, `agents_md`, `memory_files`, `custom_template_path`, `generated_files`가 포함됩니다.
 - 현재 구현상 홈 디렉터리를 먼저 준비한 뒤 `init` 상태를 검사하므로, 새 경로에서도 `status`가 `already_initialized`로 보일 수 있습니다.

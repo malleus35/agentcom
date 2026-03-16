@@ -14,8 +14,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var newOnboardPrompter = func(accessible bool, input io.Reader, output io.Writer) onboard.Prompter {
-	return newInitPrompter(accessible, input, output)
+var newOnboardPrompter = func(accessible bool, advanced bool, input io.Reader, output io.Writer) onboard.Prompter {
+	return newInitPrompter(accessible, advanced, input, output)
 }
 
 var isInteractiveInput = func(input io.Reader) bool {
@@ -46,10 +46,11 @@ func shouldRunWizard(cmd *cobra.Command) bool {
 
 type initSetupExecutor struct {
 	projectDir string
+	force      bool
 }
 
-func newInitSetupExecutor(projectDir string) onboard.Applier {
-	return &initSetupExecutor{projectDir: projectDir}
+func newInitSetupExecutor(projectDir string, force bool) onboard.Applier {
+	return &initSetupExecutor{projectDir: projectDir, force: force}
 }
 
 func (e *initSetupExecutor) Apply(ctx context.Context, result onboard.Result) (onboard.ApplyReport, error) {
@@ -85,6 +86,11 @@ func (e *initSetupExecutor) Apply(ctx context.Context, result onboard.Result) (o
 		Status:   status,
 		Project:  result.Project,
 		Template: result.Template,
+	}
+
+	mode := writeModeAppend
+	if e.force {
+		mode = writeModeOverwrite
 	}
 
 	if err := database.EnsureProject(ctx, result.Project); err != nil {
@@ -123,7 +129,7 @@ func (e *initSetupExecutor) Apply(ctx context.Context, result onboard.Result) (o
 			selectedAgents = []string{"codex"}
 		}
 
-		instructionFiles, err := writeAgentInstructions(e.projectDir, selectedAgents, writeModeAppend)
+		instructionFiles, err := writeAgentInstructions(e.projectDir, selectedAgents, mode)
 		if err != nil {
 			return onboard.ApplyReport{}, fmt.Errorf("cli.initSetupExecutor.Apply: write instruction files: %w", err)
 		}
@@ -138,7 +144,7 @@ func (e *initSetupExecutor) Apply(ctx context.Context, result onboard.Result) (o
 	}
 
 	if result.WriteMemory {
-		memoryFiles, err := writeAgentMemoryFiles(e.projectDir, result.SelectedAgents, writeModeAppend)
+		memoryFiles, err := writeAgentMemoryFiles(e.projectDir, result.SelectedAgents, mode)
 		if err != nil {
 			return onboard.ApplyReport{}, fmt.Errorf("cli.initSetupExecutor.Apply: write memory files: %w", err)
 		}
@@ -147,7 +153,7 @@ func (e *initSetupExecutor) Apply(ctx context.Context, result onboard.Result) (o
 	}
 
 	if result.Template != "" {
-		generatedFiles, err := writeTemplateScaffold(e.projectDir, result.Template, writeModeAppend)
+		generatedFiles, err := writeTemplateScaffold(e.projectDir, result.Template, mode)
 		if err != nil {
 			return onboard.ApplyReport{}, fmt.Errorf("cli.initSetupExecutor.Apply: write template scaffold: %w", err)
 		}

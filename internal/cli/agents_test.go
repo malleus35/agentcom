@@ -82,6 +82,179 @@ func TestRenderEscalationLine(t *testing.T) {
 	}
 }
 
+func TestValidateCommunicationGraph(t *testing.T) {
+	tests := []struct {
+		name       string
+		roles      []templateRole
+		wantErrors int
+		wantWarns  int
+	}{
+		{
+			name: "symmetric graph passes",
+			roles: []templateRole{
+				{Name: "a", CommunicatesWith: []string{"b"}},
+				{Name: "b", CommunicatesWith: []string{"a"}},
+			},
+		},
+		{
+			name: "self reference detected",
+			roles: []templateRole{
+				{Name: "a", CommunicatesWith: []string{"a", "b"}},
+				{Name: "b", CommunicatesWith: []string{"a"}},
+			},
+			wantErrors: 1,
+		},
+		{
+			name: "asymmetric edge warned",
+			roles: []templateRole{
+				{Name: "a", CommunicatesWith: []string{"b"}},
+				{Name: "b"},
+			},
+			wantWarns: 1,
+		},
+		{
+			name: "unknown role reference",
+			roles: []templateRole{
+				{Name: "a", CommunicatesWith: []string{"missing"}},
+			},
+			wantErrors: 1,
+		},
+		{
+			name: "isolated role warned",
+			roles: []templateRole{
+				{Name: "a", CommunicatesWith: []string{"b"}},
+				{Name: "b", CommunicatesWith: []string{"a"}},
+				{Name: "c"},
+			},
+			wantWarns: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			issues := validateCommunicationGraph(tt.roles)
+			gotErrors := 0
+			gotWarns := 0
+			for _, issue := range issues {
+				switch issue.Severity {
+				case "error":
+					gotErrors++
+				case "warning":
+					gotWarns++
+				}
+			}
+			if gotErrors != tt.wantErrors {
+				t.Fatalf("error count = %d, want %d (issues=%v)", gotErrors, tt.wantErrors, issues)
+			}
+			if gotWarns != tt.wantWarns {
+				t.Fatalf("warning count = %d, want %d (issues=%v)", gotWarns, tt.wantWarns, issues)
+			}
+			if hasGraphErrors(issues) != (tt.wantErrors > 0) {
+				t.Fatalf("hasGraphErrors() = %v, want %v", hasGraphErrors(issues), tt.wantErrors > 0)
+			}
+		})
+	}
+
+	for _, definition := range builtInTemplateDefinitions() {
+		t.Run("built-in "+definition.Name+" passes", func(t *testing.T) {
+			issues := validateCommunicationGraph(definition.Roles)
+			if len(issues) != 0 {
+				t.Fatalf("validateCommunicationGraph(%s) issues = %v, want none", definition.Name, issues)
+			}
+		})
+	}
+}
+
+func TestValidateCustomTemplateDefinitionRejectsGraphErrors(t *testing.T) {
+	definition := templateDefinition{
+		Name:        "custom-team",
+		Description: "Custom team",
+		Reference:   "local",
+		CommonTitle: "Custom Team",
+		CommonBody:  "Coordinate through agentcom.",
+		Roles: []templateRole{
+			{Name: "a", Description: "role a", AgentName: "a", AgentType: "worker", CommunicatesWith: []string{"missing"}},
+			{Name: "b", Description: "role b", AgentName: "b", AgentType: "worker"},
+		},
+	}
+
+	err := validateCustomTemplateDefinition(definition)
+	if err == nil {
+		t.Fatal("validateCustomTemplateDefinition() error = nil, want graph error")
+	}
+	if !strings.Contains(err.Error(), "communication graph") {
+		t.Fatalf("validateCustomTemplateDefinition() error = %q, want communication graph message", err.Error())
+	}
+}
+
+func TestValidateCustomTemplateDefinitionAllowsGraphWarnings(t *testing.T) {
+	definition := templateDefinition{
+		Name:        "custom-warn-team",
+		Description: "Custom team",
+		Reference:   "local",
+		CommonTitle: "Custom Team",
+		CommonBody:  "Coordinate through agentcom.",
+		Roles: []templateRole{
+			{Name: "a", Description: "role a", AgentName: "a", AgentType: "worker", CommunicatesWith: []string{"b"}},
+			{Name: "b", Description: "role b", AgentName: "b", AgentType: "worker"},
+		},
+	}
+
+	if err := validateCustomTemplateDefinition(definition); err != nil {
+		t.Fatalf("validateCustomTemplateDefinition() error = %v, want nil for warnings", err)
+	}
+}
+
+func TestRenderContactDetails(t *testing.T) {
+	definition, err := resolveTemplateDefinition("company")
+	if err != nil {
+		t.Fatalf("resolveTemplateDefinition() error = %v", err)
+	}
+
+	var frontend templateRole
+	for _, role := range definition.Roles {
+		if role.Name == "frontend" {
+			frontend = role
+			break
+		}
+	}
+
+	details := renderContactDetails(frontend, definition.Roles)
+	if !strings.Contains(details, "- **design** (design): Design specialist for UX direction") {
+		t.Fatalf("renderContactDetails() missing design details: %s", details)
+	}
+	if !strings.Contains(details, "- **plan** (plan): Planning specialist") {
+		t.Fatalf("renderContactDetails() missing plan details: %s", details)
+	}
+	if strings.Contains(details, "architect") && !strings.Contains(details, "- **architect** (architect):") {
+		t.Fatalf("renderContactDetails() contains unexpected architect formatting: %s", details)
+	}
+}
+
+func TestRenderCollaborationProtocol(t *testing.T) {
+	role := templateRole{
+		Name:             "plan",
+		AgentName:        "prometheus",
+		CommunicatesWith: []string{"architect", "frontend", "backend"},
+	}
+
+	protocol := renderCollaborationProtocol(role)
+	for _, section := range []string{"### Request", "### Response", "### Escalation", "### Report"} {
+		if !strings.Contains(protocol, section) {
+			t.Fatalf("renderCollaborationProtocol() missing %q: %s", section, protocol)
+		}
+	}
+	if !strings.Contains(protocol, "agentcom task create \"<description>\" --creator prometheus") {
+		t.Fatalf("renderCollaborationProtocol() missing concrete request command: %s", protocol)
+	}
+	if !strings.Contains(protocol, "agentcom send --from prometheus architect") {
+		t.Fatalf("renderCollaborationProtocol() missing concrete escalation command: %s", protocol)
+	}
+	if strings.Contains(protocol, "--from <sender>") {
+		t.Fatalf("renderCollaborationProtocol() still contains sender placeholder: %s", protocol)
+	}
+}
+
 func TestWriteTemplateScaffold(t *testing.T) {
 	projectDir := t.TempDir()
 	oldwd, err := os.Getwd()
@@ -160,23 +333,28 @@ func TestWriteTemplateScaffold(t *testing.T) {
 	if !strings.Contains(content, "Read common instructions first: `.agentcom/templates/company/COMMON.md`") {
 		t.Fatalf("skill missing common path: %s", content)
 	}
-	if !strings.Contains(content, "Primary contacts: design, backend, review, architect") {
-		t.Fatalf("skill missing communication map: %s", content)
+	if strings.Contains(content, "<sender>") || strings.Contains(content, "<target>") {
+		t.Fatalf("skill still contains placeholders: %s", content)
 	}
-	if !strings.Contains(content, "For template-based teams, use `agentcom up` and `agentcom down` as the default lifecycle") {
-		t.Fatalf("skill missing lifecycle guidance: %s", content)
+	if !strings.Contains(content, "### Primary Contacts") {
+		t.Fatalf("skill missing primary contacts section: %s", content)
 	}
-	if !strings.Contains(content, "keep `agentcom register` for advanced standalone sessions") {
-		t.Fatalf("skill missing standalone register guidance: %s", content)
+	if !strings.Contains(content, "### Coordination Commands") {
+		t.Fatalf("skill missing coordination commands section: %s", content)
 	}
-	if strings.Contains(content, "send --from <sender>") {
-		t.Fatalf("skill still contains sender placeholder: %s", content)
+	for _, section := range []string{"### Request", "### Response", "### Escalation", "### Report"} {
+		if !strings.Contains(content, section) {
+			t.Fatalf("skill missing protocol section %q: %s", section, content)
+		}
+	}
+	if !strings.Contains(content, "- **design** (design):") {
+		t.Fatalf("skill missing detailed contact entry: %s", content)
 	}
 	if !strings.Contains(content, "send --from frontend") {
 		t.Fatalf("skill missing concrete sender name: %s", content)
 	}
-	if !strings.Contains(content, "Escalate blockers to `architect`") {
-		t.Fatalf("frontend skill missing expected escalation target: %s", content)
+	if !strings.Contains(content, "Escalate blockers to `plan` and `architect`") {
+		t.Fatalf("frontend skill missing expected escalation targets: %s", content)
 	}
 
 	architectSkillPath := filepath.Join(projectDir, ".agents", "skills", "agentcom", "company-architect", "SKILL.md")

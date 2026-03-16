@@ -330,11 +330,11 @@ func TestWriteAgentInstructions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile(AGENTS.md) second read error = %v", err)
 	}
-	if !strings.Contains(string(agentsData2), agentcomMarkerStart) {
-		t.Fatal("AGENTS.md missing start marker after second write")
+	if !strings.Contains(string(agentsData2), agentMarkerStart("codex")) {
+		t.Fatal("AGENTS.md missing codex start marker after second write")
 	}
-	if strings.Count(string(agentsData2), agentcomMarkerStart) != 1 {
-		t.Fatal("AGENTS.md has duplicate marker blocks")
+	if strings.Count(string(agentsData2), agentMarkerStart("codex")) != 1 {
+		t.Fatal("AGENTS.md has duplicate codex marker blocks")
 	}
 }
 
@@ -402,8 +402,8 @@ func TestWriteInstructionPreservesUserContent(t *testing.T) {
 	if !strings.Contains(content, "Rule 1") {
 		t.Fatal("user content lost: missing Rule 1")
 	}
-	if !strings.Contains(content, agentcomMarkerStart) {
-		t.Fatal("missing agentcom start marker")
+	if !strings.Contains(content, agentMarkerStart("codex")) {
+		t.Fatal("missing codex start marker")
 	}
 	if !strings.Contains(content, "agentcom Workflow") {
 		t.Fatal("missing agentcom workflow content")
@@ -419,5 +419,93 @@ func TestWriteInstructionPreservesUserContent(t *testing.T) {
 	}
 	if string(data) != string(data2) {
 		t.Fatal("second run produced different content (not idempotent)")
+	}
+}
+
+func TestAgentSpecificMarkers(t *testing.T) {
+	content := wrapWithAgentMarkers("codex", "hello")
+	if !strings.Contains(content, agentMarkerStart("codex")) {
+		t.Fatalf("wrapWithAgentMarkers() missing start marker: %s", content)
+	}
+	if !strings.Contains(content, agentMarkerEnd("codex")) {
+		t.Fatalf("wrapWithAgentMarkers() missing end marker: %s", content)
+	}
+
+	start, end, found := findMarkerBounds("before\n"+content+"after", "codex")
+	if !found {
+		t.Fatal("findMarkerBounds() did not find agent-specific markers")
+	}
+	if start == 0 || end <= start {
+		t.Fatalf("findMarkerBounds() returned invalid bounds start=%d end=%d", start, end)
+	}
+}
+
+func TestMultiAgentSharedPath(t *testing.T) {
+	projectDir := t.TempDir()
+
+	paths, err := writeAgentInstructions(projectDir, []string{"codex", "opencode"}, writeModeAppend)
+	if err != nil {
+		t.Fatalf("writeAgentInstructions() error = %v", err)
+	}
+	if len(paths) != 1 {
+		t.Fatalf("len(paths) = %d, want 1 shared path", len(paths))
+	}
+
+	agentsPath := filepath.Join(projectDir, "AGENTS.md")
+	data, err := os.ReadFile(agentsPath)
+	if err != nil {
+		t.Fatalf("ReadFile(AGENTS.md) error = %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, agentMarkerStart("codex")) || !strings.Contains(content, agentMarkerEnd("codex")) {
+		t.Fatalf("AGENTS.md missing codex markers: %s", content)
+	}
+	if !strings.Contains(content, agentMarkerStart("opencode")) || !strings.Contains(content, agentMarkerEnd("opencode")) {
+		t.Fatalf("AGENTS.md missing opencode markers: %s", content)
+	}
+
+	if err := os.WriteFile(agentsPath, []byte(strings.ReplaceAll(content, "Register each long-running agent session", "CUSTOM-OPENCODE")), 0o644); err != nil {
+		t.Fatalf("WriteFile(AGENTS.md) error = %v", err)
+	}
+
+	paths, err = writeAgentInstructions(projectDir, []string{"codex"}, writeModeAppend)
+	if err != nil {
+		t.Fatalf("writeAgentInstructions(codex) error = %v", err)
+	}
+	if len(paths) != 1 {
+		t.Fatalf("len(paths second run) = %d, want 1", len(paths))
+	}
+
+	data, err = os.ReadFile(agentsPath)
+	if err != nil {
+		t.Fatalf("ReadFile(AGENTS.md) second read error = %v", err)
+	}
+	content = string(data)
+	if !strings.Contains(content, "CUSTOM-OPENCODE") {
+		t.Fatalf("opencode block should be preserved when only codex updates: %s", content)
+	}
+}
+
+func TestMultiAgentSharedPathOverwriteKeepsAllBlocks(t *testing.T) {
+	projectDir := t.TempDir()
+
+	paths, err := writeAgentInstructions(projectDir, []string{"codex", "opencode"}, writeModeOverwrite)
+	if err != nil {
+		t.Fatalf("writeAgentInstructions() error = %v", err)
+	}
+	if len(paths) != 1 {
+		t.Fatalf("len(paths) = %d, want 1 shared path", len(paths))
+	}
+
+	data, err := os.ReadFile(filepath.Join(projectDir, "AGENTS.md"))
+	if err != nil {
+		t.Fatalf("ReadFile(AGENTS.md) error = %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, agentMarkerStart("codex")) || !strings.Contains(content, agentMarkerEnd("codex")) {
+		t.Fatalf("overwrite content missing codex markers: %s", content)
+	}
+	if !strings.Contains(content, agentMarkerStart("opencode")) || !strings.Contains(content, agentMarkerEnd("opencode")) {
+		t.Fatalf("overwrite content missing opencode markers: %s", content)
 	}
 }
