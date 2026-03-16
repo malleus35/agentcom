@@ -4,15 +4,15 @@
 
 ## 현재 상태
 
-- **Phase**: PH3 documentation polish 구현/검증 완료, 후속 정리 대기
-- **마지막 작업**: PH3 문서 렌더링 확장, template edit 명령, `init --from-file` YAML/JSON import, 테스트/수동 QA 완료
-- **현재 브랜치**: `develop`
+- **Phase**: PH4 enhanced UX 구현/검증 완료, 커밋/merge 진행 중
+- **마지막 작업**: structured user error, `doctor`, built-in template topology 분화, template export/import, enhanced `status`, `init --dry-run`, `skill validate`, README 갱신, 테스트/수동 QA 완료
+- **현재 브랜치**: `feature/PH4-enhanced-ux`
 - **현재 버전**: v0.1.7이 최신 공개 릴리스, 다음 릴리스 버전은 아직 미확정
 - **P10 상태**: 구현/문서/테스트 완료, 관련 변경은 현재 브랜치에 포함됨
 - **P11 상태**: 구현 완료, 테스트/수동 QA/README 반영 완료, develop 머지 및 release 대기
 - **계획 문서 상태**: `AGENTCOM_IMPROVEMENT_PROPOSAL.md` 기반 후속 개선안 분석 완료, PH1 구현 완료, PH2~PH4 계획 유지
-- **다음 작업**: PH3 변경 커밋/PR 정리 또는 PH4 enhanced UX 계획 실행
-- **워킹트리**: PH3 구현 파일과 go.mod/go.sum 갱신이 존재
+- **다음 작업**: PH4 변경 원자 커밋 정리 후 `develop` 머지
+- **워킹트리**: PH4 관련 CLI/README 변경 존재
 
 ## 완료된 태스크
 
@@ -28,6 +28,20 @@
 - P10 project column 핵심 구현 완료
 
 ## 이번 세션에서 마무리한 작업
+
+- PH4 enhanced UX 구현 완료
+  - `internal/cli/errors.go`, `internal/cli/errors_test.go`: What/Why/How structured user error 타입 추가 및 핵심 사용자 에러 경로 포맷 통일
+  - `internal/cli/doctor.go`, `internal/cli/doctor_test.go`, `internal/cli/root.go`: `agentcom doctor` 추가, environment/project/communication/documentation/runtime 체크 구현
+  - `internal/cli/agents.go`, `internal/cli/agents_test.go`: `oh-my-opencode`를 plan-hub topology로 분화하고 `agents template export <name>` YAML export + roundtrip 테스트 추가
+  - `internal/cli/status.go`, `internal/cli/status_test.go`: project/template, role status, unread-by-agent를 status 출력/JSON에 추가
+  - `internal/cli/init.go`, `internal/cli/init_setup.go`, `internal/cli/init_setup_test.go`, `internal/onboard/result.go`: `init --dry-run` preview 및 wizard/batch dry-run report 추가
+  - `internal/cli/skill.go`, `internal/cli/skill_test.go`: `agentcom skill validate` 추가, generated `SKILL.md` 품질 검사 구현
+  - `README.md`, `README.ko.md`, `README.ja.md`, `README.zh.md`: doctor / dry-run / skill validate / template export / enhanced status 문서 반영
+  - 검증 완료: `go test ./internal/cli/... -count=1`, `go test ./... -count=1`, `go build ./...`
+  - 수동 QA 완료:
+    - `/tmp/agentcom-ph4-qa/project-a`에서 `init --template=company --agents-md=codex`, `up --only frontend,plan`, `status --json`, `doctor --json`, `skill validate --json`, `down --force` 실행으로 PH4 핵심 명령 동작 확인
+    - `/tmp/agentcom-ph4-qa/project-b`에서 `agents template export company` 후 `init --from-file /tmp/agentcom-ph4-qa/company.yaml --json`로 export/import roundtrip 확인
+    - `/tmp/agentcom-ph4-qa/project-c`에서 `init --batch --dry-run --project preview-app --template=oh-my-opencode --agents-md=codex --json` 실행으로 preview action 출력과 no-write 경로 확인
 
 - PH3 documentation polish 구현 완료
   - `internal/cli/agents.go`: shared `agentcom/SKILL.md`, role `SKILL.md`, built-in `COMMON.md` 렌더링을 대폭 확장하고 workflow/examples/anti-patterns/handoff 섹션 추가
