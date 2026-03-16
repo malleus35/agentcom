@@ -29,6 +29,15 @@
 
 ## 이번 세션에서 마무리한 작업
 
+- Step 3 known-project lookup recoverability 수정 완료
+  - `internal/cli/init_prompter.go`: `knownProjectNames()`가 DB 파일이 있어도 `projects` 테이블이 없는 recoverable 상태를 빈 known-project 집합으로 처리하도록 보강
+  - `internal/db/agent.go`: `ProjectsTableExists(ctx)` helper 추가로 schema readiness를 명시적으로 확인
+  - `internal/cli/init_prompter_test.go`: no-DB / missing-`projects`-table Step 3 validation 회귀 테스트 추가
+  - `internal/db/agent_test.go`: `ProjectsTableExists()`의 pre/post-migrate 동작 테스트 추가
+  - 원인 정리: Step 3 `Project Instructions`가 healthy DB만 가정하고 `ListProjects()` 실패를 그대로 `list known projects` 검증 에러로 노출하던 문제였음
+  - 검증 완료: `go test ./internal/db/... -count=1`, `go test ./internal/cli/... -count=1`, `go test ./... -count=1`, `go build ./...`
+  - 수동 QA 완료: accessible wizard로 `AGENTCOM_HOME` 아래 빈 `agentcom.db`만 둔 상태에서 `agentcom init --accessible --agents-md codex` 실행 후 Step 3을 통과하고 초기화가 완료되는 것 확인
+
 - PH4 enhanced UX 구현 완료
   - `internal/cli/errors.go`, `internal/cli/errors_test.go`: What/Why/How structured user error 타입 추가 및 핵심 사용자 에러 경로 포맷 통일
   - `internal/cli/doctor.go`, `internal/cli/doctor_test.go`, `internal/cli/root.go`: `agentcom doctor` 추가, environment/project/communication/documentation/runtime 체크 구현
