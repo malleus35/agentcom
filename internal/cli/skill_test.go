@@ -136,7 +136,7 @@ func TestWriteSkillFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), ".claude", "skills", "my-skill", "SKILL.md")
 	content := renderSkillContent("my-skill", defaultSkillDescription)
 
-	if err := writeSkillFile(path, content); err != nil {
+	if err := writeSkillFile(path, content, writeModeCreate); err != nil {
 		t.Fatalf("writeSkillFile() error = %v", err)
 	}
 
@@ -144,12 +144,49 @@ func TestWriteSkillFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile() error = %v", err)
 	}
-	if string(data) != content {
-		t.Fatalf("file content = %q, want %q", string(data), content)
+	want := wrapWithMarkers(content)
+	if string(data) != want {
+		t.Fatalf("file content = %q, want %q", string(data), want)
 	}
 
-	if err := writeSkillFile(path, content); err == nil {
+	if err := writeSkillFile(path, content, writeModeCreate); err == nil {
 		t.Fatal("writeSkillFile() second call error = nil, want error")
+	}
+}
+
+func TestWriteSkillFileCreateModeRejectsExisting(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test", "SKILL.md")
+	if err := writeSkillFile(path, "content", writeModeCreate); err != nil {
+		t.Fatalf("first write error = %v", err)
+	}
+	if err := writeSkillFile(path, "content", writeModeCreate); err == nil {
+		t.Fatal("second write error = nil, want error")
+	}
+}
+
+func TestWriteSkillFileAppendMode(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(path, []byte("# My Custom Skill\n\nCustom instructions.\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	if err := writeSkillFile(path, "generated content", writeModeAppend); err != nil {
+		t.Fatalf("append write error = %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "My Custom Skill") {
+		t.Fatal("user content lost")
+	}
+	if !strings.Contains(content, agentcomMarkerStart) {
+		t.Fatal("marker not added")
 	}
 }
 

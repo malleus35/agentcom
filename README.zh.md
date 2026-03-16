@@ -206,6 +206,8 @@ agentcom --json init --project myapp --template company
 
 `.agentcom.json` 会从当前目录或任意父目录自动解析，并保存 `project` 与 `template.active`。
 
+即使目标文件已经存在，agentcom 也只会追加或更新自己用 marker 包裹的内容块，因此你原来的说明会被保留。重复执行同一条命令也是幂等的。
+
 生成包含共享说明和 6 个角色技能的内置模板：
 
 ```bash
@@ -213,6 +215,8 @@ agentcom init --template company
 agentcom init --template oh-my-opencode
 agentcom init --template custom
 ```
+
+再次生成模板 scaffold 时，shared/role `SKILL.md` 会只更新 marker 管理的内容，`COMMON.md` 和 `template.json` 会保留现有文件内容。
 
 生成前先查看内置模板：
 
@@ -292,7 +296,9 @@ agentcom --json init
 - 在交互式终端中，`agentcom init` 现在默认进入 onboarding wizard
 - `--batch` 会强制使用非交互流程，`--json` 时也会自动启用
 - `--agents-md` 现在接受 `all` 或 `claude,codex,cursor` 这样的逗号分隔 agent 列表。像 `agentcom init --batch --agents-md` 这样不给值时，会保留原来的 `AGENTS.md` 行为
+- 重新执行 `--agents-md` 时，会保留已有的用户内容，只更新 agentcom 自己管理的 marker 块
 - `--template` 会生成 `.agentcom/templates/<template>/COMMON.md`、`.agentcom/templates/<template>/template.json`、每个支持 agent 的 shared `agentcom/SKILL.md`，以及 `agentcom/<template>-frontend` 形式的 6 个 namespaced role skill
+- 重新执行 `--template` 时，已生成的 shared/role `SKILL.md` 会幂等更新，而 `COMMON.md` 和 `template.json` 会保持不变
 - 指定 `--template` 时，也会把 `template.active` 写入 `.agentcom.json`，供后续 `agentcom up` 直接使用
 - 内置模板为 `company` 和 `oh-my-opencode`，`custom` 会在交互模式下启动模板创建 wizard
 - `agentcom agents template --list` 会同时列出 built-in/custom 模板，`agentcom agents template --delete <name>` 会在确认后删除 custom 模板

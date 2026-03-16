@@ -4,15 +4,15 @@
 
 ## 현재 상태
 
-- **Phase**: P11 구현/문서 완료, release 준비 중
-- **마지막 작업**: P11 `up`/`down` 라이프사이클 구현 + README 전면 갱신 + atomic commit 정리
-- **현재 브랜치**: `feature/P11-up-down-agent-lifecycle-plan`
+- **Phase**: PH1 critical fixes 구현/검증 완료, develop 머지 준비 중
+- **마지막 작업**: PH1 marker 기반 re-init 안전성, role-aware escalation, scaffold/skill append 일관성 구현 + README/계획 문서 갱신
+- **현재 브랜치**: `feature/PH1-critical-fixes`
 - **현재 버전**: v0.1.7이 최신 공개 릴리스, 다음 릴리스 버전은 아직 미확정
 - **P10 상태**: 구현/문서/테스트 완료, 관련 변경은 현재 브랜치에 포함됨
 - **P11 상태**: 구현 완료, 테스트/수동 QA/README 반영 완료, develop 머지 및 release 대기
-- **계획 문서 상태**: `AGENTCOM_IMPROVEMENT_PROPOSAL.md` 기반 후속 개선안 분석 완료, PH1~PH4 상세 실행 계획 문서 작성 완료
-- **다음 작업**: PH1~PH4 계획 문서 검토 후 우선순위 확정, 구현 시작 시 task 단위로 feature 브랜치 분리, release workflow와 README 기준을 맞춰 `linux/arm64`·`windows/arm64` 지원 여부를 확정하고 문서/배포 설정을 정리
-- **워킹트리**: 계획 문서 4개와 MEMORY 업데이트가 존재, 그 외 release/README 관련 별도 수정도 남아 있음
+- **계획 문서 상태**: `AGENTCOM_IMPROVEMENT_PROPOSAL.md` 기반 후속 개선안 분석 완료, PH1 구현 완료, PH2~PH4 계획 유지
+- **다음 작업**: PH1을 develop에 머지한 뒤 PH2 착수 여부 결정, release workflow와 README 기준을 맞춰 `linux/arm64`·`windows/arm64` 지원 여부를 확정하고 문서/배포 설정을 정리
+- **워킹트리**: PH1 구현 파일, 계획 md 3개, README 갱신이 존재
 
 ## 완료된 태스크
 
@@ -28,6 +28,17 @@
 - P10 project column 핵심 구현 완료
 
 ## 이번 세션에서 마무리한 작업
+
+- PH1 critical fixes 구현 완료
+  - `.agents/plans/PH1-item-1-instruction-file-append.md`, `.agents/plans/PH1-item-2-escalation-rendering.md`, `.agents/plans/PH1-item-3-scaffold-skill-consistency.md` 작성
+  - `internal/cli/instruction.go`: marker 기반 append/update, `writeMode`, idempotent instruction/memory writes 추가
+  - `internal/cli/agents.go`: role-aware escalation target 계산, concrete sender rendering, scaffold skip/overwrite mode 지원
+  - `internal/cli/skill.go`: template skill marker append/update, create/append/overwrite mode 분리
+  - `internal/cli/init.go`, `internal/cli/init_setup.go`, `internal/cli/template_store.go`: 새 write mode 호출부로 정리
+  - `internal/cli/*_test.go`: instruction/scaffold/skill/init re-init TDD 케이스 추가
+  - `README.md`, `README.ko.md`, `README.ja.md`, `README.zh.md`: 재실행 시 사용자 내용 보존/idempotent scaffold 동작 문서화
+  - 검증 완료: `go test ./internal/cli/... -count=1`, `go test ./...`
+  - 수동 QA 완료: isolated temp dir에서 `agentcom init --batch --project demo --agents-md claude,codex --template company -v` 2회 실행 후 marker update/COMMON skip/debug log 확인
 
 - 개선 제안서 기반 후속 계획 문서화 완료
   - `.agents/plans/AGENTCOM_IMPROVEMENT_PROPOSAL.md`를 전체 검토하고 실제 소스 기준으로 불일치/과장 포인트를 재정리

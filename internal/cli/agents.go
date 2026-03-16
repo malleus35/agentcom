@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -246,7 +247,7 @@ func resolveTemplateDefinition(name string) (templateDefinition, error) {
 	return templateDefinition{}, fmt.Errorf("unknown template %q: must be one of %s", name, strings.Join(available, ", "))
 }
 
-func writeTemplateScaffold(projectDir string, templateName string) ([]string, error) {
+func writeTemplateScaffold(projectDir string, templateName string, mode writeMode) ([]string, error) {
 	definition, err := resolveTemplateDefinition(templateName)
 	if err != nil {
 		return nil, err
@@ -258,7 +259,7 @@ func writeTemplateScaffold(projectDir string, templateName string) ([]string, er
 
 	generatedPaths := []string{commonPath, manifestPath}
 
-	if err := writeScaffoldFile(commonPath, renderTemplateCommonContent(definition)); err != nil {
+	if err := writeScaffoldFile(commonPath, renderTemplateCommonContent(definition), mode); err != nil {
 		return nil, fmt.Errorf("write common markdown: %w", err)
 	}
 
@@ -266,7 +267,7 @@ func writeTemplateScaffold(projectDir string, templateName string) ([]string, er
 	if err != nil {
 		return nil, fmt.Errorf("render template manifest: %w", err)
 	}
-	if err := writeScaffoldFile(manifestPath, manifestContent); err != nil {
+	if err := writeScaffoldFile(manifestPath, manifestContent, mode); err != nil {
 		return nil, fmt.Errorf("write template manifest: %w", err)
 	}
 
@@ -276,7 +277,7 @@ func writeTemplateScaffold(projectDir string, templateName string) ([]string, er
 	}
 	sharedContent := renderAgentcomSharedSkillContent()
 	for _, target := range sharedTargets {
-		if err := writeSkillFile(target.Path, sharedContent); err != nil {
+		if err := writeSkillFile(target.Path, sharedContent, mode); err != nil {
 			return nil, fmt.Errorf("write shared %s agentcom skill: %w", target.Agent, err)
 		}
 		generatedPaths = append(generatedPaths, target.Path)
@@ -295,7 +296,7 @@ func writeTemplateScaffold(projectDir string, templateName string) ([]string, er
 		}
 		content := renderRoleSkillContent(definition, role, generatedSkillName, filepath.ToSlash(commonRelPath))
 		for _, target := range targets {
-			if err := writeSkillFile(target.Path, content); err != nil {
+			if err := writeSkillFile(target.Path, content, mode); err != nil {
 				return nil, fmt.Errorf("write %s skill for role %s: %w", target.Agent, role.Name, err)
 			}
 			generatedPaths = append(generatedPaths, target.Path)
@@ -306,22 +307,37 @@ func writeTemplateScaffold(projectDir string, templateName string) ([]string, er
 	return generatedPaths, nil
 }
 
-func writeScaffoldFile(path string, content string) error {
+func writeScaffoldFile(path string, content string, mode writeMode) error {
+	exists := false
 	if _, err := os.Stat(path); err == nil {
-		return fmt.Errorf("file already exists: %s", path)
+		exists = true
 	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("stat file: %w", err)
+		return fmt.Errorf("cli.writeScaffoldFile: stat: %w", err)
 	}
 
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("mkdir scaffold dir: %w", err)
+		return fmt.Errorf("cli.writeScaffoldFile: mkdir: %w", err)
 	}
 
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		return fmt.Errorf("write scaffold file: %w", err)
+	if !exists {
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			return fmt.Errorf("cli.writeScaffoldFile: write: %w", err)
+		}
+		return nil
 	}
 
-	return nil
+	switch mode {
+	case writeModeOverwrite:
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			return fmt.Errorf("cli.writeScaffoldFile: overwrite: %w", err)
+		}
+		return nil
+	case writeModeAppend:
+		slog.Debug("scaffold file already exists, skipping", "path", path)
+		return nil
+	default:
+		return fmt.Errorf("cli.writeScaffoldFile: file already exists: %s (use --force to overwrite)", path)
+	}
 }
 
 func renderTemplateManifest(definition templateDefinition) (string, error) {
@@ -354,30 +370,25 @@ description: Shared agentcom skill instructions for generated template roles
 
 func renderRoleSkillContent(definition templateDefinition, role templateRole, generatedSkillName string, commonPath string) string {
 	bodyTitle := titleWords(strings.ReplaceAll(generatedSkillName, "-", " "))
-	return fmt.Sprintf(`---
-name: %s
-description: %s
----
 
-# %s
-
-- Read shared agentcom instructions first: `+"`../SKILL.md`"+`
-- Read common instructions first: `+"`%s`"+`
-- Template: `+"`%s`"+` (`+"`%s`"+`)
-- Agent identity: `+"`%s`"+` / type `+"`%s`"+`
-
-## Responsibilities
-
-%s
-
-## Communication
-
-- Primary contacts: %s
-- For template-based teams, use `+"`agentcom up`"+` and `+"`agentcom down`"+` as the default lifecycle; keep `+"`agentcom register`"+` for advanced standalone sessions.
-- Use `+"`agentcom send --from <sender> <target> <message-or-json>`"+` for direct coordination.
-- Use `+"`agentcom task create`"+`, `+"`agentcom task delegate`"+`, and `+"`agentcom inbox --agent <name>`"+` to coordinate handoffs.
-- Escalate blockers to `+"`plan`"+` and `+"`architect`"+` when requirements or system boundaries change.
-`, generatedSkillName, role.Description, bodyTitle, commonPath, definition.Name, definition.Reference, role.AgentName, role.AgentType, renderResponsibilities(role.Responsibilities), strings.Join(role.CommunicatesWith, ", "))
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("---\nname: %s\ndescription: %s\n---\n\n", generatedSkillName, role.Description))
+	sb.WriteString(fmt.Sprintf("# %s\n\n", bodyTitle))
+	sb.WriteString("- Read shared agentcom instructions first: `../SKILL.md`\n")
+	sb.WriteString(fmt.Sprintf("- Read common instructions first: `%s`\n", commonPath))
+	sb.WriteString(fmt.Sprintf("- Template: `%s` (`%s`)\n", definition.Name, definition.Reference))
+	sb.WriteString(fmt.Sprintf("- Agent identity: `%s` / type `%s`\n", role.AgentName, role.AgentType))
+	sb.WriteString("\n## Responsibilities\n\n")
+	sb.WriteString(renderResponsibilities(role.Responsibilities))
+	sb.WriteString("\n\n## Communication\n\n")
+	sb.WriteString(fmt.Sprintf("- Primary contacts: %s\n", strings.Join(role.CommunicatesWith, ", ")))
+	sb.WriteString("- For template-based teams, use `agentcom up` and `agentcom down` as the default lifecycle; keep `agentcom register` for advanced standalone sessions.\n")
+	sb.WriteString(fmt.Sprintf("- Use `agentcom send --from %s <target> <message-or-json>` for direct coordination.\n", role.AgentName))
+	sb.WriteString("- Use `agentcom task create`, `agentcom task delegate`, and `agentcom inbox --agent <name>` to coordinate handoffs.\n")
+	if escalation := renderEscalationLine(computeEscalationTargets(role.Name, role.CommunicatesWith)); escalation != "" {
+		sb.WriteString(escalation)
+	}
+	return sb.String()
 }
 
 func templateRoleSkillName(templateName string, roleName string) string {
@@ -390,6 +401,40 @@ func renderResponsibilities(items []string) string {
 		lines = append(lines, "- "+item)
 	}
 	return strings.Join(lines, "\n")
+}
+
+func computeEscalationTargets(roleName string, communicatesWith []string) []string {
+	preferred := []string{"plan", "architect"}
+	targets := make([]string, 0, 2)
+	for _, name := range preferred {
+		if name != roleName && containsString(communicatesWith, name) {
+			targets = append(targets, name)
+		}
+	}
+	if len(targets) > 0 {
+		return targets
+	}
+	for _, contact := range communicatesWith {
+		if contact == roleName {
+			continue
+		}
+		targets = append(targets, contact)
+		if len(targets) == 2 {
+			break
+		}
+	}
+	return targets
+}
+
+func renderEscalationLine(targets []string) string {
+	if len(targets) == 0 {
+		return ""
+	}
+	formatted := make([]string, 0, len(targets))
+	for _, target := range targets {
+		formatted = append(formatted, fmt.Sprintf("`%s`", target))
+	}
+	return fmt.Sprintf("- Escalate blockers to %s when requirements or system boundaries change.\n", strings.Join(formatted, " and "))
 }
 
 func builtInTemplateDefinitions() []templateDefinition {

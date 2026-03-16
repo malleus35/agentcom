@@ -123,7 +123,7 @@ func (e *initSetupExecutor) Apply(ctx context.Context, result onboard.Result) (o
 			selectedAgents = []string{"codex"}
 		}
 
-		instructionFiles, err := writeAgentInstructions(e.projectDir, selectedAgents)
+		instructionFiles, err := writeAgentInstructions(e.projectDir, selectedAgents, writeModeAppend)
 		if err != nil {
 			return onboard.ApplyReport{}, fmt.Errorf("cli.initSetupExecutor.Apply: write instruction files: %w", err)
 		}
@@ -138,7 +138,7 @@ func (e *initSetupExecutor) Apply(ctx context.Context, result onboard.Result) (o
 	}
 
 	if result.WriteMemory {
-		memoryFiles, err := writeAgentMemoryFiles(e.projectDir, result.SelectedAgents)
+		memoryFiles, err := writeAgentMemoryFiles(e.projectDir, result.SelectedAgents, writeModeAppend)
 		if err != nil {
 			return onboard.ApplyReport{}, fmt.Errorf("cli.initSetupExecutor.Apply: write memory files: %w", err)
 		}
@@ -147,7 +147,7 @@ func (e *initSetupExecutor) Apply(ctx context.Context, result onboard.Result) (o
 	}
 
 	if result.Template != "" {
-		generatedFiles, err := writeTemplateScaffold(e.projectDir, result.Template)
+		generatedFiles, err := writeTemplateScaffold(e.projectDir, result.Template, writeModeAppend)
 		if err != nil {
 			return onboard.ApplyReport{}, fmt.Errorf("cli.initSetupExecutor.Apply: write template scaffold: %w", err)
 		}
