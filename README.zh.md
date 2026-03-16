@@ -459,12 +459,14 @@ agentcom task delegate <task-id> --to beta
 
 ### `agentcom status`
 
-显示代理总数、消息总数、未读数、任务总数以及各状态任务数量。
+显示项目名、active template、托管角色状态（存在 `.agentcom/run/up.json` 时）、代理/消息/任务汇总，以及按接收代理分组的未读消息数量。
 
 ```bash
 agentcom status
 agentcom --json status
 ```
+
+JSON 输出现在包含 `template`、`role_status` 和 `unread_by_agent`。
 
 ### `agentcom skill`
 
@@ -478,6 +480,8 @@ agentcom skill create pairing-notes --agent cursor --scope project
 agentcom skill create docs-sync --agent github-copilot --scope user
 agentcom skill create release-check --agent all --scope user
 agentcom --json skill create docs-sync --agent gemini-cli --scope project
+agentcom skill validate
+agentcom --json skill validate
 ```
 
 参数：
@@ -504,6 +508,7 @@ agentcom --json skill create docs-sync --agent gemini-cli --scope project
 - 不会覆盖已有的技能文件。
 - `--agent all` 会依次为所有支持的代理写入文件，并在第一次写入失败时立即停止。
 - 输出格式会因 agent 而异。大多数使用 `SKILL.md`，`cursor` 使用 `.mdc`，`github-copilot`、`windsurf`、`devin`、`replit-agent`、`bolt`、`lovable`、`playcode-agent` 使用 `.md`。
+- `skill validate` 会检查生成的 `SKILL.md` 是否满足最小行数、必需章节、占位符泄漏以及 `agentcom` CLI 示例要求。
 
 ### `agentcom agents template`
 
@@ -515,6 +520,7 @@ agentcom --json skill create docs-sync --agent gemini-cli --scope project
 agentcom agents template
 agentcom agents template company
 agentcom --json agents template oh-my-opencode
+agentcom agents template export company > company.yaml
 agentcom agents template edit my-team add-role devops
 agentcom agents template edit my-team remove-role design
 ```
@@ -527,7 +533,7 @@ agentcom agents template edit my-team remove-role design
 内置模板：
 
 - `company` - 受 Paperclip 角色结构启发的公司式多代理工作流
-- `oh-my-opencode` - 受 Prometheus、Momus、Oracle、Sisyphus-Junior 模式启发的规划优先工作流
+- `oh-my-opencode` - 受 Prometheus、Momus、Oracle、Sisyphus-Junior 模式启发的规划优先工作流，其中 `plan` 充当协调中心。
 
 生成的 scaffold：
 
@@ -538,6 +544,7 @@ agentcom agents template edit my-team remove-role design
 - 每个 role skill 都会先读取 shared `../SKILL.md`，再读取 template `COMMON.md`，并包含按角色生成的 workflow、examples、anti-patterns、handoff guidance 和 communication map。
 - `agentcom agents template edit` 只适用于 custom template，并支持 `add-role` 与 `remove-role`。
 - `agentcom init --from-file <path>` 是从 YAML/JSON 导入 custom template 的非交互入口。
+- `agentcom agents template export <name>` 可以把当前模板导出成 YAML，并用 `agentcom init --from-file` 再次导入。
 
 ### `agentcom health`
 
@@ -549,6 +556,17 @@ agentcom --json health
 ```
 
 空环境下 JSON 输出为 `[]`。
+
+### `agentcom doctor`
+
+一次性诊断环境、项目配置、communication graph、生成文档以及托管运行时状态。
+
+```bash
+agentcom doctor
+agentcom --json doctor
+```
+
+每项检查都会显示为 `pass`、`warn` 或 `fail`，失败项还会附带可直接执行的修复提示。
 
 ### `agentcom version`
 

@@ -459,12 +459,14 @@ agentcom task delegate <task-id> --to beta
 
 ### `agentcom status`
 
-エージェント数、メッセージ数、未読数、タスク総数、状態別タスク数を表示します。
+プロジェクト名、active template、管理中ロールの状態（`.agentcom/run/up.json` がある場合）、エージェント/メッセージ/タスク集計、受信 agent ごとの未読数を表示します。
 
 ```bash
 agentcom status
 agentcom --json status
 ```
+
+JSON 出力には `template`、`role_status`、`unread_by_agent` が含まれます。
 
 ### `agentcom skill`
 
@@ -478,6 +480,8 @@ agentcom skill create pairing-notes --agent cursor --scope project
 agentcom skill create docs-sync --agent github-copilot --scope user
 agentcom skill create release-check --agent all --scope user
 agentcom --json skill create docs-sync --agent gemini-cli --scope project
+agentcom skill validate
+agentcom --json skill validate
 ```
 
 フラグ:
@@ -504,6 +508,7 @@ agentcom --json skill create docs-sync --agent gemini-cli --scope project
 - 既存のスキルファイルは上書きしません。
 - `--agent all` は対応する全エージェント向けに書き込みを試み、最初の失敗で停止します。
 - 出力形式は agent ごとに異なります。大半は `SKILL.md`、`cursor` は `.mdc`、`github-copilot`、`windsurf`、`devin`、`replit-agent`、`bolt`、`lovable`、`playcode-agent` は `.md` を使います。
+- `skill validate` は生成済み `SKILL.md` の最小行数、必須セクション、プレースホルダ残存、`agentcom` CLI 例を検証します。
 
 ### `agentcom agents template`
 
@@ -515,6 +520,7 @@ agentcom --json skill create docs-sync --agent gemini-cli --scope project
 agentcom agents template
 agentcom agents template company
 agentcom --json agents template oh-my-opencode
+agentcom agents template export company > company.yaml
 agentcom agents template edit my-team add-role devops
 agentcom agents template edit my-team remove-role design
 ```
@@ -527,7 +533,7 @@ agentcom agents template edit my-team remove-role design
 内蔵テンプレート:
 
 - `company` - Paperclip の役割構造に着想を得た会社型マルチエージェントワークフロー
-- `oh-my-opencode` - Prometheus、Momus、Oracle、Sisyphus-Junior のパターンに着想を得た計画重視ワークフロー
+- `oh-my-opencode` - Prometheus、Momus、Oracle、Sisyphus-Junior のパターンに着想を得た計画重視ワークフローで、`plan` がハブとして調整します。
 
 生成される scaffold:
 
@@ -538,6 +544,7 @@ agentcom agents template edit my-team remove-role design
 - 各 role skill はまず shared `../SKILL.md`、次に template `COMMON.md` を参照し、role ごとの workflow、examples、anti-patterns、handoff guidance、communication map を含みます。
 - `agentcom agents template edit` は custom template 専用で、`add-role` と `remove-role` をサポートします。
 - `agentcom init --from-file <path>` は YAML/JSON から custom template を import する非対話フローです。
+- `agentcom agents template export <name>` は現在のテンプレートを YAML として書き出し、`agentcom init --from-file` で再利用できます。
 
 ### `agentcom health`
 
@@ -549,6 +556,17 @@ agentcom --json health
 ```
 
 空の環境では JSON 出力は `[]` です。
+
+### `agentcom doctor`
+
+環境、プロジェクト設定、communication graph、生成済みドキュメント、管理中ランタイム状態をまとめて診断します。
+
+```bash
+agentcom doctor
+agentcom --json doctor
+```
+
+各チェックは `pass`、`warn`、`fail` のいずれかで表示され、失敗時にはすぐ実行できる修正ヒントが付きます。
 
 ### `agentcom version`
 
