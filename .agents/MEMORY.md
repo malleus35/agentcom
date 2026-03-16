@@ -4,14 +4,15 @@
 
 ## 현재 상태
 
-- **Phase**: P11 구현/문서 완료, release 준비 중
-- **마지막 작업**: P11 `up`/`down` 라이프사이클 구현 + README 전면 갱신 + atomic commit 정리
-- **현재 브랜치**: `feature/P11-up-down-agent-lifecycle-plan`
-- **현재 버전**: v0.1.5가 최신 공개 릴리스, 다음 릴리스 버전은 아직 미확정
+- **Phase**: PH4 enhanced UX 구현/검증 완료, 커밋/merge 진행 중
+- **마지막 작업**: structured user error, `doctor`, built-in template topology 분화, template export/import, enhanced `status`, `init --dry-run`, `skill validate`, README 갱신, 테스트/수동 QA 완료
+- **현재 브랜치**: `feature/PH4-enhanced-ux`
+- **현재 버전**: v0.1.7이 최신 공개 릴리스, 다음 릴리스 버전은 아직 미확정
 - **P10 상태**: 구현/문서/테스트 완료, 관련 변경은 현재 브랜치에 포함됨
 - **P11 상태**: 구현 완료, 테스트/수동 QA/README 반영 완료, develop 머지 및 release 대기
-- **다음 작업**: 릴리스 버전 확정 → develop 머지 → 태그/릴리스 → Scoop/Homebrew 반영 검증
-- **워킹트리**: clean, P11 관련 6개 커밋으로 정리 완료
+- **계획 문서 상태**: `AGENTCOM_IMPROVEMENT_PROPOSAL.md` 기반 후속 개선안 분석 완료, PH1 구현 완료, PH2~PH4 계획 유지
+- **다음 작업**: PH4 변경 원자 커밋 정리 후 `develop` 머지
+- **워킹트리**: PH4 관련 CLI/README 변경 존재
 
 ## 완료된 태스크
 
@@ -27,6 +28,71 @@
 - P10 project column 핵심 구현 완료
 
 ## 이번 세션에서 마무리한 작업
+
+- PH4 enhanced UX 구현 완료
+  - `internal/cli/errors.go`, `internal/cli/errors_test.go`: What/Why/How structured user error 타입 추가 및 핵심 사용자 에러 경로 포맷 통일
+  - `internal/cli/doctor.go`, `internal/cli/doctor_test.go`, `internal/cli/root.go`: `agentcom doctor` 추가, environment/project/communication/documentation/runtime 체크 구현
+  - `internal/cli/agents.go`, `internal/cli/agents_test.go`: `oh-my-opencode`를 plan-hub topology로 분화하고 `agents template export <name>` YAML export + roundtrip 테스트 추가
+  - `internal/cli/status.go`, `internal/cli/status_test.go`: project/template, role status, unread-by-agent를 status 출력/JSON에 추가
+  - `internal/cli/init.go`, `internal/cli/init_setup.go`, `internal/cli/init_setup_test.go`, `internal/onboard/result.go`: `init --dry-run` preview 및 wizard/batch dry-run report 추가
+  - `internal/cli/skill.go`, `internal/cli/skill_test.go`: `agentcom skill validate` 추가, generated `SKILL.md` 품질 검사 구현
+  - `README.md`, `README.ko.md`, `README.ja.md`, `README.zh.md`: doctor / dry-run / skill validate / template export / enhanced status 문서 반영
+  - 검증 완료: `go test ./internal/cli/... -count=1`, `go test ./... -count=1`, `go build ./...`
+  - 수동 QA 완료:
+    - `/tmp/agentcom-ph4-qa/project-a`에서 `init --template=company --agents-md=codex`, `up --only frontend,plan`, `status --json`, `doctor --json`, `skill validate --json`, `down --force` 실행으로 PH4 핵심 명령 동작 확인
+    - `/tmp/agentcom-ph4-qa/project-b`에서 `agents template export company` 후 `init --from-file /tmp/agentcom-ph4-qa/company.yaml --json`로 export/import roundtrip 확인
+    - `/tmp/agentcom-ph4-qa/project-c`에서 `init --batch --dry-run --project preview-app --template=oh-my-opencode --agents-md=codex --json` 실행으로 preview action 출력과 no-write 경로 확인
+
+- PH3 documentation polish 구현 완료
+  - `internal/cli/agents.go`: shared `agentcom/SKILL.md`, role `SKILL.md`, built-in `COMMON.md` 렌더링을 대폭 확장하고 workflow/examples/anti-patterns/handoff 섹션 추가
+  - `internal/cli/template_edit.go`: `agentcom agents template edit <template> <add-role|remove-role> <role>` 명령 추가, custom template role add/remove 및 skill 재생성/정리 지원
+  - `internal/cli/template_import.go`, `internal/cli/init.go`, `internal/cli/template_store.go`: `init --from-file` YAML/JSON custom template import, overwrite 저장, scaffold 연동 추가
+  - `internal/cli/agents_test.go`, `internal/cli/template_edit_test.go`, `internal/cli/template_import_test.go`: content quality, template edit, import 시나리오 테스트 추가
+  - `go.mod`, `go.sum`: `gopkg.in/yaml.v3` 의존성 추가
+  - 검증 완료: `go test ./internal/cli/... -count=1`, `go test ./...`, `go build ./...`
+  - 수동 QA 완료:
+    - `/tmp/agentcom-ph3-qa/project`에서 `agentcom --json init --batch --project qa-demo --from-file /tmp/agentcom-ph3-qa/template.yaml` 실행 후 imported custom template/scaffold 생성 확인
+    - 같은 경로에서 `agentcom --json agents template edit qa-team add-role devops`, `agentcom --json agents template edit qa-team remove-role backend` 실행 후 `template.json`에 `frontend`/`devops`만 남고 role skill 재생성 반영 확인
+
+- PH2 core improvements 구현 완료
+  - `internal/cli/agents.go`, `internal/cli/template_store.go`: communication graph validation 추가, built-in graph 대칭화, richer role communication rendering 적용
+  - `internal/cli/role_defaults.go`: known role defaults + mesh communication 기반 quick custom template 생성 추가
+  - `internal/cli/init_prompter.go`, `internal/cli/init.go`, `internal/cli/init_setup.go`: 2-field custom wizard, `--advanced` detailed wizard fallback, `--force` write mode 전파
+  - `internal/cli/instruction.go`: shared-path instruction file에 agent-specific marker block 추가, overwrite 시 다중 block 보존
+  - `internal/cli/*_test.go`: graph validation, richer skill rendering, role defaults, simplified wizard, force overwrite, agent-specific marker regression 테스트 추가/갱신
+  - `README.md`, `README.ko.md`, `README.ja.md`, `README.zh.md`: quick custom wizard, `--advanced`, expanded `--force`, shared-path markers 문서화
+  - 검증 완료: `go test ./internal/cli/... -count=1`, `go test ./...`, `go build ./...`
+  - 수동 QA 완료:
+    - `/tmp/agentcom-ph2-qa/project`에서 `agentcom init --batch --agents-md codex,opencode --template company --force` 실행 후 `AGENTS.md`에 codex/opencode marker block 2개 생성 확인
+    - `/tmp/agentcom-ph2-qa/wizard-project`에서 `agentcom init --template custom --accessible` interactive flow로 `demo-team` 생성 후 `template.json`에 `frontend, backend, plan` role defaults / mesh graph 반영 확인
+
+- PH1 critical fixes 구현 완료
+  - `.agents/plans/PH1-item-1-instruction-file-append.md`, `.agents/plans/PH1-item-2-escalation-rendering.md`, `.agents/plans/PH1-item-3-scaffold-skill-consistency.md` 작성
+  - `internal/cli/instruction.go`: marker 기반 append/update, `writeMode`, idempotent instruction/memory writes 추가
+  - `internal/cli/agents.go`: role-aware escalation target 계산, concrete sender rendering, scaffold skip/overwrite mode 지원
+  - `internal/cli/skill.go`: template skill marker append/update, create/append/overwrite mode 분리
+  - `internal/cli/init.go`, `internal/cli/init_setup.go`, `internal/cli/template_store.go`: 새 write mode 호출부로 정리
+  - `internal/cli/*_test.go`: instruction/scaffold/skill/init re-init TDD 케이스 추가
+  - `README.md`, `README.ko.md`, `README.ja.md`, `README.zh.md`: 재실행 시 사용자 내용 보존/idempotent scaffold 동작 문서화
+  - 검증 완료: `go test ./internal/cli/... -count=1`, `go test ./...`
+  - 수동 QA 완료: isolated temp dir에서 `agentcom init --batch --project demo --agents-md claude,codex --template company -v` 2회 실행 후 marker update/COMMON skip/debug log 확인
+
+- 개선 제안서 기반 후속 계획 문서화 완료
+  - `.agents/plans/AGENTCOM_IMPROVEMENT_PROPOSAL.md`를 전체 검토하고 실제 소스 기준으로 불일치/과장 포인트를 재정리
+  - plan agent 결과를 바탕으로 `.agents/plans/PHASE1-critical-fixes.md` 작성 완료
+  - `.agents/plans/PHASE2-core-improvements.md` 작성 완료
+  - `.agents/plans/PHASE3-documentation-polish.md` 작성 완료
+  - `.agents/plans/PHASE4-enhanced-ux.md` 작성 완료
+  - Phase 번호는 기존 P0~P11과 충돌하지 않도록 `PH1`~`PH4` 체계 사용
+  - 총 계획 규모: 22 tasks / 75 subtasks / 약 68시간 추정
+  - 핵심 정정 사항: overwrite 버그는 1개가 아니라 3개 write 함수에 존재, `generateInstructionFiles()`가 아니라 `writeAgentInstructions()`가 실제 엔트리포인트, `doctor`와 `verify`는 통합 대상으로 재정의
+
+- v0.1.7 릴리스 요약
+  - `feature/init-step3-project-onboarding`를 `develop`에 머지한 뒤 `main`에 릴리스 머지 완료
+  - GitHub release/tag `v0.1.7` 발행 및 기본 release asset(`darwin/amd64`, `linux/amd64`, `windows/amd64`) 업로드 확인
+  - 누락됐던 `darwin/arm64` asset을 수동 빌드/업로드해 install script와 Homebrew arm64 설치 경로 복구
+  - `scripts/install.sh`, `scripts/install.ps1`, `packaging/scoop/agentcom.json`, `malleus35/homebrew-tap` formula를 모두 `0.1.7` 기준으로 갱신
+  - Homebrew `brew upgrade agentcom`과 shell install script로 `0.1.7` 수동 QA 완료
 
 - 템플릿 스캐폴드 up/down 문구 정렬 완료
   - `internal/cli/agents.go`의 shared `agentcom/SKILL.md` 생성 문구에 기본 흐름 `init -> up -> down` 추가
@@ -155,6 +221,7 @@
 - Homebrew는 remote tap이 최신이어도 local tap checkout이 stale하거나 formula가 pin 되어 있으면 `brew upgrade agentcom`이 새 릴리스를 보지 못할 수 있음
 - `scripts/install.sh`, `scripts/install.ps1`, `packaging/scoop/agentcom.json`은 아직 `v0.1.5` 기준으로 고정돼 있어 다음 공개 릴리스 전에 버전/URL/hash 갱신이 필요
 - 현재 `release.yml` build matrix는 `linux/amd64`, `darwin/amd64`, `windows/amd64`만 자동 생성한다. README의 `arm64` 설명 및 기존 수동 업로드 경험과 차이가 있어 릴리스 시 확인 필요
+- 현재 `README*.md`는 실제 공개 릴리스 기준으로 `linux/arm64`, `windows/arm64`를 제외하고 있지만, `.goreleaser.yml`은 여전히 arm64 전반을 암시한다. 다음 작업에서 release workflow/문서/배포 타깃을 한 기준으로 통일할 필요가 있음
 
 ## 메모
 

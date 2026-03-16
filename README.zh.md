@@ -85,8 +85,8 @@ agentcom version
 这是最适合普通用户的方式。按当前发布配置，可生成以下目标包：
 
 - macOS: `darwin/amd64`, `darwin/arm64`
-- Linux: `linux/amd64`, `linux/arm64`
-- Windows: `windows/amd64`, `windows/arm64`
+- Linux: `linux/amd64`
+- Windows: `windows/amd64`
 
 从 GitHub Releases 下载对应系统和架构的压缩包，解压后将二进制放到 `PATH` 中即可。
 
@@ -206,13 +206,29 @@ agentcom --json init --project myapp --template company
 
 `.agentcom.json` 会从当前目录或任意父目录自动解析，并保存 `project` 与 `template.active`。
 
+即使目标文件已经存在，agentcom 也只会追加或更新自己用 marker 包裹的内容块，因此你原来的说明会被保留。像 `AGENTS.md` 这样由多个 agent 共用的路径，现在也会按 agent ID 分开保存 marker 块。重复执行同一条命令也是幂等的。
+
 生成包含共享说明和 6 个角色技能的内置模板：
 
 ```bash
 agentcom init --template company
 agentcom init --template oh-my-opencode
 agentcom init --template custom
+agentcom init --template custom --advanced
 ```
+
+`--template custom` 的默认 wizard 现在只询问模板名和角色列表 2 个输入，其余字段会根据 role defaults 自动生成。需要旧的详细 wizard 时可使用 `--advanced`。
+
+再次生成模板 scaffold 时，shared/role `SKILL.md` 会只更新 marker 管理的内容，`COMMON.md` 和 `template.json` 会保留现有文件内容。生成出的 role skill 还会包含经过校验的 communication graph、详细的 primary contacts，以及 request/response/escalation/report 的具体示例。
+
+如果不想使用 interactive wizard，也可以直接从 YAML 或 JSON 文件导入 custom template。
+
+```bash
+agentcom init --batch --from-file template.yaml
+agentcom --json init --batch --project myapp --from-file template.json
+```
+
+导入后的模板会先经过校验，再保存到 `.agentcom/templates/<name>/`，并作为当前 project 的 active template 立即 scaffold。
 
 生成前先查看内置模板：
 
@@ -223,6 +239,15 @@ agentcom --json agents template oh-my-opencode
 ```
 
 在交互式终端中不带模板名执行 `agentcom agents template` 时，现在会先输入搜索词，再通过编号选择模板。
+
+已创建的 custom template 也可以在之后继续编辑，按需添加或删除角色。
+
+```bash
+agentcom agents template edit my-team add-role devops
+agentcom agents template edit my-team remove-role design
+```
+
+该编辑命令会更新 `.agentcom/templates/<name>/template.json`，保持 communication graph 有效，并重新生成受影响的 role skill。
 
 批量启动模板中定义的代理：
 
@@ -285,17 +310,24 @@ agentcom init --batch --agents-md claude,codex
 agentcom init --template company
 agentcom init --template oh-my-opencode
 agentcom init --template custom
+agentcom init --template custom --advanced
+agentcom init --batch --from-file template.yaml
 agentcom --json init
 ```
 
 - 可重复执行
 - 在交互式终端中，`agentcom init` 现在默认进入 onboarding wizard
 - `--batch` 会强制使用非交互流程，`--json` 时也会自动启用
+- `--force` 会覆盖 `init` 生成的所有产物，包括 `.agentcom.json`、instruction 文件、scaffold 文件和 generated skill
 - `--agents-md` 现在接受 `all` 或 `claude,codex,cursor` 这样的逗号分隔 agent 列表。像 `agentcom init --batch --agents-md` 这样不给值时，会保留原来的 `AGENTS.md` 行为
+- 重新执行 `--agents-md` 时，会保留已有的用户内容，只更新 agentcom 自己管理的 marker 块。对于共享路径，会为每个 agent 单独保留 marker 块，便于后续只更新其中一个 agent
 - `--template` 会生成 `.agentcom/templates/<template>/COMMON.md`、`.agentcom/templates/<template>/template.json`、每个支持 agent 的 shared `agentcom/SKILL.md`，以及 `agentcom/<template>-frontend` 形式的 6 个 namespaced role skill
+- 重新执行 `--template` 时，已生成的 shared/role `SKILL.md` 会幂等更新，而 `COMMON.md` 和 `template.json` 会保持不变
 - 指定 `--template` 时，也会把 `template.active` 写入 `.agentcom.json`，供后续 `agentcom up` 直接使用
-- 内置模板为 `company` 和 `oh-my-opencode`，`custom` 会在交互模式下启动模板创建 wizard
+- 内置模板为 `company` 和 `oh-my-opencode`，`custom` 会在交互模式下启动模板创建 wizard。默认是快速的 2 字段流程，旧的详细流程可通过 `--advanced` 使用
+- `--from-file <path>` 会导入 YAML 或 JSON 格式的 custom template 定义，将其保存到 `.agentcom/templates/<name>/`，并作为当前 active template 进行 scaffold
 - `agentcom agents template --list` 会同时列出 built-in/custom 模板，`agentcom agents template --delete <name>` 会在确认后删除 custom 模板
+- `agentcom agents template edit <name> add-role <role>` 与 `remove-role <role>` 可更新已有 custom template，并重新生成 communication graph 与相关 skill 文件
 - JSON 输出在适用时会包含 `path`、`status`、`project`、`project_config_path`、`template`、`active_template`、`instruction_files`、`agents_md`、`memory_files`、`custom_template_path`、`generated_files`
 - 当前实现会先准备 home 目录再检查状态，因此即使是新路径，`status` 也可能显示为 `already_initialized`
 
@@ -427,12 +459,14 @@ agentcom task delegate <task-id> --to beta
 
 ### `agentcom status`
 
-显示代理总数、消息总数、未读数、任务总数以及各状态任务数量。
+显示项目名、active template、托管角色状态（存在 `.agentcom/run/up.json` 时）、代理/消息/任务汇总，以及按接收代理分组的未读消息数量。
 
 ```bash
 agentcom status
 agentcom --json status
 ```
+
+JSON 输出现在包含 `template`、`role_status` 和 `unread_by_agent`。
 
 ### `agentcom skill`
 
@@ -446,6 +480,8 @@ agentcom skill create pairing-notes --agent cursor --scope project
 agentcom skill create docs-sync --agent github-copilot --scope user
 agentcom skill create release-check --agent all --scope user
 agentcom --json skill create docs-sync --agent gemini-cli --scope project
+agentcom skill validate
+agentcom --json skill validate
 ```
 
 参数：
@@ -472,6 +508,7 @@ agentcom --json skill create docs-sync --agent gemini-cli --scope project
 - 不会覆盖已有的技能文件。
 - `--agent all` 会依次为所有支持的代理写入文件，并在第一次写入失败时立即停止。
 - 输出格式会因 agent 而异。大多数使用 `SKILL.md`，`cursor` 使用 `.mdc`，`github-copilot`、`windsurf`、`devin`、`replit-agent`、`bolt`、`lovable`、`playcode-agent` 使用 `.md`。
+- `skill validate` 会检查生成的 `SKILL.md` 是否满足最小行数、必需章节、占位符泄漏以及 `agentcom` CLI 示例要求。
 
 ### `agentcom agents template`
 
@@ -483,6 +520,9 @@ agentcom --json skill create docs-sync --agent gemini-cli --scope project
 agentcom agents template
 agentcom agents template company
 agentcom --json agents template oh-my-opencode
+agentcom agents template export company > company.yaml
+agentcom agents template edit my-team add-role devops
+agentcom agents template edit my-team remove-role design
 ```
 
 交互行为：
@@ -493,7 +533,7 @@ agentcom --json agents template oh-my-opencode
 内置模板：
 
 - `company` - 受 Paperclip 角色结构启发的公司式多代理工作流
-- `oh-my-opencode` - 受 Prometheus、Momus、Oracle、Sisyphus-Junior 模式启发的规划优先工作流
+- `oh-my-opencode` - 受 Prometheus、Momus、Oracle、Sisyphus-Junior 模式启发的规划优先工作流，其中 `plan` 充当协调中心。
 
 生成的 scaffold：
 
@@ -501,7 +541,10 @@ agentcom --json agents template oh-my-opencode
 - 模板元数据：`.agentcom/templates/<template>/template.json`
 - project 级 shared template skill：`.claude/skills/agentcom/SKILL.md`、`.agents/skills/agentcom/SKILL.md`、`.gemini/skills/agentcom/SKILL.md`、`.opencode/skills/agentcom/SKILL.md`
 - role skill 会生成在同一 namespace 下，例如 `.agents/skills/agentcom/company-frontend/SKILL.md`。
-- 每个 role skill 都会先读取 shared `../SKILL.md`，再读取 template `COMMON.md`，并包含 `frontend`、`backend`、`plan`、`review`、`architect`、`design` 之间的 communication map。
+- 每个 role skill 都会先读取 shared `../SKILL.md`，再读取 template `COMMON.md`，并包含按角色生成的 workflow、examples、anti-patterns、handoff guidance 和 communication map。
+- `agentcom agents template edit` 只适用于 custom template，并支持 `add-role` 与 `remove-role`。
+- `agentcom init --from-file <path>` 是从 YAML/JSON 导入 custom template 的非交互入口。
+- `agentcom agents template export <name>` 可以把当前模板导出成 YAML，并用 `agentcom init --from-file` 再次导入。
 
 ### `agentcom health`
 
@@ -513,6 +556,17 @@ agentcom --json health
 ```
 
 空环境下 JSON 输出为 `[]`。
+
+### `agentcom doctor`
+
+一次性诊断环境、项目配置、communication graph、生成文档以及托管运行时状态。
+
+```bash
+agentcom doctor
+agentcom --json doctor
+```
+
+每项检查都会显示为 `pass`、`warn` 或 `fail`，失败项还会附带可直接执行的修复提示。
 
 ### `agentcom version`
 

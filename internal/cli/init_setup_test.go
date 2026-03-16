@@ -42,12 +42,15 @@ func TestInitCommandRunsWizardByDefault(t *testing.T) {
 
 	oldPrompter := newOnboardPrompter
 	oldInteractive := isInteractiveInput
+	oldJSON := jsonOutput
 	defer func() {
 		newOnboardPrompter = oldPrompter
 		isInteractiveInput = oldInteractive
+		jsonOutput = oldJSON
 	}()
+	jsonOutput = false
 
-	newOnboardPrompter = func(accessible bool, input io.Reader, output io.Writer) onboard.Prompter {
+	newOnboardPrompter = func(accessible bool, advanced bool, input io.Reader, output io.Writer) onboard.Prompter {
 		return setupTestPrompter{result: onboard.Result{
 			HomeDir:           homeDir,
 			Template:          "company",
@@ -93,12 +96,15 @@ func TestInitCommandNonInteractiveDefaultsToBatch(t *testing.T) {
 
 	oldInteractive := isInteractiveInput
 	oldApp := app
+	oldJSON := jsonOutput
 	defer func() {
 		isInteractiveInput = oldInteractive
 		app = oldApp
+		jsonOutput = oldJSON
 	}()
 	isInteractiveInput = func(_ io.Reader) bool { return false }
 	app = &appContext{cfg: &config.Config{HomeDir: homeDir}}
+	jsonOutput = false
 
 	buf := &bytes.Buffer{}
 	cmd := newInitCmd()
@@ -280,12 +286,15 @@ func TestInitCommandWizardGeneratesInstructionAndMemoryFiles(t *testing.T) {
 
 	oldPrompter := newOnboardPrompter
 	oldInteractive := isInteractiveInput
+	oldJSON := jsonOutput
 	defer func() {
 		newOnboardPrompter = oldPrompter
 		isInteractiveInput = oldInteractive
+		jsonOutput = oldJSON
 	}()
+	jsonOutput = false
 
-	newOnboardPrompter = func(accessible bool, input io.Reader, output io.Writer) onboard.Prompter {
+	newOnboardPrompter = func(accessible bool, advanced bool, input io.Reader, output io.Writer) onboard.Prompter {
 		return setupTestPrompter{result: onboard.Result{
 			HomeDir:           homeDir,
 			Project:           "wizard-app",
@@ -333,5 +342,214 @@ func TestInitCommandWizardGeneratesInstructionAndMemoryFiles(t *testing.T) {
 	}
 	if len(projects) != 1 || projects[0] != "wizard-app" {
 		t.Fatalf("projects = %#v, want [wizard-app]", projects)
+	}
+}
+
+func TestInitSetupReInitPreservesContent(t *testing.T) {
+	projectDir := t.TempDir()
+	homeDir := filepath.Join(t.TempDir(), ".agentcom-test")
+	userContent := "# My Project\n\n## Team Rules\n\n- Always write tests first.\n"
+	agentsPath := filepath.Join(projectDir, "AGENTS.md")
+	if err := os.WriteFile(agentsPath, []byte(userContent), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	executor := &initSetupExecutor{projectDir: projectDir}
+	result := onboard.Result{HomeDir: homeDir, Project: "test-project", WriteInstructions: true, SelectedAgents: []string{"codex"}}
+	if _, err := executor.Apply(context.Background(), result); err != nil {
+		t.Fatalf("first Apply() error = %v", err)
+	}
+	data1, err := os.ReadFile(agentsPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	content1 := string(data1)
+	if !strings.Contains(content1, "# My Project") {
+		t.Fatal("user content lost after first init")
+	}
+	if !strings.Contains(content1, agentMarkerStart("codex")) {
+		t.Fatal("codex markers missing after first init")
+	}
+
+	if _, err := executor.Apply(context.Background(), result); err != nil {
+		t.Fatalf("second Apply() error = %v", err)
+	}
+	data2, err := os.ReadFile(agentsPath)
+	if err != nil {
+		t.Fatalf("ReadFile() second read error = %v", err)
+	}
+	if string(data1) != string(data2) {
+		t.Fatal("second init changed content")
+	}
+}
+
+func TestInitCommandForceOverwritesAllGeneratedFiles(t *testing.T) {
+	projectDir := t.TempDir()
+	homeDir := filepath.Join(t.TempDir(), ".agentcom-home")
+	if err := os.MkdirAll(homeDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(homeDir) error = %v", err)
+	}
+
+	oldwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	defer func() {
+		if err := os.Chdir(oldwd); err != nil {
+			t.Fatalf("restore cwd: %v", err)
+		}
+	}()
+	if err := os.Chdir(projectDir); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+
+	oldApp := app
+	oldJSON := jsonOutput
+	oldInteractive := isInteractiveInput
+	app = &appContext{cfg: &config.Config{HomeDir: homeDir}}
+	jsonOutput = false
+	isInteractiveInput = func(_ io.Reader) bool { return false }
+	defer func() {
+		app = oldApp
+		jsonOutput = oldJSON
+		isInteractiveInput = oldInteractive
+	}()
+
+	cmd := newInitCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"--batch", "--agents-md", "codex", "--template", "company"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("first cmd.Execute() error = %v", err)
+	}
+
+	agentsPath := filepath.Join(projectDir, "AGENTS.md")
+	commonPath := filepath.Join(projectDir, ".agentcom", "templates", "company", "COMMON.md")
+	skillPath := filepath.Join(projectDir, ".agents", "skills", "agentcom", "company-frontend", "SKILL.md")
+	for _, path := range []string{agentsPath, commonPath, skillPath} {
+		if err := os.WriteFile(path, []byte("FORCE-TEST"), 0o644); err != nil {
+			t.Fatalf("WriteFile(%s) error = %v", path, err)
+		}
+	}
+
+	cmd = newInitCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"--batch", "--agents-md", "codex", "--template", "company", "--force"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("second cmd.Execute() error = %v", err)
+	}
+
+	for _, path := range []string{agentsPath, commonPath, skillPath} {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("ReadFile(%s) error = %v", path, err)
+		}
+		if strings.Contains(string(data), "FORCE-TEST") {
+			t.Fatalf("file %s was not overwritten: %s", path, string(data))
+		}
+	}
+}
+
+func TestInitCommandDryRunReportsPreviewWithoutWrites(t *testing.T) {
+	projectDir := t.TempDir()
+	homeDir := filepath.Join(t.TempDir(), ".agentcom-home")
+	if err := os.MkdirAll(homeDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(homeDir) error = %v", err)
+	}
+	agentsPath := filepath.Join(projectDir, "AGENTS.md")
+	original := "# Existing notes\n"
+	if err := os.WriteFile(agentsPath, []byte(original), 0o644); err != nil {
+		t.Fatalf("WriteFile(AGENTS.md) error = %v", err)
+	}
+
+	oldwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	defer func() {
+		if err := os.Chdir(oldwd); err != nil {
+			t.Fatalf("restore cwd: %v", err)
+		}
+	}()
+	if err := os.Chdir(projectDir); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+
+	oldApp := app
+	oldJSON := jsonOutput
+	oldInteractive := isInteractiveInput
+	oldProjectFlag := projectFlag
+	defer func() {
+		app = oldApp
+		jsonOutput = oldJSON
+		isInteractiveInput = oldInteractive
+		projectFlag = oldProjectFlag
+	}()
+	app = &appContext{cfg: &config.Config{HomeDir: homeDir}}
+	jsonOutput = true
+	isInteractiveInput = func(_ io.Reader) bool { return false }
+	projectFlag = "demo-app"
+
+	buf := &bytes.Buffer{}
+	cmd := newInitCmd()
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"--batch", "--dry-run", "--agents-md", "codex", "--template", "company"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("cmd.Execute() error = %v output=%s", err, buf.String())
+	}
+
+	if _, err := os.Stat(filepath.Join(projectDir, ".agentcom.json")); !os.IsNotExist(err) {
+		t.Fatalf(".agentcom.json should not be written in dry-run, stat err=%v", err)
+	}
+	if _, err := os.Stat(filepath.Join(projectDir, ".agentcom", "templates", "company", "template.json")); !os.IsNotExist(err) {
+		t.Fatalf("template.json should not be written in dry-run, stat err=%v", err)
+	}
+	data, err := os.ReadFile(agentsPath)
+	if err != nil {
+		t.Fatalf("ReadFile(AGENTS.md) error = %v", err)
+	}
+	if string(data) != original {
+		t.Fatalf("AGENTS.md changed during dry-run: %q", string(data))
+	}
+	for _, want := range []string{"\"dry_run\": true", "\"preview\"", "AGENTS.md", "template.json", "company-frontend"} {
+		if !strings.Contains(buf.String(), want) {
+			t.Fatalf("dry-run output missing %q: %s", want, buf.String())
+		}
+	}
+	if !strings.Contains(buf.String(), "\"action\": \"update\"") || !strings.Contains(buf.String(), "\"action\": \"create\"") {
+		t.Fatalf("dry-run output missing action types: %s", buf.String())
+	}
+}
+
+func TestInitSetupExecutorDryRunSkipsWrites(t *testing.T) {
+	projectDir := t.TempDir()
+	homeDir := filepath.Join(t.TempDir(), ".agentcom-test")
+	executor := &initSetupExecutor{projectDir: projectDir, dryRun: true}
+	result := onboard.Result{
+		HomeDir:           homeDir,
+		Project:           "dry-run-app",
+		Template:          "company",
+		WriteInstructions: true,
+		SelectedAgents:    []string{"codex"},
+		Confirmed:         true,
+	}
+
+	report, err := executor.Apply(context.Background(), result)
+	if err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+	if !report.DryRun {
+		t.Fatal("report.DryRun = false, want true")
+	}
+	if len(report.PreviewActions) == 0 {
+		t.Fatal("report.PreviewActions is empty, want planned writes")
+	}
+	if _, err := os.Stat(filepath.Join(homeDir, config.DBFileName)); !os.IsNotExist(err) {
+		t.Fatalf("DB should not be created in dry-run, stat err=%v", err)
+	}
+	if _, err := os.Stat(filepath.Join(projectDir, "AGENTS.md")); !os.IsNotExist(err) {
+		t.Fatalf("AGENTS.md should not be written in dry-run, stat err=%v", err)
 	}
 }

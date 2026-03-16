@@ -41,6 +41,12 @@ jobs:
             archive: tar.gz
             binary: agentcom
             output: agentcom
+          - runner: macos-latest-xlarge
+            goos: darwin
+            goarch: arm64
+            archive: tar.gz
+            binary: agentcom
+            output: agentcom
           - runner: windows-latest
             goos: windows
             goarch: amd64

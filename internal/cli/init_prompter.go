@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -19,6 +20,7 @@ import (
 
 type initPrompter struct {
 	accessible bool
+	advanced   bool
 	input      io.Reader
 	output     io.Writer
 }
@@ -130,8 +132,8 @@ func knownProjectNames(homeDir string) (map[string]struct{}, error) {
 	return result, nil
 }
 
-func newInitPrompter(accessible bool, input io.Reader, output io.Writer) onboard.Prompter {
-	return &initPrompter{accessible: accessible, input: input, output: output}
+func newInitPrompter(accessible bool, advanced bool, input io.Reader, output io.Writer) onboard.Prompter {
+	return &initPrompter{accessible: accessible, advanced: advanced, input: input, output: output}
 }
 
 func (p *initPrompter) Run(ctx context.Context, defaults onboard.Result) (onboard.Result, error) {
@@ -249,7 +251,11 @@ func (p *initPrompter) Run(ctx context.Context, defaults onboard.Result) (onboar
 
 	var customTemplate *onboard.TemplateDefinition
 	if templateChoice == "custom" {
-		customTemplate, err = p.runCustomTemplateWizard(ctx, templates)
+		if p.advanced {
+			customTemplate, err = p.runCustomTemplateWizard(ctx, templates)
+		} else {
+			customTemplate, err = p.runSimplifiedCustomTemplateWizard(ctx, templates)
+		}
 		if err != nil {
 			return onboard.Result{}, err
 		}
@@ -270,6 +276,88 @@ func (p *initPrompter) Run(ctx context.Context, defaults onboard.Result) (onboar
 		CustomTemplate:    customTemplate,
 		Confirmed:         confirmed,
 	}, nil
+}
+
+func (p *initPrompter) runSimplifiedCustomTemplateWizard(ctx context.Context, existing []templateDefinition) (*onboard.TemplateDefinition, error) {
+	name := ""
+	rolesInput := ""
+
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Template name").
+				Description("Short lowercase name for this template (e.g., my-team)").
+				Value(&name).
+				Validate(func(v string) error {
+					trimmed := strings.TrimSpace(v)
+					if trimmed == "" {
+						return errors.New("template name is required")
+					}
+					return validateSkillName(trimmed)
+				}),
+			huh.NewInput().
+				Title("Role names").
+				Description("Comma-separated list (e.g., frontend, backend, plan, review)").
+				Value(&rolesInput).
+				Validate(func(v string) error {
+					roles := splitCSVValues(v)
+					if len(roles) == 0 {
+						return errors.New("at least one role is required")
+					}
+					return nil
+				}),
+		).Title("Quick Custom Template"),
+	).WithAccessible(p.accessible).WithInput(p.input).WithOutput(p.output)
+
+	if err := form.RunWithContext(ctx); err != nil {
+		if errors.Is(err, huh.ErrUserAborted) {
+			return nil, onboard.ErrAborted
+		}
+		return nil, fmt.Errorf("cli.initPrompter.runSimplifiedCustomTemplateWizard: %w", err)
+	}
+
+	definition, err := buildSimplifiedCustomTemplateDefinition(strings.TrimSpace(name), splitCSVValues(rolesInput), existing)
+	if err != nil {
+		return nil, fmt.Errorf("cli.initPrompter.runSimplifiedCustomTemplateWizard: %w", err)
+	}
+	return definition, nil
+}
+
+func buildSimplifiedCustomTemplateDefinition(name string, roleNames []string, existing []templateDefinition) (*onboard.TemplateDefinition, error) {
+	roles := make([]onboard.TemplateRole, 0, len(roleNames))
+	for _, roleName := range roleNames {
+		if !isKnownRole(roleName) {
+			slog.Info("using generic defaults for unknown role", "role", roleName)
+		}
+		generated := generateDefaultRole(roleName, roleNames)
+		roles = append(roles, onboard.TemplateRole{
+			Name:             generated.Name,
+			Description:      generated.Description,
+			AgentName:        generated.AgentName,
+			AgentType:        generated.AgentType,
+			CommunicatesWith: append([]string(nil), generated.CommunicatesWith...),
+			Responsibilities: append([]string(nil), generated.Responsibilities...),
+		})
+	}
+
+	definition := &onboard.TemplateDefinition{
+		Name:        name,
+		Description: fmt.Sprintf("Custom %d-role template.", len(roles)),
+		Reference:   "custom",
+		CommonTitle: fmt.Sprintf("%s Common Instructions", titleWords(strings.ReplaceAll(name, "-", " "))),
+		CommonBody:  "Coordinate through agentcom. Use `agentcom up` to start the team and `agentcom down` to stop.",
+		Roles:       roles,
+	}
+	if err := validateCustomTemplateDefinition(templateDefinitionFromOnboard(*definition)); err != nil {
+		return nil, err
+	}
+	for _, item := range existing {
+		if item.Name == definition.Name {
+			return nil, fmt.Errorf("template %q already exists", definition.Name)
+		}
+	}
+
+	return definition, nil
 }
 
 func (p *initPrompter) runCustomTemplateWizard(ctx context.Context, existing []templateDefinition) (*onboard.TemplateDefinition, error) {

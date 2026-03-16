@@ -21,6 +21,13 @@ func TestSaveAndLoadCustomTemplates(t *testing.T) {
 			AgentType:        "planner",
 			CommunicatesWith: []string{"review"},
 			Responsibilities: []string{"Break work down."},
+		}, {
+			Name:             "review",
+			Description:      "Review role",
+			AgentName:        "review",
+			AgentType:        "reviewer",
+			CommunicatesWith: []string{"planner"},
+			Responsibilities: []string{"Review delivered work."},
 		}},
 	}
 

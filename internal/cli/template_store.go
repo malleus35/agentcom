@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -12,6 +13,10 @@ import (
 )
 
 func saveCustomTemplate(projectDir string, definition templateDefinition) (string, error) {
+	return writeCustomTemplate(projectDir, definition, writeModeCreate)
+}
+
+func writeCustomTemplate(projectDir string, definition templateDefinition, mode writeMode) (string, error) {
 	if err := validateCustomTemplateDefinition(definition); err != nil {
 		return "", fmt.Errorf("validate custom template: %w", err)
 	}
@@ -21,7 +26,7 @@ func saveCustomTemplate(projectDir string, definition templateDefinition) (strin
 	manifestPath := filepath.Join(baseDir, "template.json")
 
 	commonContent := renderTemplateCommonContent(definition)
-	if err := writeScaffoldFile(commonPath, commonContent); err != nil {
+	if err := writeScaffoldFile(commonPath, commonContent, mode); err != nil {
 		return "", fmt.Errorf("write custom template common markdown: %w", err)
 	}
 
@@ -29,11 +34,36 @@ func saveCustomTemplate(projectDir string, definition templateDefinition) (strin
 	if err != nil {
 		return "", fmt.Errorf("render custom template manifest: %w", err)
 	}
-	if err := writeScaffoldFile(manifestPath, manifestContent); err != nil {
+	if err := writeScaffoldFile(manifestPath, manifestContent, mode); err != nil {
 		return "", fmt.Errorf("write custom template manifest: %w", err)
 	}
 
 	return baseDir, nil
+}
+
+func loadCustomTemplate(projectDir string, name string) (templateDefinition, string, error) {
+	manifestPath := filepath.Join(projectDir, ".agentcom", "templates", name, "template.json")
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return templateDefinition{}, "", fmt.Errorf("custom template %q not found", name)
+		}
+		return templateDefinition{}, "", fmt.Errorf("read custom template manifest: %w", err)
+	}
+
+	var definition templateDefinition
+	if err := json.Unmarshal(data, &definition); err != nil {
+		return templateDefinition{}, "", fmt.Errorf("unmarshal custom template manifest: %w", err)
+	}
+
+	baseDir := filepath.Dir(manifestPath)
+	commonPath := filepath.Join(baseDir, "COMMON.md")
+	commonData, err := os.ReadFile(commonPath)
+	if err != nil {
+		return templateDefinition{}, "", fmt.Errorf("read custom template common markdown: %w", err)
+	}
+	definition.CommonBody = extractTemplateCommonBody(string(commonData), definition.CommonTitle)
+	return definition, baseDir, nil
 }
 
 func loadCustomTemplates(projectDir string) ([]templateDefinition, error) {
@@ -52,6 +82,15 @@ func loadCustomTemplates(projectDir string) ([]templateDefinition, error) {
 		var definition templateDefinition
 		if err := json.Unmarshal(data, &definition); err != nil {
 			return nil, fmt.Errorf("unmarshal custom template manifest: %w", err)
+		}
+		if issues := validateCommunicationGraph(definition.Roles); hasGraphErrors(issues) {
+			messages := make([]string, 0, len(issues))
+			for _, issue := range issues {
+				if issue.Severity == "error" {
+					messages = append(messages, issue.Message)
+				}
+			}
+			return nil, fmt.Errorf("custom template manifest has communication graph errors: %s", strings.Join(messages, "; "))
 		}
 
 		commonPath := filepath.Join(filepath.Dir(manifestPath), "COMMON.md")
@@ -110,36 +149,97 @@ func validateCustomTemplateDefinition(definition templateDefinition) error {
 	}
 	for _, builtIn := range builtInTemplateDefinitions() {
 		if builtIn.Name == definition.Name {
-			return fmt.Errorf("template name %q conflicts with a built-in template", definition.Name)
+			if reflect.DeepEqual(normalizeTemplateDefinition(definition), normalizeTemplateDefinition(builtIn)) {
+				break
+			}
+			return newUserError(
+				fmt.Sprintf("Template name %q conflicts with a built-in template", definition.Name),
+				"Built-in template names are reserved and cannot be reused for custom templates.",
+				"Choose a different name or inspect built-ins with `agentcom agents template --list`.",
+			)
 		}
 	}
 	if strings.TrimSpace(definition.Description) == "" {
-		return fmt.Errorf("template description is required")
+		return newUserError(
+			"Template description is missing",
+			"Every template needs a short description so users can identify it later.",
+			"Add a non-empty description in your template file or wizard input, then retry `agentcom init --from-file <path>`.",
+		)
 	}
 	if strings.TrimSpace(definition.CommonTitle) == "" {
-		return fmt.Errorf("template common title is required")
+		return newUserError(
+			"Template common title is missing",
+			"The shared COMMON.md heading cannot be empty.",
+			"Set `common_title` in the template definition before importing it again.",
+		)
 	}
 	if strings.TrimSpace(definition.CommonBody) == "" {
-		return fmt.Errorf("template common body is required")
+		return newUserError(
+			"Template common body is missing",
+			"The shared COMMON.md content cannot be empty.",
+			"Add shared instructions to the template definition, then retry the import.",
+		)
 	}
 	if len(definition.Roles) == 0 {
-		return fmt.Errorf("at least one template role is required")
+		return newUserError(
+			"Template has no roles",
+			"A template must define at least one role to scaffold agent instructions.",
+			"Add at least one role in the template definition, then retry the import.",
+		)
 	}
 	for _, role := range definition.Roles {
 		if strings.TrimSpace(role.Name) == "" {
-			return fmt.Errorf("template role name is required")
+			return newUserError(
+				"Template role name is missing",
+				"Each template role needs a stable name.",
+				"Fill in the role name and retry the template import or wizard flow.",
+			)
 		}
 		if strings.TrimSpace(role.Description) == "" {
-			return fmt.Errorf("template role description is required")
+			return newUserError(
+				fmt.Sprintf("Template role %q is missing a description", role.Name),
+				"Each role needs a description for scaffolded documentation.",
+				"Add a role description and retry the template import or wizard flow.",
+			)
 		}
 		if strings.TrimSpace(role.AgentName) == "" {
-			return fmt.Errorf("template role agent name is required")
+			return newUserError(
+				fmt.Sprintf("Template role %q is missing an agent name", role.Name),
+				"Each role needs a concrete agent name for generated commands.",
+				"Add the role's `agent_name` and retry the template import or wizard flow.",
+			)
 		}
 		if strings.TrimSpace(role.AgentType) == "" {
-			return fmt.Errorf("template role agent type is required")
+			return newUserError(
+				fmt.Sprintf("Template role %q is missing an agent type", role.Name),
+				"Each role needs an agent type for scaffolded registration examples.",
+				"Add the role's `agent_type` and retry the template import or wizard flow.",
+			)
 		}
 	}
+	if issues := validateCommunicationGraph(definition.Roles); hasGraphErrors(issues) {
+		messages := make([]string, 0, len(issues))
+		for _, issue := range issues {
+			if issue.Severity == "error" {
+				messages = append(messages, issue.Message)
+			}
+		}
+		return newUserError(
+			"Template communication graph is invalid",
+			strings.Join(messages, "; "),
+			"Fix the role communication map and retry `agentcom init --from-file <path>`.",
+		)
+	}
 	return nil
+}
+
+func normalizeTemplateDefinition(definition templateDefinition) templateDefinition {
+	definition.Roles = append([]templateRole(nil), definition.Roles...)
+	for i := range definition.Roles {
+		definition.Roles[i].CommunicatesWith = append([]string(nil), definition.Roles[i].CommunicatesWith...)
+		definition.Roles[i].Responsibilities = append([]string(nil), definition.Roles[i].Responsibilities...)
+	}
+	return definition
 }
 
 func extractTemplateCommonBody(content string, title string) string {

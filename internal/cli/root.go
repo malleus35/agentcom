@@ -82,6 +82,7 @@ func NewRootCmd() *cobra.Command {
 		newTaskCmd(),
 		newStatusCmd(),
 		newHealthCmd(),
+		newDoctorCmd(),
 		newMCPServerCmd(),
 	)
 
@@ -89,6 +90,13 @@ func NewRootCmd() *cobra.Command {
 }
 
 func shouldSkipAppInit(cmd *cobra.Command) bool {
+	if cmd != nil && cmd.Name() == "init" {
+		dryRun, err := cmd.Flags().GetBool("dry-run")
+		if err == nil && dryRun {
+			configureLogging()
+			return true
+		}
+	}
 	return shouldRunWizard(cmd)
 }
 

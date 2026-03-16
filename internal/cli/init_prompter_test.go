@@ -130,3 +130,25 @@ func TestValidateWizardProjectName(t *testing.T) {
 		t.Fatalf("validateWizardProjectName(current project) error = %v", err)
 	}
 }
+
+func TestSimplifiedWizardGeneratesValidTemplate(t *testing.T) {
+	definition, err := buildSimplifiedCustomTemplateDefinition("test-team", []string{"frontend", "backend", "plan"}, nil)
+	if err != nil {
+		t.Fatalf("buildSimplifiedCustomTemplateDefinition() error = %v", err)
+	}
+	if definition.Name != "test-team" {
+		t.Fatalf("definition.Name = %q, want test-team", definition.Name)
+	}
+	if len(definition.Roles) != 3 {
+		t.Fatalf("len(definition.Roles) = %d, want 3", len(definition.Roles))
+	}
+	if definition.Roles[0].AgentType != "engineer-frontend" {
+		t.Fatalf("frontend AgentType = %q, want engineer-frontend", definition.Roles[0].AgentType)
+	}
+	if err := validateCustomTemplateDefinition(templateDefinitionFromOnboard(*definition)); err != nil {
+		t.Fatalf("validateCustomTemplateDefinition() error = %v", err)
+	}
+	if issues := validateCommunicationGraph(templateDefinitionFromOnboard(*definition).Roles); len(issues) != 0 {
+		t.Fatalf("validateCommunicationGraph() issues = %v, want none", issues)
+	}
+}

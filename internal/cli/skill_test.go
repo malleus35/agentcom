@@ -9,6 +9,13 @@ import (
 	"testing"
 )
 
+type skillValidationResult struct {
+	Path   string   `json:"path"`
+	Status string   `json:"status"`
+	Checks []string `json:"checks,omitempty"`
+	Issues []string `json:"issues,omitempty"`
+}
+
 func TestValidateSkillName(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -136,7 +143,7 @@ func TestWriteSkillFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), ".claude", "skills", "my-skill", "SKILL.md")
 	content := renderSkillContent("my-skill", defaultSkillDescription)
 
-	if err := writeSkillFile(path, content); err != nil {
+	if err := writeSkillFile(path, content, writeModeCreate); err != nil {
 		t.Fatalf("writeSkillFile() error = %v", err)
 	}
 
@@ -144,12 +151,49 @@ func TestWriteSkillFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile() error = %v", err)
 	}
-	if string(data) != content {
-		t.Fatalf("file content = %q, want %q", string(data), content)
+	want := wrapWithMarkers(content)
+	if string(data) != want {
+		t.Fatalf("file content = %q, want %q", string(data), want)
 	}
 
-	if err := writeSkillFile(path, content); err == nil {
+	if err := writeSkillFile(path, content, writeModeCreate); err == nil {
 		t.Fatal("writeSkillFile() second call error = nil, want error")
+	}
+}
+
+func TestWriteSkillFileCreateModeRejectsExisting(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test", "SKILL.md")
+	if err := writeSkillFile(path, "content", writeModeCreate); err != nil {
+		t.Fatalf("first write error = %v", err)
+	}
+	if err := writeSkillFile(path, "content", writeModeCreate); err == nil {
+		t.Fatal("second write error = nil, want error")
+	}
+}
+
+func TestWriteSkillFileAppendMode(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(path, []byte("# My Custom Skill\n\nCustom instructions.\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	if err := writeSkillFile(path, "generated content", writeModeAppend); err != nil {
+		t.Fatalf("append write error = %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "My Custom Skill") {
+		t.Fatal("user content lost")
+	}
+	if !strings.Contains(content, agentcomMarkerStart) {
+		t.Fatal("marker not added")
 	}
 }
 
@@ -202,5 +246,99 @@ func TestSkillCreateCommandOutputsJSON(t *testing.T) {
 	}
 	if !strings.Contains(string(content), "name: demo-skill") {
 		t.Fatalf("content missing skill name: %s", string(content))
+	}
+}
+
+func TestSkillValidatePassesAfterPhase3(t *testing.T) {
+	projectDir := t.TempDir()
+	oldwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	defer func() {
+		if err := os.Chdir(oldwd); err != nil {
+			t.Fatalf("restore cwd: %v", err)
+		}
+	}()
+	if err := os.Chdir(projectDir); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+	if _, err := writeTemplateScaffold(projectDir, "company", writeModeAppend); err != nil {
+		t.Fatalf("writeTemplateScaffold() error = %v", err)
+	}
+
+	oldJSON := jsonOutput
+	jsonOutput = true
+	defer func() { jsonOutput = oldJSON }()
+
+	buf := &bytes.Buffer{}
+	cmd := newSkillCmd()
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"validate"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("cmd.Execute() error = %v output=%s", err, buf.String())
+	}
+
+	var results []skillValidationResult
+	if err := json.Unmarshal(buf.Bytes(), &results); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v output=%s", err, buf.String())
+	}
+	if len(results) == 0 {
+		t.Fatal("skill validate returned no results")
+	}
+	for _, result := range results {
+		if result.Status != "pass" {
+			t.Fatalf("validation result = %#v, want pass", result)
+		}
+	}
+}
+
+func TestSkillValidateDetectsLowQuality(t *testing.T) {
+	projectDir := t.TempDir()
+	oldwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	defer func() {
+		if err := os.Chdir(oldwd); err != nil {
+			t.Fatalf("restore cwd: %v", err)
+		}
+	}()
+	if err := os.Chdir(projectDir); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+
+	badPath := filepath.Join(projectDir, ".agents", "skills", "broken", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(badPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(badPath, []byte("# Broken\n\n<sender>\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	oldJSON := jsonOutput
+	jsonOutput = true
+	defer func() { jsonOutput = oldJSON }()
+
+	buf := &bytes.Buffer{}
+	cmd := newSkillCmd()
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"validate"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("cmd.Execute() error = %v output=%s", err, buf.String())
+	}
+
+	var results []skillValidationResult
+	if err := json.Unmarshal(buf.Bytes(), &results); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v output=%s", err, buf.String())
+	}
+	if len(results) != 1 {
+		t.Fatalf("len(results) = %d, want 1 (%#v)", len(results), results)
+	}
+	if results[0].Status != "fail" {
+		t.Fatalf("validation result = %#v, want fail", results[0])
+	}
+	if len(results[0].Issues) == 0 {
+		t.Fatalf("validation result = %#v, want issues", results[0])
 	}
 }
