@@ -285,5 +285,6 @@
 - [x] init template selected skill targets 버그 수정 (feature 브랜치 → develop 머지 완료)
 - [x] supervisor user context 조사 완료 (supervisor는 프로세스 매니저, 메시지 수신자 아님)
 - [x] P12 user-endpoint plan 문서 작성 완료 (Metis + Oracle 교차검증)
-- [ ] **P12 user-endpoint 구현**: `feature/P12-user-endpoint` 브랜치 생성 → TDD 기반 구현 (다음 작업)
+- [x] `feature/P12-user-endpoint` 브랜치 생성 완료
+- [ ] **P12 user-endpoint 구현**: 현재 작업 브랜치 `feature/P12-user-endpoint`에서 TDD 기반 구현 시작
 - 현재 후속 우선순위: P12 구현 → 릴리스 버전 확정 → develop 머지 → 태그/릴리스 → Scoop/Homebrew 반영 검증
