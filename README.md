@@ -255,6 +255,15 @@ For `--template custom`, the default wizard now asks only for the template name 
 
 Re-running template scaffold generation now updates marker-managed `SKILL.md` content in place and skips regenerating unchanged scaffold files such as `COMMON.md` and `template.json`. Generated role skills now include validated communication graphs, detailed primary contacts, and concrete request/response/escalation/report command examples.
 
+If you want to create a custom template without the interactive wizard, import it from a YAML or JSON file:
+
+```bash
+agentcom init --batch --from-file template.yaml
+agentcom --json init --batch --project myapp --from-file template.json
+```
+
+Imported templates are validated, saved under `.agentcom/templates/<name>/`, and then scaffolded as the active template for the current project.
+
 Inspect the built-in templates before generating one:
 
 ```bash
@@ -264,6 +273,15 @@ agentcom --json agents template oh-my-opencode
 ```
 
 When run on an interactive terminal without a template name, `agentcom agents template` now prompts for a search term and lets you select a matching template by number.
+
+You can also edit an existing custom template after creation:
+
+```bash
+agentcom agents template edit my-team add-role devops
+agentcom agents template edit my-team remove-role design
+```
+
+Template edits update `.agentcom/templates/<name>/template.json`, keep the communication graph valid, and regenerate the affected role skills.
 
 Start all template-defined agents:
 
@@ -341,6 +359,7 @@ agentcom init --template company
 agentcom init --template oh-my-opencode
 agentcom init --template custom
 agentcom init --template custom --advanced
+agentcom init --batch --from-file template.yaml
 agentcom --json init
 ```
 
@@ -360,7 +379,9 @@ Notes:
 - Generated scaffold instructions treat `agentcom init --template <name>` -> `agentcom up` -> `agentcom down` as the default team lifecycle, with `agentcom register` reserved for low-level standalone use.
 - When `--template` is set, `.agentcom.json` also records `template.active` so `agentcom up` can start the same template later without repeating the flag.
 - Supported built-in templates are `company` and `oh-my-opencode`; `custom` launches a template-creation wizard in interactive mode, with a quick 2-field flow by default and the original detailed flow behind `--advanced`.
+- `--from-file <path>` imports a custom template definition from YAML or JSON, validates it, stores it under `.agentcom/templates/<name>/`, and scaffolds it as the current active template.
 - `agentcom agents template --list` shows built-in and custom templates, and `agentcom agents template --delete <name>` removes a custom template after confirmation.
+- `agentcom agents template edit <name> add-role <role>` and `remove-role <role>` update an existing custom template, refresh its communication graph, and regenerate the affected skill files.
 - JSON output includes `path`, `status`, `project`, `project_config_path`, `template`, `active_template`, `instruction_files`, `agents_md`, `memory_files`, `custom_template_path`, and `generated_files` when applicable.
 - Because the current implementation prepares the home directory before `init` checks it, `status` may appear as `already_initialized` even for a newly prepared path.
 
@@ -641,6 +662,8 @@ Usage:
 agentcom agents template
 agentcom agents template company
 agentcom --json agents template oh-my-opencode
+agentcom agents template edit my-team add-role devops
+agentcom agents template edit my-team remove-role design
 ```
 
 Interactive behavior:
@@ -659,8 +682,10 @@ Generated scaffold details:
 - Template metadata lives at `.agentcom/templates/<template>/template.json`.
 - Project-level shared template skills are generated at `.claude/skills/agentcom/SKILL.md`, `.agents/skills/agentcom/SKILL.md`, `.gemini/skills/agentcom/SKILL.md`, and `.opencode/skills/agentcom/SKILL.md`.
 - Role skills are generated under the same namespace, for example `.agents/skills/agentcom/company-frontend/SKILL.md`.
-- Each generated role skill reads the shared `../SKILL.md` first, then the template `COMMON.md`, and includes the communication map for `frontend`, `backend`, `plan`, `review`, `architect`, and `design`.
+- Each generated role skill reads the shared `../SKILL.md` first, then the template `COMMON.md`, and includes role-specific workflow, examples, anti-patterns, handoff guidance, and the communication map.
 - Generated scaffold wording is aligned so the default onboarding path is `init -> up -> down`; `register` only appears as an advanced/manual standalone workflow.
+- `agentcom agents template edit` is only available for custom templates and supports `add-role` and `remove-role` operations.
+- `agentcom init --from-file <path>` is the non-interactive path for importing a custom template definition from YAML or JSON.
 
 ### `agentcom status`
 
