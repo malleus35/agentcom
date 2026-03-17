@@ -73,7 +73,7 @@
 | 태스크 | 상태 | 메모 |
 |-------|------|------|
 | PH5-01 MCP 에러 응답 JSON-RPC 정렬 | done | unknown tool=`-32601`, runtime tool error=`-32000`, error path에서 `result` 제거 + roundtrip 테스트 반영 |
-| PH5-02 MCP 파라미터 검증 강화 | partial | 일부 handler는 `invalidParamsError` 사용, 전체 일관성 없음 |
+| PH5-02 MCP 파라미터 검증 강화 | done | handler-level JSON/type/required/status/reference validation을 `invalidParamsError`로 정렬하고 regression matrix + manual QA 반영 |
 | PH5-03 terminal state reopen/retry | open | `completed/failed/cancelled` 재전이 없음 |
 
 ### PH5-01: MCP 에러 응답을 전 경로에서 JSON-RPC `error`로 통일
@@ -95,16 +95,14 @@
 
 ### PH5-02: MCP handler 파라미터 검증을 전 handler에 통일
 - **대상**: `internal/mcp/handler.go`
-- **현재 상태**:
-  - `create_task`, `update_task`, `approve_task`, `reject_task` 일부는 `invalidParamsError` 사용
-  - `list_agents`, `send_message`, `broadcast`, `list_tasks`, `get_status`, human communication 계열은 검증 수준이 제각각
-- **남은 수정**:
-  - handler별 필수값 누락 / 타입 오류 / enum 오류를 `invalidParamsError`로 통일
-  - `alive_only`, `payload`, `status`, `project`, `agent` 등 입력 품질 점검
-  - name-or-id resolution 실패 중 “입력 오류” 성격은 invalid params로 승격할지 정책 명확화
+- **완료 상태**:
+  - `list_agents`, `send_message`, `send_to_user`, `get_user_messages`, `broadcast`, `delegate_task`, `list_tasks`, `get_status`의 JSON unmarshal/type mismatch를 `invalidParamsError`로 통일
+  - message/user/delegate 계열의 required-field 오류와 caller-input agent reference 실패를 `-32602` 경로로 승격
+  - `list_tasks.status`에 명시적 status validation 추가, `list_tasks.assignee`와 `create_task.assigned_to/created_by`의 permissive fallback은 기존 동작 유지
 - **검증**:
-  - `internal/mcp/server_test.go`에 잘못된 인자 케이스 추가
-- **예상 공수**: 3h
+  - `internal/mcp/server_test.go` invalid-params/runtime boundary matrix 추가
+  - manual MCP STDIO QA로 `-32602` 승격 케이스와 `-32000` 유지 케이스 확인
+- **실소요 공수**: 약 3h
 
 ### PH5-03: terminal 상태 재전이(reopen/retry/resurrect) 지원
 - **대상**: `internal/task/model.go`, `internal/task/model_test.go`, 필요 시 `internal/task/manager_test.go`
@@ -120,7 +118,7 @@
   - reopen / retry / resurrect 시나리오 테스트 추가
 - **예상 공수**: 1h
 
-**PH5 예상 잔여 공수: 4h**
+**PH5 예상 잔여 공수: 1h**
 
 ---
 
@@ -454,12 +452,12 @@ Worktree E: PH8 / PH9 (PH5 완료 후)
 
 | Phase | 남은 태스크 수 | 예상 잔여 공수 |
 |-------|----------------|----------------|
-| PH5 | 3 | 6h |
+| PH5 | 1 | 1h |
 | PH6 | 8 | 18.5h |
 | PH7 | 4 | 13h |
 | PH8 | 6 | 7.5h |
 | PH9 | 4 | 9h |
-| **총계** | **25** | **약 54h** |
+| **총계** | **23** | **약 49h** |
 
 차이 설명:
 
