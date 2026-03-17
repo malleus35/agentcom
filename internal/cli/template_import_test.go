@@ -32,6 +32,25 @@ func TestLoadTemplateDefinitionFromFileMinimalYAML(t *testing.T) {
 	}
 }
 
+func TestLoadTemplateDefinitionFromFileWithReviewPolicy(t *testing.T) {
+	filePath := filepath.Join(t.TempDir(), "template.yaml")
+	content := []byte("name: my-team\nreview_policy:\n  require_review_above: high\n  default_reviewer: user\nroles: [frontend, backend]\n")
+	if err := os.WriteFile(filePath, content, 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	definition, err := loadTemplateDefinitionFromFile(filePath)
+	if err != nil {
+		t.Fatalf("loadTemplateDefinitionFromFile() error = %v", err)
+	}
+	if definition.ReviewPolicy == nil {
+		t.Fatal("ReviewPolicy = nil, want parsed policy")
+	}
+	if definition.ReviewPolicy.DefaultReviewer != "user" {
+		t.Fatalf("DefaultReviewer = %q, want user", definition.ReviewPolicy.DefaultReviewer)
+	}
+}
+
 func TestInitCommandFromFileCreatesCustomTemplate(t *testing.T) {
 	projectDir := t.TempDir()
 	homeDir := filepath.Join(t.TempDir(), ".agentcom-home")

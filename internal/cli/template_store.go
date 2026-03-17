@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/malleus35/agentcom/internal/onboard"
+	"github.com/malleus35/agentcom/internal/task"
 )
 
 func saveCustomTemplate(projectDir string, definition templateDefinition) (string, error) {
@@ -187,6 +188,15 @@ func validateCustomTemplateDefinition(definition templateDefinition) error {
 			"Add at least one role in the template definition, then retry the import.",
 		)
 	}
+	if definition.ReviewPolicy != nil {
+		if err := definition.ReviewPolicy.Validate(); err != nil {
+			return newUserError(
+				"Template review policy is invalid",
+				err.Error(),
+				"Fix `review_policy` and retry the template import or wizard flow.",
+			)
+		}
+	}
 	for _, role := range definition.Roles {
 		if strings.TrimSpace(role.Name) == "" {
 			return newUserError(
@@ -269,11 +279,24 @@ func templateDefinitionFromOnboard(definition onboard.TemplateDefinition) templa
 	}
 
 	return templateDefinition{
-		Name:        definition.Name,
-		Description: definition.Description,
-		Reference:   definition.Reference,
-		CommonTitle: definition.CommonTitle,
-		CommonBody:  definition.CommonBody,
-		Roles:       roles,
+		Name:         definition.Name,
+		Description:  definition.Description,
+		Reference:    definition.Reference,
+		CommonTitle:  definition.CommonTitle,
+		CommonBody:   definition.CommonBody,
+		ReviewPolicy: cloneReviewPolicy(definition.ReviewPolicy),
+		Roles:        roles,
 	}
+}
+
+func cloneReviewPolicy(policy *task.ReviewPolicy) *task.ReviewPolicy {
+	if policy == nil {
+		return nil
+	}
+	cloned := &task.ReviewPolicy{
+		RequireReviewAbove: policy.RequireReviewAbove,
+		DefaultReviewer:    policy.DefaultReviewer,
+		Rules:              append([]task.ReviewPolicyRule(nil), policy.Rules...),
+	}
+	return cloned
 }
