@@ -471,7 +471,7 @@ func runUpSupervisor(ctx context.Context, projectDir, projectName, templateName 
 	healthTicker := time.NewTicker(upSupervisorHealthCheckInterval)
 	defer healthTicker.Stop()
 	signalCh := make(chan os.Signal, 1)
-	signal.Notify(signalCh, syscall.SIGUSR1, syscall.SIGHUP)
+	signal.Notify(signalCh, supervisorSignals()...)
 	defer signal.Stop(signalCh)
 
 	for len(active) > 0 {
@@ -491,10 +491,7 @@ func runUpSupervisor(ctx context.Context, projectDir, projectName, templateName 
 				return fmt.Errorf("cli.runUpSupervisor: stale child agents detected: %d", len(staleAgents))
 			}
 		case sig := <-signalCh:
-			action := supervisorSignalReload
-			if sig == syscall.SIGUSR1 {
-				action = supervisorSignalDumpState
-			}
+			action := supervisorSignalAction(sig)
 			if err := handleSupervisorSignal(projectDir, state, action); err != nil {
 				return fmt.Errorf("cli.runUpSupervisor: handle supervisor signal: %w", err)
 			}
