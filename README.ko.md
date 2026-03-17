@@ -308,6 +308,14 @@ agentcom health
 agentcom send --from frontend plan '{"text":"hello"}'
 ```
 
+사람 운영자에게 메시지 보내고 `user` inbox에서 응답하기:
+
+```bash
+agentcom send --from plan user '{"text":"리팩터링을 진행할까요?"}'
+agentcom user inbox
+agentcom user reply plan '{"text":"네, 진행하세요"}'
+```
+
 브로드캐스트 전송:
 
 ```bash
@@ -853,11 +861,33 @@ agentcom mcp-server
 
 - `list_agents`
 - `send_message`
+- `send_to_user`
+- `get_user_messages`
 - `broadcast`
 - `create_task`
 - `delegate_task`
 - `list_tasks`
 - `get_status`
+
+## Human Operator Communication
+
+`agentcom`은 사람 운영자를 project별 pseudo-agent `user`로 다룹니다.
+`agentcom up`이 `user`를 자동 등록하고, 기존 `send --to user` 경로로 메시지를 전달하며, `agentcom down`이 managed session과 함께 정리합니다.
+
+사람 운영자용 CLI:
+
+```bash
+agentcom user inbox
+agentcom user pending
+agentcom user reply plan '{"text":"승인합니다"}'
+```
+
+MCP에서는 다음 도구를 사용합니다:
+
+```text
+send_to_user(from="plan", text="진행할까요?", topic="approval")
+get_user_messages(agent="plan", unread_only=true)
+```
 
 ## 아키텍처
 

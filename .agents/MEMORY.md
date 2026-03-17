@@ -4,15 +4,15 @@
 
 ## 현재 상태
 
-- **Phase**: P12 user-endpoint 구현/검증 진행 중
-- **마지막 작업**: human-in-the-loop user endpoint(P12) 구현 및 검증 진행
+- **Phase**: P12 user-endpoint 구현/검증/문서 반영 완료
+- **마지막 작업**: P12 human-in-the-loop user endpoint 구현, 수동 QA, 문서 반영, 원자 커밋 완료
 - **현재 브랜치**: `feature/P12-user-endpoint`
 - **현재 버전**: v0.1.7이 최신 공개 릴리스, 다음 릴리스 버전은 아직 미확정
 - **P10 상태**: 구현/문서/테스트 완료, 관련 변경은 현재 브랜치에 포함됨
 - **P11 상태**: 구현 완료, 테스트/수동 QA/README 반영 완료, develop 머지 및 release 대기
 - **계획 문서 상태**: `AGENTCOM_IMPROVEMENT_PROPOSAL.md` 기반 후속 개선안 분석 완료, PH1 구현 완료, PH2~PH4 계획 유지
-- **다음 작업**: P12 전체 검증, 수동 QA, 원자 커밋 정리
-- **워킹트리**: P12 user pseudo-agent / `agentcom user` / MCP user tools 관련 변경 존재
+- **다음 작업**: develop 머지 또는 PR 생성, 이후 release/version 결정
+- **워킹트리**: P12 본 구현 커밋 완료, README 다국어/MEMORY 추가 반영 진행 중
 
 ## 완료된 태스크
 
@@ -29,14 +29,21 @@
 
 ## 이번 세션에서 마무리한 작업
 
-- P12 user endpoint 구현 진행
+- P12 user endpoint 구현 완료
   - `internal/db/agent.go`, `internal/db/message.go`: user message flow용 query helper(`FindAgentByTypeAndProject`, `ListMessagesFromAgent`, `ListUnreadRequestsForAgent`) 추가
   - `internal/agent/registry.go`, `internal/message/router.go`, `internal/mcp/handler.go`: `type="human"` heartbeat/broadcast exclusion guard 추가
   - `internal/cli/up.go`, `internal/cli/up_state.go`: `agentcom up`가 project별 `user` pseudo-agent를 자동 등록하고 runtime state에 기록, 종료 시 정리하도록 확장
   - `internal/cli/user.go`: `agentcom user inbox|pending|reply` 구현
   - `internal/mcp/tools.go`, `internal/mcp/handler.go`: `send_to_user`, `get_user_messages` MCP tools 추가
   - `internal/*/*_test.go`, `cmd/agentcom/e2e_test.go`: DB/guard/CLI/MCP/E2E 테스트 보강
-  - 검증 진행 중: targeted DB/agent/message/cli/mcp tests 통과, 전체 `go test ./...` 및 수동 QA 대기
+  - 검증 완료: `go test ./... -count=1`, `go build ./...`, CLI 수동 QA(plan -> user -> plan), MCP 수동 QA(`send_to_user`, `get_user_messages`) 완료
+  - 커밋 완료:
+    - `284394a` `feat(db): P12-05 query helpers for user message flows`
+    - `e904247` `feat(agent): P12-01 heartbeat and router guards for human agents`
+    - `b682c2d` `feat(cli): P12-02 user pseudo-agent lifecycle in up down`
+    - `3d11d86` `feat(cli): P12-03 add user inbox reply commands`
+    - `ef96d91` `feat(mcp): P12-04 add user communication tools`
+    - `54b460c` `docs: P12-06 user endpoint e2e tests and docs`
 
 - selected-agent template scaffold fix 구현 완료
   - `internal/cli/skill.go`: template skill target resolver를 selected agents 기반 helper로 분리하고, 선택값이 없을 때만 기본 4개 agent fallback 사용

@@ -273,6 +273,14 @@ agentcom send --from frontend plan '{"text":"hello"}'
 agentcom broadcast --from frontend --topic sync '{"status":"ready"}'
 ```
 
+向人工操作员发送消息，并从 `user` inbox 回复：
+
+```bash
+agentcom send --from plan user '{"text":"要继续这次重构吗？"}'
+agentcom user inbox
+agentcom user reply plan '{"text":"可以，继续"}'
+```
+
 操作任务：
 
 ```bash
@@ -665,11 +673,33 @@ agentcom mcp-server
 
 - `list_agents`
 - `send_message`
+- `send_to_user`
+- `get_user_messages`
 - `broadcast`
 - `create_task`
 - `delegate_task`
 - `list_tasks`
 - `get_status`
+
+## Human Operator Communication
+
+`agentcom` 会把人工操作员视为每个 project 独立的 pseudo-agent `user`。
+`agentcom up` 会自动注册 `user`，现有的 `send --to user` 路径即可投递消息，`agentcom down` 会在结束 managed session 时一并清理它。
+
+面向人工操作员的 CLI：
+
+```bash
+agentcom user inbox
+agentcom user pending
+agentcom user reply plan '{"text":"批准"}'
+```
+
+MCP 可使用以下工具：
+
+```text
+send_to_user(from="plan", text="要继续吗？", topic="approval")
+get_user_messages(agent="plan", unread_only=true)
+```
 
 ## 架构
 

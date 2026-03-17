@@ -273,6 +273,14 @@ agentcom send --from frontend plan '{"text":"hello"}'
 agentcom broadcast --from frontend --topic sync '{"status":"ready"}'
 ```
 
+人間オペレーターに送信し、`user` inbox から返信する例:
+
+```bash
+agentcom send --from plan user '{"text":"リファクタを進めますか？"}'
+agentcom user inbox
+agentcom user reply plan '{"text":"はい、進めてください"}'
+```
+
 タスク操作:
 
 ```bash
@@ -665,11 +673,33 @@ agentcom mcp-server
 
 - `list_agents`
 - `send_message`
+- `send_to_user`
+- `get_user_messages`
 - `broadcast`
 - `create_task`
 - `delegate_task`
 - `list_tasks`
 - `get_status`
+
+## Human Operator Communication
+
+`agentcom` は人間オペレーターを project ごとの pseudo-agent `user` として扱います。
+`agentcom up` が `user` を自動登録し、既存の `send --to user` 経路でメッセージを届け、`agentcom down` が managed session と一緒に片付けます。
+
+人間向け CLI:
+
+```bash
+agentcom user inbox
+agentcom user pending
+agentcom user reply plan '{"text":"承認します"}'
+```
+
+MCP では次のツールを使います:
+
+```text
+send_to_user(from="plan", text="進めますか？", topic="approval")
+get_user_messages(agent="plan", unread_only=true)
+```
 
 ## アーキテクチャ
 
