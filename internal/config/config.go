@@ -35,6 +35,8 @@ type Config struct {
 
 	// SocketsPath is the directory where agent sockets are stored.
 	SocketsPath string
+
+	Runtime RuntimeConfig
 }
 
 // Load resolves the agentcom configuration from environment and defaults.
@@ -44,11 +46,16 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("config.Load: %w", err)
 	}
+	runtimeCfg, err := LoadRuntime()
+	if err != nil {
+		return nil, fmt.Errorf("config.Load: %w", err)
+	}
 
 	return &Config{
 		HomeDir:     homeDir,
 		DBPath:      filepath.Join(homeDir, DBFileName),
 		SocketsPath: filepath.Join(homeDir, SocketsDir),
+		Runtime:     runtimeCfg,
 	}, nil
 }
 
