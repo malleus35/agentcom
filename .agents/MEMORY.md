@@ -4,15 +4,18 @@
 
 ## 현재 상태
 
-- **Phase**: P12 user-endpoint 구현/검증/문서 반영 완료
-- **마지막 작업**: P12 human-in-the-loop user endpoint 구현, 수동 QA, 문서 반영, 원자 커밋 완료
-- **현재 브랜치**: `feature/P12-user-endpoint`
+- **Phase**: PH10 priority-review-policy 구현 시작
+- **마지막 작업**: PH10 PRD 작성 완료, 아키텍처 결정 완료, feature 브랜치 생성
+- **현재 브랜치**: `feature/PH10-priority-review-policy` (from `feature/P12-user-endpoint`)
 - **현재 버전**: v0.1.7이 최신 공개 릴리스, 다음 릴리스 버전은 아직 미확정
 - **P10 상태**: 구현/문서/테스트 완료, 관련 변경은 현재 브랜치에 포함됨
 - **P11 상태**: 구현 완료, 테스트/수동 QA/README 반영 완료, develop 머지 및 release 대기
-- **계획 문서 상태**: `AGENTCOM_IMPROVEMENT_PROPOSAL.md` 기반 후속 개선안 분석 완료, PH1 구현 완료, PH2~PH4 계획 유지
-- **다음 작업**: develop 머지 또는 PR 생성, 이후 release/version 결정
-- **워킹트리**: P12 본 구현 커밋 완료, README 다국어/MEMORY 추가 반영 진행 중
+- **P12 상태**: 구현/검증/문서 반영 완료 (user endpoint, pseudo-agent, MCP tools)
+- **계획 문서 상태**: PH10 PRD 작성 완료 (`.agents/plans/PH10-priority-review-policy.md`), 6 Phase / 15 Tasks / ~48 Subtasks / ~14.75h
+- **다음 작업**: PH10 Phase A 구현 시작 (priority validation 강제)
+- **후속 계획**: `.agents/plans/NEXT-PHASE-PLAN.md` — PH5~PH9 (26 tasks, 56.5h 추정, CLI-first 원칙으로 재검토 필요)
+- **아키텍처 결정 문서**: `.agents/plans/PH10-architectural-decisions.md` — review_chain(거부), MCP(CLI-first), agent-review(지원)
+- **PH10 PRD**: `.agents/plans/PH10-priority-review-policy.md` — priority enforcement + review policy (15 tasks, ~14.75h)
 
 ## 완료된 태스크
 
@@ -254,6 +257,10 @@
 | 2026-03-15 | `up`은 .agentcom.json의 template.active를 읽고, template.json에서 역할 목록을 로드하여 subprocess supervisor로 일괄 register | register가 블로킹이므로 supervisor가 자식 프로세스로 각 register를 fork하는 구조가 자연스러움 |
 | 2026-03-15 | 런타임 상태는 .agentcom/run/up.json에 PID/socket/role 매핑으로 기록 | SQLite는 진실의 원천이지만 프로세스 종료는 PID 없이 정확히 못 하므로 별도 런타임 파일 필요 |
 | 2026-03-16 | template scaffold skill 생성 범위는 selected agents가 있으면 그 집합을 우선하고, 없을 때만 core 4-agent fallback을 사용 | wizard/batch에서 사용자가 고른 agent와 실제 생성 산출물을 일치시키면서 기존 `--template` 단독 실행의 기본 동작은 유지하기 위해 |
+| 2026-03-17 | `review_chain` 태스크 레벨 컬럼 거부 | 어떤 프로덕션 시스템도 review_chain을 태스크 테이블 컬럼으로 두지 않음. 워크플로우 그래프/별도 테이블이 올바른 추상화 |
+| 2026-03-17 | MCP를 "CLI-first, MCP는 선택적 어댑터"로 포지셔닝 변경 | MCP 9개 도구 모두 CLI 대응 존재, 고유 기능 0, 토큰 비용 4-32x, 셸 없는 런타임에서만 필요 |
+| 2026-03-17 | `reviewer` 필드는 에이전트 ID + "user" 모두 지원 (자유 문자열) | 추가 비용 0, agentcom "에이전트 유형 자유" 원칙 부합, 멀티에이전트 프레임워크 패턴 지원 |
+| 2026-03-17 | 에이전트 리뷰 자동화 로직(retry, cascading, guardrail)은 agentcom 범위 밖 | agentcom은 통신 인프라이지 실행 엔진이 아님. 리뷰 라우팅과 상태 전환 제어만 담당 |
 
 ## 발견된 이슈
 
@@ -302,5 +309,16 @@
 - [x] supervisor user context 조사 완료 (supervisor는 프로세스 매니저, 메시지 수신자 아님)
 - [x] P12 user-endpoint plan 문서 작성 완료 (Metis + Oracle 교차검증)
 - [x] `feature/P12-user-endpoint` 브랜치 생성 완료
-- [ ] **P12 user-endpoint 구현**: 현재 작업 브랜치 `feature/P12-user-endpoint`에서 TDD 기반 구현 시작
-- 현재 후속 우선순위: P12 구현 → 릴리스 버전 확정 → develop 머지 → 태그/릴리스 → Scoop/Homebrew 반영 검증
+- [x] **P12 user-endpoint 구현 완료**: TDD 기반 구현, 수동 QA, 문서 반영, 원자 커밋 완료
+- [x] **NEXT-PHASE-PLAN.md 작성 완료**: PH5(MCP 스펙), PH6(안정성), PH7(설정/옵저버빌리티), PH8(MCP 확장), PH9(테스트) — 총 26 태스크, 56.5h 추정
+- [x] **PH10 아키텍처 결정 문서 완료**: `.agents/plans/PH10-architectural-decisions.md` — review_chain(거부), MCP(CLI-first), agent-review(지원)
+- [x] **PH10 PRD 작성 완료**: `.agents/plans/PH10-priority-review-policy.md` — 6 Phase, 15 Tasks, ~48 Subtasks, ~14.75h
+- [x] **AGENTS.md line 166 변경 완료**: "MCP 퍼스트" → "CLI-first, MCP는 셸 없는 런타임용 선택적 어댑터"
+- [ ] **PH10 구현**: `feature/PH10-priority-review-policy` 브랜치에서 PRD 순서대로 구현
+  - [ ] Phase A: Priority Validation (model.go, manager.go, task.go CLI, handler.go MCP)
+  - [ ] Phase B: Reviewer Field + State Machine (migrations.go, db/task.go, model.go, manager.go)
+  - [ ] Phase C: Review Policy — Template Integration (policy.go new, agents.go, template_store.go, task.go CLI, handler.go MCP)
+  - [ ] Phase D: MCP update_task tool (tools.go, handler.go)
+  - [ ] Phase E: Test coverage (manager_test.go, model_test.go, db/task_test.go, e2e_test.go)
+  - [ ] Phase F: Documentation (README×4, AGENTS.md, MEMORY.md)
+- [ ] **TODO: PH5~PH8 MCP 확장 계획의 범위를 CLI-first 원칙에 맞게 재검토**
