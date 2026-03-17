@@ -323,6 +323,7 @@ func runAgentcomJSON(t *testing.T, binPath, homeDir, dir string, args ...string)
 	if err != nil {
 		t.Fatalf("%s failed: %v\n%s", fmt.Sprintf("%v", args), err, string(output))
 	}
+	output = extractJSONPayload(t, output, args)
 
 	var parsed map[string]any
 	if err := json.Unmarshal(output, &parsed); err != nil {
@@ -345,6 +346,7 @@ func runAgentcomJSONArray(t *testing.T, binPath, homeDir, dir string, args ...st
 	if err != nil {
 		t.Fatalf("%s failed: %v\n%s", fmt.Sprintf("%v", args), err, string(output))
 	}
+	output = extractJSONPayload(t, output, args)
 
 	var parsed []map[string]any
 	if err := json.Unmarshal(output, &parsed); err != nil {
@@ -352,6 +354,25 @@ func runAgentcomJSONArray(t *testing.T, binPath, homeDir, dir string, args ...st
 	}
 
 	return parsed
+}
+
+func extractJSONPayload(t *testing.T, output []byte, args []string) []byte {
+	t.Helper()
+	trimmed := bytes.TrimSpace(output)
+	if json.Valid(trimmed) {
+		return trimmed
+	}
+	for i := len(trimmed) - 1; i >= 0; i-- {
+		if trimmed[i] != '{' && trimmed[i] != '[' {
+			continue
+		}
+		candidate := bytes.TrimSpace(trimmed[i:])
+		if json.Valid(candidate) {
+			return candidate
+		}
+	}
+	t.Fatalf("no JSON payload found for %v output=%s", args, string(output))
+	return nil
 }
 
 func intFromMap(t *testing.T, m map[string]any, key string) int {

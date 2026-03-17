@@ -89,7 +89,7 @@ func (r *Router) Send(
 	}
 
 	if target.SocketPath == "" {
-		slog.Debug("message routed to sqlite inbox (missing socket)", "to", target.ID, "topic", topic)
+		slog.Info("message routed to sqlite inbox", "to", target.ID, "reason", "missing_socket", "topic", topic)
 		if err := r.db.InsertMessage(ctx, stored); err != nil {
 			return nil, fmt.Errorf("message.Router.Send: insert fallback message: %w", err)
 		}
@@ -97,7 +97,7 @@ func (r *Router) Send(
 	}
 
 	if err := r.transport.Send(ctx, target.SocketPath, data); err != nil {
-		slog.Debug("transport send failed; routing to sqlite inbox", "to", target.ID, "socket", target.SocketPath, "error", err)
+		slog.Warn("transport send failed; routing to sqlite inbox", "to", target.ID, "socket", target.SocketPath, "error", err)
 		if insertErr := r.db.InsertMessage(ctx, stored); insertErr != nil {
 			return nil, fmt.Errorf("message.Router.Send: insert fallback message: %w", insertErr)
 		}
@@ -145,7 +145,7 @@ func (r *Router) Broadcast(
 
 		env, sendErr := r.Send(ctx, from, agent.ID, "broadcast", topic, payload)
 		if sendErr != nil {
-			slog.Debug("broadcast send failed", "from", from, "to", agent.ID, "topic", topic, "error", sendErr)
+			slog.Warn("broadcast send failed", "from", from, "to", agent.ID, "topic", topic, "error", sendErr)
 			continue
 		}
 
