@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag to publish (for example, v0.3.0)'
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -11,17 +17,23 @@ permissions:
 jobs:
   create-release:
     runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ github.event.inputs.release_tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" \
-            --repo "${GITHUB_REPOSITORY}" \
-            --title "${GITHUB_REF_NAME}" \
-            --generate-notes \
-            --verify-tag
+          if gh release view "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "release ${RELEASE_TAG} already exists"
+          else
+            gh release create "${RELEASE_TAG}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "${RELEASE_TAG}" \
+              --generate-notes \
+              --verify-tag
+          fi
 
   build-assets:
     needs: create-release
@@ -84,12 +96,15 @@ jobs:
             cxx: aarch64-w64-mingw32-g++
             cgo_cflags: -D_WIN32_WINNT=0x0A00
     runs-on: ${{ matrix.runner }}
+    env:
+      RELEASE_TAG: ${{ github.event.inputs.release_tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version-file: go.mod
+          cache: false
 
       - name: Setup MinGW (Windows)
         if: runner.os == 'Windows'
@@ -134,7 +149,7 @@ jobs:
         run: |
           mkdir -p dist
           go build \
-            -ldflags "-X github.com/malleus35/agentcom/internal/cli.Version=${GITHUB_REF_NAME#v} -X github.com/malleus35/agentcom/internal/cli.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ) -X github.com/malleus35/agentcom/internal/cli.GoVersion=$(go env GOVERSION)" \
+            -ldflags "-X github.com/malleus35/agentcom/internal/cli.Version=${RELEASE_TAG#v} -X github.com/malleus35/agentcom/internal/cli.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ) -X github.com/malleus35/agentcom/internal/cli.GoVersion=$(go env GOVERSION)" \
             -o "dist/${{ matrix.output }}" \
             ./cmd/agentcom
 
@@ -142,7 +157,7 @@ jobs:
         if: matrix.archive == 'tar.gz'
         shell: bash
         run: |
-          archive="agentcom_${GITHUB_REF_NAME#v}_${{ matrix.goos }}_${{ matrix.goarch }}.tar.gz"
+          archive="agentcom_${RELEASE_TAG#v}_${{ matrix.goos }}_${{ matrix.goarch }}.tar.gz"
           tar -C dist -czf "$archive" "${{ matrix.binary }}"
           shasum -a 256 "$archive" > "$archive.sha256"
 
@@ -150,7 +165,7 @@ jobs:
         if: matrix.archive == 'zip' && runner.os == 'Windows'
         shell: powershell
         run: |
-          $archive = "agentcom_$($env:GITHUB_REF_NAME.Substring(1))_${{ matrix.goos }}_${{ matrix.goarch }}.zip"
+          $archive = "agentcom_$($env:RELEASE_TAG.Substring(1))_${{ matrix.goos }}_${{ matrix.goarch }}.zip"
           Compress-Archive -Path "dist/${{ matrix.binary }}" -DestinationPath $archive
           $hash = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLower()
           "$hash  $archive" | Out-File -Encoding ascii "$archive.sha256"
@@ -159,7 +174,7 @@ jobs:
         if: matrix.archive == 'zip' && runner.os != 'Windows'
         shell: bash
         run: |
-          archive="agentcom_${GITHUB_REF_NAME#v}_${{ matrix.goos }}_${{ matrix.goarch }}.zip"
+          archive="agentcom_${RELEASE_TAG#v}_${{ matrix.goos }}_${{ matrix.goarch }}.zip"
           (cd dist && zip -q "../$archive" "${{ matrix.binary }}")
           shasum -a 256 "$archive" > "$archive.sha256"
 
@@ -168,22 +183,25 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          asset="agentcom_${GITHUB_REF_NAME#v}_${{ matrix.goos }}_${{ matrix.goarch }}.${{ matrix.archive }}"
-          gh release upload "${GITHUB_REF_NAME}" "$asset" "$asset.sha256" --repo "${GITHUB_REPOSITORY}" --clobber
+          asset="agentcom_${RELEASE_TAG#v}_${{ matrix.goos }}_${{ matrix.goarch }}.${{ matrix.archive }}"
+          gh release upload "${RELEASE_TAG}" "$asset" "$asset.sha256" --repo "${GITHUB_REPOSITORY}" --clobber
 
   update-homebrew-tap:
     needs: build-assets
-    if: ${{ secrets.HOMEBREW_TAP_TOKEN != '' }}
     runs-on: ubuntu-latest
     steps:
       - name: Update Homebrew tap formula
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ github.event.inputs.release_tag || github.ref_name }}
           SOURCE_REPO: ${{ github.repository }}
           TAP_REPO: malleus35/homebrew-tap
         shell: bash
         run: |
+          if [ -z "${GH_TOKEN}" ]; then
+            echo "HOMEBREW_TAP_TOKEN is not configured; skipping Homebrew tap update"
+            exit 0
+          fi
           python3 - <<'PY'
           import base64
           import json

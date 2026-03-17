@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/malleus35/agentcom/internal/config"
@@ -98,6 +99,27 @@ func TestTaskUpdateAndApproveCommands(t *testing.T) {
 	}
 	if approved.Status != task.StatusCompleted || approved.Result != "approved" {
 		t.Fatalf("approved task = %+v", approved)
+	}
+}
+
+func TestTaskCreateUsesStructuredErrorForUnknownAssignee(t *testing.T) {
+	projectDir, cleanup := setupTaskCommandContext(t, nil)
+	defer cleanup()
+	withTaskCommandDir(t, projectDir)
+
+	cmd := newTaskCreateCmd()
+	cmd.SetOut(bytes.NewBuffer(nil))
+	cmd.SetArgs([]string{"task with missing assignee", "--assign", "missing-agent"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("cmd.Execute() error = nil, want structured error")
+	}
+	message := err.Error()
+	for _, want := range []string{"Error:", "Reason:", "Hint:"} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("error %q missing %q", message, want)
+		}
 	}
 }
 

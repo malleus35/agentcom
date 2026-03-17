@@ -20,6 +20,7 @@ const (
 	errInvalidRequest = -32600
 	errInvalidParams  = -32602
 	errInternalError  = -32603
+	errToolExecution  = -32000
 )
 
 // ToolHandler handles one MCP tool call.
@@ -180,11 +181,7 @@ func (s *Server) handleToolCall(ctx context.Context, req *Request) *Response {
 
 	handler, ok := s.tools[params.Name]
 	if !ok {
-		return &Response{
-			JSONRPC: jsonRPCVersion,
-			ID:      req.ID,
-			Result:  newToolResult(fmt.Sprintf("unknown tool: %s", params.Name), true),
-		}
+		return newErrorResponse(req.ID, errMethodNotFound, fmt.Sprintf("unknown tool: %s", params.Name))
 	}
 
 	result, err := handler(ctx, params.Arguments)
@@ -194,11 +191,7 @@ func (s *Server) handleToolCall(ctx context.Context, req *Request) *Response {
 			return newErrorResponse(req.ID, errInvalidParams, invalidParamsErr.Error())
 		}
 		slog.Debug("mcp tool call failed", "tool", params.Name, "error", err)
-		return &Response{
-			JSONRPC: jsonRPCVersion,
-			ID:      req.ID,
-			Result:  newToolResult(err.Error(), true),
-		}
+		return newErrorResponse(req.ID, errToolExecution, err.Error())
 	}
 
 	b, err := json.Marshal(result)

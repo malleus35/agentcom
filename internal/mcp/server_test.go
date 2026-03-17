@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/malleus35/agentcom/internal/config"
 	"github.com/malleus35/agentcom/internal/db"
+	"github.com/malleus35/agentcom/internal/message"
 )
 
 func setupMCPTestServer(t *testing.T) (*Server, *db.DB) {
@@ -125,6 +127,12 @@ func TestServerRunJSONRPCRoundTrip(t *testing.T) {
 	hasUpdateTask := false
 	hasApproveTask := false
 	hasRejectTask := false
+	hasInbox := false
+	hasHealth := false
+	hasDeregister := false
+	hasDoctor := false
+	hasVersion := false
+	hasUserReply := false
 	for _, tool := range tools {
 		toolMap, ok := tool.(map[string]interface{})
 		if !ok {
@@ -141,10 +149,22 @@ func TestServerRunJSONRPCRoundTrip(t *testing.T) {
 			hasApproveTask = true
 		case "reject_task":
 			hasRejectTask = true
+		case "inbox":
+			hasInbox = true
+		case "health":
+			hasHealth = true
+		case "deregister":
+			hasDeregister = true
+		case "doctor":
+			hasDoctor = true
+		case "version":
+			hasVersion = true
+		case "user_reply":
+			hasUserReply = true
 		}
 	}
-	if !hasSendToUser || !hasGetUserMessages || !hasUpdateTask || !hasApproveTask || !hasRejectTask {
-		t.Fatalf("tools/list missing expected tools: send_to_user=%v get_user_messages=%v update_task=%v approve_task=%v reject_task=%v", hasSendToUser, hasGetUserMessages, hasUpdateTask, hasApproveTask, hasRejectTask)
+	if !hasSendToUser || !hasGetUserMessages || !hasUpdateTask || !hasApproveTask || !hasRejectTask || !hasInbox || !hasHealth || !hasDeregister || !hasDoctor || !hasVersion || !hasUserReply {
+		t.Fatalf("tools/list missing expected tools: send_to_user=%v get_user_messages=%v update_task=%v approve_task=%v reject_task=%v inbox=%v health=%v deregister=%v doctor=%v version=%v user_reply=%v", hasSendToUser, hasGetUserMessages, hasUpdateTask, hasApproveTask, hasRejectTask, hasInbox, hasHealth, hasDeregister, hasDoctor, hasVersion, hasUserReply)
 	}
 
 	if err := enc.Encode(Request{
@@ -201,49 +221,267 @@ func TestServerRunJSONRPCRoundTrip(t *testing.T) {
 
 func TestCreateTaskInvalidPriorityReturnsJSONRPCError(t *testing.T) {
 	server, _ := setupMCPTestServer(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	inReader, inWriter := io.Pipe()
-	outReader, outWriter := io.Pipe()
-	runErr := make(chan error, 1)
-	go func() {
-		runErr <- server.Run(ctx, inReader, outWriter)
-	}()
-
-	enc := json.NewEncoder(inWriter)
-	dec := json.NewDecoder(outReader)
-	if err := enc.Encode(Request{JSONRPC: jsonRPCVersion, ID: 1, Method: "initialize", Params: json.RawMessage(`{}`)}); err != nil {
-		t.Fatalf("encode initialize error = %v", err)
-	}
-	var resp Response
-	if err := dec.Decode(&resp); err != nil {
-		t.Fatalf("decode initialize response error = %v", err)
-	}
-	if err := enc.Encode(Request{JSONRPC: jsonRPCVersion, Method: "notifications/initialized", Params: json.RawMessage(`{}`)}); err != nil {
-		t.Fatalf("encode initialized notification error = %v", err)
-	}
-	if err := enc.Encode(Request{JSONRPC: jsonRPCVersion, ID: 2, Method: "tools/call", Params: json.RawMessage(`{
+	responses := runMCPRoundTripRequests(t, server,
+		Request{JSONRPC: jsonRPCVersion, ID: 1, Method: "initialize", Params: json.RawMessage(`{}`)},
+		Request{JSONRPC: jsonRPCVersion, Method: "notifications/initialized", Params: json.RawMessage(`{}`)},
+		Request{JSONRPC: jsonRPCVersion, ID: 2, Method: "tools/call", Params: json.RawMessage(`{
 			"name":"create_task",
 			"arguments":{"title":"bad task","priority":"urgent"}
-		}`)}); err != nil {
-		t.Fatalf("encode tools/call error = %v", err)
-	}
-	if err := dec.Decode(&resp); err != nil {
-		t.Fatalf("decode invalid priority response error = %v", err)
-	}
+		}`)},
+	)
+	resp := decodeResponseMap(t, responses[1])
 	if resp.Error == nil {
 		t.Fatal("resp.Error = nil, want invalid params error")
 	}
 	if resp.Error.Code != errInvalidParams {
 		t.Fatalf("resp.Error.Code = %d, want %d", resp.Error.Code, errInvalidParams)
 	}
+	if _, ok := responses[1]["result"]; ok {
+		t.Fatal("invalid priority response unexpectedly included result")
+	}
+	if resp.Error.Message == "" {
+		t.Fatal("resp.Error.Message = empty, want invalid params detail")
+	}
+}
 
+func TestMCPHandlerInvalidParamsMatrix(t *testing.T) {
+	tests := []struct {
+		name         string
+		setup        func(t *testing.T, database *db.DB)
+		request      string
+		wantCode     int
+		wantMessage  string
+		messageMatch string
+	}{
+		{
+			name:     "list_agents rejects wrong alive_only type",
+			request:  `{"name":"list_agents","arguments":{"alive_only":"yes"}}`,
+			wantCode: errInvalidParams,
+		},
+		{
+			name:        "send_message rejects missing from",
+			request:     `{"name":"send_message","arguments":{"from":"","to":"receiver"}}`,
+			wantCode:    errInvalidParams,
+			wantMessage: "mcp.handleSendMessage: from and to are required",
+		},
+		{
+			name: "send_message rejects unknown recipient",
+			setup: func(t *testing.T, database *db.DB) {
+				t.Helper()
+				ctx := context.Background()
+				sender := &db.Agent{Name: "sender", Type: "worker", Project: "project-a", Status: "alive"}
+				if err := database.InsertAgent(ctx, sender); err != nil {
+					t.Fatalf("InsertAgent(sender) error = %v", err)
+				}
+			},
+			request:      `{"name":"send_message","arguments":{"from":"sender","to":"missing"}}`,
+			wantCode:     errInvalidParams,
+			messageMatch: "mcp.handleSendMessage:",
+		},
+		{
+			name:        "send_to_user rejects missing text",
+			request:     `{"name":"send_to_user","arguments":{"from":"plan","text":""}}`,
+			wantCode:    errInvalidParams,
+			wantMessage: "mcp.handleSendToUser: from and text are required",
+		},
+		{
+			name: "get_user_messages rejects unknown agent filter",
+			setup: func(t *testing.T, database *db.DB) {
+				t.Helper()
+				ctx := context.Background()
+				user := &db.Agent{Name: "user", Type: "human", Project: "project-a", Status: "alive"}
+				if err := database.InsertAgent(ctx, user); err != nil {
+					t.Fatalf("InsertAgent(user) error = %v", err)
+				}
+			},
+			request:      `{"name":"get_user_messages","arguments":{"agent":"missing"}}`,
+			wantCode:     errInvalidParams,
+			messageMatch: "mcp.handleGetUserMessages:",
+		},
+		{
+			name:        "broadcast rejects missing from",
+			request:     `{"name":"broadcast","arguments":{"from":""}}`,
+			wantCode:    errInvalidParams,
+			wantMessage: "mcp.handleBroadcast: from is required",
+		},
+		{
+			name: "delegate_task rejects unknown target",
+			setup: func(t *testing.T, database *db.DB) {
+				t.Helper()
+				ctx := context.Background()
+				creator := &db.Agent{Name: "creator", Type: "worker", Project: "project-a", Status: "alive"}
+				if err := database.InsertAgent(ctx, creator); err != nil {
+					t.Fatalf("InsertAgent(creator) error = %v", err)
+				}
+				created := &db.Task{Title: "task", Status: "pending"}
+				if err := database.InsertTask(ctx, created); err != nil {
+					t.Fatalf("InsertTask() error = %v", err)
+				}
+			},
+			request:      `{"name":"delegate_task","arguments":{"task_id":"tsk_test","to":"missing"}}`,
+			wantCode:     errInvalidParams,
+			messageMatch: "mcp.handleDelegateTask:",
+		},
+		{
+			name:         "list_tasks rejects invalid status filter",
+			request:      `{"name":"list_tasks","arguments":{"status":"paused"}}`,
+			wantCode:     errInvalidParams,
+			messageMatch: "mcp.handleListTasks:",
+		},
+		{
+			name:     "get_status rejects wrong project type",
+			request:  `{"name":"get_status","arguments":{"project":123}}`,
+			wantCode: errInvalidParams,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server, database := setupMCPTestServer(t)
+			if tt.setup != nil {
+				tt.setup(t, database)
+			}
+
+			responses := runMCPRoundTripRequests(t, server,
+				Request{JSONRPC: jsonRPCVersion, ID: 1, Method: "initialize", Params: json.RawMessage(`{}`)},
+				Request{JSONRPC: jsonRPCVersion, Method: "notifications/initialized", Params: json.RawMessage(`{}`)},
+				Request{JSONRPC: jsonRPCVersion, ID: 2, Method: "tools/call", Params: json.RawMessage(tt.request)},
+			)
+
+			resp := decodeResponseMap(t, responses[1])
+			if resp.Error == nil {
+				t.Fatal("resp.Error = nil, want JSON-RPC error")
+			}
+			if resp.Error.Code != tt.wantCode {
+				t.Fatalf("resp.Error.Code = %d, want %d", resp.Error.Code, tt.wantCode)
+			}
+			if tt.wantMessage != "" && resp.Error.Message != tt.wantMessage {
+				t.Fatalf("resp.Error.Message = %q, want %q", resp.Error.Message, tt.wantMessage)
+			}
+			if tt.messageMatch != "" && !strings.Contains(resp.Error.Message, tt.messageMatch) {
+				t.Fatalf("resp.Error.Message = %q, want substring %q", resp.Error.Message, tt.messageMatch)
+			}
+			if _, ok := responses[1]["result"]; ok {
+				t.Fatal("error response unexpectedly included result")
+			}
+		})
+	}
+}
+
+func TestMCPRuntimeErrorBoundaryMatrix(t *testing.T) {
+	server, database := setupMCPTestServer(t)
+	ctx := context.Background()
+
+	plan := &db.Agent{Name: "plan", Type: "worker", Project: "project-a", Status: "alive"}
+	if err := database.InsertAgent(ctx, plan); err != nil {
+		t.Fatalf("InsertAgent(plan) error = %v", err)
+	}
+
+	responses := runMCPRoundTripRequests(t, server,
+		Request{JSONRPC: jsonRPCVersion, ID: 1, Method: "initialize", Params: json.RawMessage(`{}`)},
+		Request{JSONRPC: jsonRPCVersion, Method: "notifications/initialized", Params: json.RawMessage(`{}`)},
+		Request{JSONRPC: jsonRPCVersion, ID: 2, Method: "tools/call", Params: json.RawMessage(`{"name":"send_to_user","arguments":{"from":"plan","text":"Proceed?"}}`)},
+	)
+
+	resp := decodeResponseMap(t, responses[1])
+	if resp.Error == nil {
+		t.Fatal("resp.Error = nil, want runtime error")
+	}
+	if resp.Error.Code != errToolExecution {
+		t.Fatalf("resp.Error.Code = %d, want %d", resp.Error.Code, errToolExecution)
+	}
+	if resp.Error.Message != "mcp.handleSendToUser: no user agent registered; start a session with `agentcom up` first" {
+		t.Fatalf("resp.Error.Message = %q", resp.Error.Message)
+	}
+	if _, ok := responses[1]["result"]; ok {
+		t.Fatal("runtime error response unexpectedly included result")
+	}
+}
+
+func TestUnknownToolReturnsJSONRPCMethodNotFound(t *testing.T) {
+	server, _ := setupMCPTestServer(t)
+
+	responses := runMCPRoundTripRequests(t, server,
+		Request{JSONRPC: jsonRPCVersion, ID: 1, Method: "initialize", Params: json.RawMessage(`{}`)},
+		Request{JSONRPC: jsonRPCVersion, Method: "notifications/initialized", Params: json.RawMessage(`{}`)},
+		Request{JSONRPC: jsonRPCVersion, ID: 2, Method: "tools/call", Params: json.RawMessage(`{"name":"no_such_tool","arguments":{}}`)},
+	)
+
+	resp := decodeResponseMap(t, responses[1])
+	if resp.Error == nil {
+		t.Fatal("resp.Error = nil, want method not found error")
+	}
+	if resp.Error.Code != errMethodNotFound {
+		t.Fatalf("resp.Error.Code = %d, want %d", resp.Error.Code, errMethodNotFound)
+	}
+	if resp.Error.Message != "unknown tool: no_such_tool" {
+		t.Fatalf("resp.Error.Message = %q, want %q", resp.Error.Message, "unknown tool: no_such_tool")
+	}
+	if _, ok := responses[1]["result"]; ok {
+		t.Fatal("unknown tool response unexpectedly included result")
+	}
+}
+
+func TestToolRuntimeErrorReturnsJSONRPCError(t *testing.T) {
+	server, _ := setupMCPTestServer(t)
+	server.tools["runtime_failure"] = func(context.Context, json.RawMessage) (interface{}, error) {
+		return nil, errors.New("boom")
+	}
+
+	responses := runMCPRoundTripRequests(t, server,
+		Request{JSONRPC: jsonRPCVersion, ID: 1, Method: "initialize", Params: json.RawMessage(`{}`)},
+		Request{JSONRPC: jsonRPCVersion, Method: "notifications/initialized", Params: json.RawMessage(`{}`)},
+		Request{JSONRPC: jsonRPCVersion, ID: 2, Method: "tools/call", Params: json.RawMessage(`{"name":"runtime_failure","arguments":{}}`)},
+	)
+
+	resp := decodeResponseMap(t, responses[1])
+	if resp.Error == nil {
+		t.Fatal("resp.Error = nil, want tool execution error")
+	}
+	if resp.Error.Code != errToolExecution {
+		t.Fatalf("resp.Error.Code = %d, want %d", resp.Error.Code, errToolExecution)
+	}
+	if resp.Error.Message != "boom" {
+		t.Fatalf("resp.Error.Message = %q, want boom", resp.Error.Message)
+	}
+	if _, ok := responses[1]["result"]; ok {
+		t.Fatal("runtime failure response unexpectedly included result")
+	}
+}
+
+func TestEmptyToolParamsReturnInvalidParams(t *testing.T) {
+	server, _ := setupMCPTestServer(t)
+	responses := runMCPRoundTripRequests(t, server,
+		Request{JSONRPC: jsonRPCVersion, ID: 1, Method: "initialize", Params: json.RawMessage(`{}`)},
+		Request{JSONRPC: jsonRPCVersion, Method: "notifications/initialized", Params: json.RawMessage(`{}`)},
+		Request{JSONRPC: jsonRPCVersion, ID: 2, Method: "tools/call", Params: json.RawMessage(`{"name":"inbox"}`)},
+	)
+	resp := decodeResponseMap(t, responses[1])
+	if resp.Error == nil || resp.Error.Code != errInvalidParams {
+		t.Fatalf("resp.Error = %+v, want invalid params", resp.Error)
+	}
+}
+
+func TestMalformedJSONRPCRequestReturnsDecodeError(t *testing.T) {
+	server, _ := setupMCPTestServer(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	inReader, inWriter := io.Pipe()
+	_, outWriter := io.Pipe()
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- server.Run(ctx, inReader, outWriter)
+	}()
+	if _, err := inWriter.Write([]byte("{bad\n")); err != nil {
+		t.Fatalf("Write(malformed) error = %v", err)
+	}
 	if err := inWriter.Close(); err != nil {
 		t.Fatalf("inWriter.Close() error = %v", err)
 	}
-	if err := <-runErr; err != nil {
-		t.Fatalf("Server.Run() error = %v", err)
+	err := <-errCh
+	if err == nil || !strings.Contains(err.Error(), "decode request") {
+		t.Fatalf("Server.Run() error = %v, want decode request error", err)
 	}
 }
 
@@ -393,6 +631,52 @@ func TestGetUserMessages(t *testing.T) {
 	}
 }
 
+func TestInboxAndUserReplyTools(t *testing.T) {
+	server, database := setupMCPTestServer(t)
+	ctx := context.Background()
+
+	plan := &db.Agent{Name: "plan", Type: "worker", Project: "project-a", Status: "alive"}
+	user := &db.Agent{Name: "user", Type: "human", Project: "project-a", Status: "alive"}
+	review := &db.Agent{Name: "review", Type: "worker", Project: "project-a", Status: "alive"}
+	for _, agent := range []*db.Agent{plan, user, review} {
+		if err := database.InsertAgent(ctx, agent); err != nil {
+			t.Fatalf("InsertAgent(%s) error = %v", agent.Name, err)
+		}
+	}
+	seed := &db.Message{FromAgent: plan.ID, ToAgent: review.ID, Type: "notification", Topic: "hello", Payload: `{"ok":true}`}
+	if err := database.InsertMessage(ctx, seed); err != nil {
+		t.Fatalf("InsertMessage(seed) error = %v", err)
+	}
+
+	inboxResult, err := server.handleInbox(ctx, json.RawMessage(`{"agent":"review","unread":true,"from":"plan"}`))
+	if err != nil {
+		t.Fatalf("handleInbox() error = %v", err)
+	}
+	inboxMap := inboxResult.(map[string]interface{})
+	if inboxMap["count"] != 1 {
+		t.Fatalf("count = %v, want 1", inboxMap["count"])
+	}
+
+	replyResult, err := server.handleUserReply(ctx, json.RawMessage(`{"to":"plan","text":"Looks good"}`))
+	if err != nil {
+		t.Fatalf("handleUserReply() error = %v", err)
+	}
+	env, ok := replyResult.(*message.Envelope)
+	if !ok {
+		t.Fatalf("handleUserReply() result type = %T, want *message.Envelope", replyResult)
+	}
+	if env.Type != "response" || env.To != plan.ID {
+		t.Fatalf("reply envelope = %+v", env)
+	}
+	planMessages, err := database.ListMessagesForAgent(ctx, plan.ID)
+	if err != nil {
+		t.Fatalf("ListMessagesForAgent(plan) error = %v", err)
+	}
+	if len(planMessages) == 0 {
+		t.Fatal("plan inbox is empty after user reply")
+	}
+}
+
 func TestSendToUserFailsWithoutUserAgent(t *testing.T) {
 	server, database := setupMCPTestServer(t)
 	ctx := context.Background()
@@ -408,6 +692,62 @@ func TestSendToUserFailsWithoutUserAgent(t *testing.T) {
 	}
 	if err.Error() != "mcp.handleSendToUser: no user agent registered; start a session with `agentcom up` first" {
 		t.Fatalf("error = %q", err.Error())
+	}
+}
+
+func TestHealthVersionDoctorAndDeregisterTools(t *testing.T) {
+	server, database := setupMCPTestServer(t)
+	ctx := context.Background()
+
+	if err := os.MkdirAll(server.cfg.SocketsPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll(sockets) error = %v", err)
+	}
+	socketPath := filepath.Join(server.cfg.SocketsPath, "alpha.sock")
+	if err := os.WriteFile(socketPath, []byte("socket"), 0o644); err != nil {
+		t.Fatalf("WriteFile(socket) error = %v", err)
+	}
+	agt := &db.Agent{Name: "alpha", Type: "worker", Project: "project-a", Status: "alive", PID: os.Getpid(), SocketPath: socketPath}
+	if err := database.InsertAgent(ctx, agt); err != nil {
+		t.Fatalf("InsertAgent(alpha) error = %v", err)
+	}
+
+	healthResult, err := server.handleHealth(ctx, json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("handleHealth() error = %v", err)
+	}
+	healthMap := healthResult.(map[string]interface{})
+	if healthMap["count"] != 1 {
+		t.Fatalf("health count = %v, want 1", healthMap["count"])
+	}
+
+	versionResult, err := server.handleVersion(ctx, json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("handleVersion() error = %v", err)
+	}
+	versionMap := versionResult.(map[string]interface{})
+	if versionMap["os"] == "" || versionMap["arch"] == "" {
+		t.Fatalf("version result = %#v", versionMap)
+	}
+
+	doctorResult, err := server.handleDoctor(ctx, json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("handleDoctor() error = %v", err)
+	}
+	doctorMap := doctorResult.(map[string]interface{})
+	if doctorMap["count"] == 0 {
+		t.Fatalf("doctor result = %#v, want checks", doctorMap)
+	}
+
+	deregisterResult, err := server.handleDeregister(ctx, json.RawMessage(`{"name_or_id":"alpha"}`))
+	if err != nil {
+		t.Fatalf("handleDeregister() error = %v", err)
+	}
+	resultMap := deregisterResult.(map[string]interface{})
+	if resultMap["status"] != "deregistered" {
+		t.Fatalf("status = %v, want deregistered", resultMap["status"])
+	}
+	if _, err := database.FindAgentByID(ctx, agt.ID); !errors.Is(err, db.ErrAgentNotFound) {
+		t.Fatalf("FindAgentByID() error = %v, want %v", err, db.ErrAgentNotFound)
 	}
 }
 
@@ -504,4 +844,58 @@ func withMCPWorkingDir(t *testing.T, dir string) {
 			t.Fatalf("restore cwd: %v", err)
 		}
 	})
+}
+
+func runMCPRoundTripRequests(t *testing.T, server *Server, requests ...Request) []map[string]interface{} {
+	t.Helper()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	inReader, inWriter := io.Pipe()
+	outReader, outWriter := io.Pipe()
+	runErr := make(chan error, 1)
+	go func() {
+		runErr <- server.Run(ctx, inReader, outWriter)
+	}()
+
+	enc := json.NewEncoder(inWriter)
+	dec := json.NewDecoder(outReader)
+	responses := make([]map[string]interface{}, 0, len(requests))
+	for _, req := range requests {
+		if err := enc.Encode(req); err != nil {
+			t.Fatalf("encode %s error = %v", req.Method, err)
+		}
+		if req.ID == nil {
+			continue
+		}
+		var raw map[string]interface{}
+		if err := dec.Decode(&raw); err != nil {
+			t.Fatalf("decode %s response error = %v", req.Method, err)
+		}
+		responses = append(responses, raw)
+	}
+
+	if err := inWriter.Close(); err != nil {
+		t.Fatalf("inWriter.Close() error = %v", err)
+	}
+	if err := <-runErr; err != nil {
+		t.Fatalf("Server.Run() error = %v", err)
+	}
+
+	return responses
+}
+
+func decodeResponseMap(t *testing.T, raw map[string]interface{}) Response {
+	t.Helper()
+
+	b, err := json.Marshal(raw)
+	if err != nil {
+		t.Fatalf("json.Marshal(raw) error = %v", err)
+	}
+	var resp Response
+	if err := json.Unmarshal(b, &resp); err != nil {
+		t.Fatalf("json.Unmarshal(raw) error = %v", err)
+	}
+	return resp
 }

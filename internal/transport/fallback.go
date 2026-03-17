@@ -6,8 +6,11 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/malleus35/agentcom/internal/config"
 	"github.com/malleus35/agentcom/internal/db"
 )
+
+var defaultPollInterval = 5 * time.Second
 
 // Poller periodically checks the SQLite inbox for undelivered messages.
 type Poller struct {
@@ -22,7 +25,7 @@ func NewPoller(database *db.DB, agentID string, handler MessageHandler) *Poller 
 	return &Poller{
 		db:       database,
 		agentID:  agentID,
-		interval: 5 * time.Second,
+		interval: defaultPollInterval,
 		handler:  handler,
 	}
 }
@@ -60,4 +63,8 @@ func (p *Poller) Start(ctx context.Context) {
 			}
 		}
 	}()
+}
+
+func ApplyPollerRuntimeConfig(runtime config.RuntimeConfig) {
+	defaultPollInterval = runtime.PollInterval
 }

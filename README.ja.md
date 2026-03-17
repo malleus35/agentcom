@@ -485,6 +485,7 @@ agentcom task reject <task-id> --result "changes requested"
 - `--reviewer` は agent 名、agent ID、または `user` を受け付けます
 - active template に `review_policy` がある場合、reviewer は自動設定されることがあります
 - `--assign`, `--creator` は名前または ID を受け付けます
+- terminal 状態も `task update` で明示的に再オープンできます: `completed -> pending|cancelled`, `failed -> pending|cancelled`, `cancelled -> pending`
 - reviewer 付きタスクは `in_progress -> completed` を直接通らず、いったん `blocked` になってから `approve` / `reject` を使います
 - `task delegate` は `assigned_to` を対象 agent に更新し、状態を `assigned` にします
 
@@ -618,6 +619,7 @@ agentcom mcp-server --register mcp-agent --type mcp
 ```
 
 - `initialize` の後に `tools/list`, `tools/call` を呼ぶ必要があります
+- tool-call 失敗は JSON-RPC `error` で返ります: unknown tool=`-32601`、不正な引数 JSON・必須項目不足・無効な task status filter・呼び出し側入力に起因する agent reference エラーは `-32602`、セッション状態不足のような runtime tool error は `-32000` です
 - 提供ツールは agent 一覧、メッセージ送信、broadcast、タスク作成/委譲、タスク一覧、状態取得です
 
 ## JSON 出力例

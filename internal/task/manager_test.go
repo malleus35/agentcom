@@ -239,3 +239,130 @@ func TestManagerReviewLifecycle(t *testing.T) {
 		t.Fatalf("failed task = %+v", failed)
 	}
 }
+
+func TestManagerReopensTerminalTasks(t *testing.T) {
+	database := setupTaskTestDB(t)
+	ctx := context.Background()
+	creator := insertTaskTestAgent(t, database, "creator")
+
+	manager := NewManager(database)
+	query := NewQuery(database)
+
+	tests := []struct {
+		name         string
+		activate     bool
+		terminal     string
+		reopened     string
+		reopenResult string
+		nextStatus   string
+	}{
+		{name: "completed reopens to pending", activate: true, terminal: StatusCompleted, reopened: StatusPending, reopenResult: "reopened from done", nextStatus: StatusInProgress},
+		{name: "failed retries to pending", activate: true, terminal: StatusFailed, reopened: StatusPending, reopenResult: "retry requested", nextStatus: StatusInProgress},
+		{name: "cancelled resurrects to pending", terminal: StatusCancelled, reopened: StatusPending, reopenResult: "resurrected", nextStatus: StatusInProgress},
+		{name: "completed moves to cancelled", activate: true, terminal: StatusCompleted, reopened: StatusCancelled, reopenResult: "closed after completion"},
+		{name: "failed moves to cancelled", activate: true, terminal: StatusFailed, reopened: StatusCancelled, reopenResult: "closed after failure"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			created, err := manager.Create(ctx, tt.name, "terminal reopen flow", "medium", "", "", creator.ID, nil, nil)
+			if err != nil {
+				t.Fatalf("Create() error = %v", err)
+			}
+
+			if tt.activate {
+				if err := manager.UpdateStatus(ctx, created.ID, StatusInProgress, "started"); err != nil {
+					t.Fatalf("UpdateStatus(in_progress) error = %v", err)
+				}
+			}
+			if err := manager.UpdateStatus(ctx, created.ID, tt.terminal, "terminal result"); err != nil {
+				t.Fatalf("UpdateStatus(%s) error = %v", tt.terminal, err)
+			}
+			if err := manager.UpdateStatus(ctx, created.ID, tt.reopened, tt.reopenResult); err != nil {
+				t.Fatalf("UpdateStatus(%s) error = %v", tt.reopened, err)
+			}
+
+			reopened, err := query.FindByID(ctx, created.ID)
+			if err != nil {
+				t.Fatalf("FindByID(reopened) error = %v", err)
+			}
+			if reopened.Status != tt.reopened {
+				t.Fatalf("Status = %q, want %q", reopened.Status, tt.reopened)
+			}
+			if reopened.Result != tt.reopenResult {
+				t.Fatalf("Result = %q, want %q", reopened.Result, tt.reopenResult)
+			}
+
+			if tt.nextStatus == "" {
+				return
+			}
+			if err := manager.UpdateStatus(ctx, created.ID, tt.nextStatus, "resumed"); err != nil {
+				t.Fatalf("UpdateStatus(%s after reopen) error = %v", tt.nextStatus, err)
+			}
+
+			resumed, err := query.FindByID(ctx, created.ID)
+			if err != nil {
+				t.Fatalf("FindByID(resumed) error = %v", err)
+			}
+			if resumed.Status != tt.nextStatus {
+				t.Fatalf("Status after resume = %q, want %q", resumed.Status, tt.nextStatus)
+			}
+		})
+	}
+}
+
+func TestManagerReopenedTaskStillRequiresReview(t *testing.T) {
+	database := setupTaskTestDB(t)
+	ctx := context.Background()
+	creator := insertTaskTestAgent(t, database, "creator")
+
+	manager := NewManager(database)
+	query := NewQuery(database)
+
+	created, err := manager.Create(ctx, "reviewed reopen", "ensure review survives reopen", "high", "user", "", creator.ID, nil, nil)
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	if err := manager.UpdateStatus(ctx, created.ID, StatusInProgress, "started"); err != nil {
+		t.Fatalf("UpdateStatus(in_progress) error = %v", err)
+	}
+	if err := manager.UpdateStatus(ctx, created.ID, StatusCompleted, "done"); err != nil {
+		t.Fatalf("UpdateStatus(completed) error = %v", err)
+	}
+	if err := manager.ApproveTask(ctx, created.ID, "approved"); err != nil {
+		t.Fatalf("ApproveTask() error = %v", err)
+	}
+	if err := manager.UpdateStatus(ctx, created.ID, StatusPending, "reopened"); err != nil {
+		t.Fatalf("UpdateStatus(pending) error = %v", err)
+	}
+	if err := manager.UpdateStatus(ctx, created.ID, StatusInProgress, "started again"); err != nil {
+		t.Fatalf("UpdateStatus(in_progress again) error = %v", err)
+	}
+	if err := manager.UpdateStatus(ctx, created.ID, StatusCompleted, "done again"); err != nil {
+		t.Fatalf("UpdateStatus(completed again) error = %v", err)
+	}
+
+	blocked, err := query.FindByID(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("FindByID(blocked) error = %v", err)
+	}
+	if blocked.Status != StatusBlocked {
+		t.Fatalf("Status = %q, want %q", blocked.Status, StatusBlocked)
+	}
+	if !strings.Contains(blocked.Result, "review required by user") {
+		t.Fatalf("Result = %q, want review required message", blocked.Result)
+	}
+
+	if err := manager.RejectTask(ctx, created.ID, "changes requested again"); err != nil {
+		t.Fatalf("RejectTask() error = %v", err)
+	}
+
+	failed, err := query.FindByID(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("FindByID(failed) error = %v", err)
+	}
+	if failed.Status != StatusFailed || failed.Result != "changes requested again" {
+		t.Fatalf("failed task = %+v", failed)
+	}
+}

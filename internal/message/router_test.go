@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/malleus35/agentcom/internal/db"
 )
@@ -190,5 +192,88 @@ func TestRouterBroadcastSkipsSenderAndContinuesOnFailure(t *testing.T) {
 	}
 	if len(userMessages) != 1 {
 		t.Fatalf("len(ListMessagesForAgent(user after direct send)) = %d, want 1", len(userMessages))
+	}
+}
+
+func TestRouterSendEnforcesPerAgentRateLimit(t *testing.T) {
+	database := setupMessageTestDB(t)
+	target := &db.Agent{ID: "agt_target", Name: "beta", Project: "project-a", Status: "alive"}
+	finder := &stubFinder{byName: map[string]*db.Agent{"beta": target}, byID: map[string]*db.Agent{target.ID: target}}
+	router := NewRouter(database, finder, &stubTransport{}, "project-a")
+
+	originalLimit := sendRateLimitPerWindow
+	originalWindow := sendRateLimitWindow
+	sendRateLimitPerWindow = 1
+	sendRateLimitWindow = time.Minute
+	defer func() {
+		sendRateLimitPerWindow = originalLimit
+		sendRateLimitWindow = originalWindow
+	}()
+
+	if _, err := router.Send(context.Background(), "agt_sender", "beta", "notification", "sync", json.RawMessage(`{"ok":true}`)); err != nil {
+		t.Fatalf("first Send() error = %v", err)
+	}
+	if _, err := router.Send(context.Background(), "agt_sender", "beta", "notification", "sync", json.RawMessage(`{"ok":true}`)); !errors.Is(err, ErrSendRateLimited) {
+		t.Fatalf("second Send() error = %v, want %v", err, ErrSendRateLimited)
+	}
+}
+
+func TestRouterSendDropsOldestMessageWhenInboxLimitExceeded(t *testing.T) {
+	database := setupMessageTestDB(t)
+	target := &db.Agent{ID: "agt_target", Name: "beta", Project: "project-a", Status: "alive"}
+	finder := &stubFinder{byName: map[string]*db.Agent{"beta": target}, byID: map[string]*db.Agent{target.ID: target}}
+	router := NewRouter(database, finder, &stubTransport{}, "project-a")
+
+	originalLimit := inboxLimitPerAgent
+	inboxLimitPerAgent = 2
+	defer func() { inboxLimitPerAgent = originalLimit }()
+
+	ctx := context.Background()
+	for i := 0; i < 2; i++ {
+		msg := &db.Message{
+			ID:        fmt.Sprintf("msg_seed_%d", i),
+			FromAgent: "agt_sender",
+			ToAgent:   target.ID,
+			Type:      "notification",
+			Payload:   fmt.Sprintf(`{"seed":%d}`, i),
+			CreatedAt: time.Now().Add(time.Duration(i) * time.Second).UTC().Format(time.RFC3339),
+		}
+		if err := database.InsertMessage(ctx, msg); err != nil {
+			t.Fatalf("InsertMessage(seed %d) error = %v", i, err)
+		}
+	}
+
+	if _, err := router.Send(ctx, "agt_sender", "beta", "notification", "sync", json.RawMessage(`{"ok":true}`)); err != nil {
+		t.Fatalf("Send() error = %v", err)
+	}
+
+	messages, err := database.ListMessagesForAgent(ctx, target.ID)
+	if err != nil {
+		t.Fatalf("ListMessagesForAgent() error = %v", err)
+	}
+	if len(messages) != 2 {
+		t.Fatalf("len(ListMessagesForAgent()) = %d, want 2", len(messages))
+	}
+	if messages[0].ID == "msg_seed_0" {
+		t.Fatalf("oldest message %q was not removed", messages[0].ID)
+	}
+}
+
+func TestRouterBroadcastThrottlesDuplicateTopic(t *testing.T) {
+	database := setupMessageTestDB(t)
+	alpha := &db.Agent{ID: "agt_alpha", Name: "alpha", Project: "project-a", Status: "alive"}
+	beta := &db.Agent{ID: "agt_beta", Name: "beta", Project: "project-a", Status: "alive"}
+	finder := &stubFinder{alive: []*db.Agent{alpha, beta}, byID: map[string]*db.Agent{alpha.ID: alpha, beta.ID: beta}, byName: map[string]*db.Agent{alpha.Name: alpha, beta.Name: beta}}
+	router := NewRouter(database, finder, &stubTransport{}, "project-a")
+
+	originalWindow := broadcastThrottleWindow
+	broadcastThrottleWindow = time.Minute
+	defer func() { broadcastThrottleWindow = originalWindow }()
+
+	if _, err := router.Broadcast(context.Background(), alpha.ID, "sync", json.RawMessage(`{"phase":1}`)); err != nil {
+		t.Fatalf("first Broadcast() error = %v", err)
+	}
+	if _, err := router.Broadcast(context.Background(), alpha.ID, "sync", json.RawMessage(`{"phase":2}`)); !errors.Is(err, ErrBroadcastThrottled) {
+		t.Fatalf("second Broadcast() error = %v, want %v", err, ErrBroadcastThrottled)
 	}
 }

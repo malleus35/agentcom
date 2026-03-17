@@ -4,16 +4,16 @@
 
 ## 현재 상태
 
-- **Phase**: PH10 priority-review-policy 구현 완료
-- **마지막 작업**: PH10 구현/테스트/문서/수동 QA 완료
-- **현재 브랜치**: `feature/PH10-priority-review-policy` (from `feature/P12-user-endpoint`)
-- **현재 버전**: v0.1.7이 최신 공개 릴리스, 다음 릴리스 버전은 아직 미확정
+- **Phase**: PH9 targeted test closure 완료
+- **마지막 작업**: PH9 targeted test closure 구현 및 `develop` 머지 준비 완료
+- **현재 브랜치**: `feature/PH9-targeted-test-closure`
+- **현재 버전**: `v0.2.3` 공개 릴리즈 완료
 - **P10 상태**: 구현/문서/테스트 완료, 관련 변경은 현재 브랜치에 포함됨
 - **P11 상태**: 구현 완료, 테스트/수동 QA/README 반영 완료, develop 머지 및 release 대기
 - **P12 상태**: 구현/검증/문서 반영 완료 (user endpoint, pseudo-agent, MCP tools)
 - **계획 문서 상태**: PH10 PRD 최종 통합본 완료 (`.agents/plans/PH10-priority-review-policy-PRD.md`), 6 Phase / 18 Tasks / ~62 Subtasks / ~16h
-- **다음 작업**: PH5~PH9 계획 재정렬 또는 다음 우선순위 기능 선정
-- **후속 계획**: `.agents/plans/NEXT-PHASE-PLAN.md` — PH5~PH9 (26 tasks, 56.5h 추정, CLI-first 원칙으로 재검토 필요)
+- **다음 작업**: PH5~PH9 후속 계획 종료, 필요 시 신규 hardening/release 작업 정의
+- **후속 계획**: `.agents/plans/NEW-NEXT-PHASE-PLAN.md` — PH5~PH9 완료 (남은 태스크 0, 잔여 공수 0h)
 - **PH10 PRD**: `.agents/plans/PH10-priority-review-policy-PRD.md` — priority enforcement + review policy (18 tasks, ~16h, 아키텍처 결정 8건 포함)
 - **PH10 문서 정리**: 기존 산재 문서 4개(`PH10-priority-review-policy.md`, `PH10-architectural-decisions.md`, `PH10-review-system-analysis.md`, `PH10-user-task-approver-design.md`) → 최종 PRD에 통합 후 삭제 완료
 
@@ -31,6 +31,89 @@
 - P10 project column 핵심 구현 완료
 
 ## 이번 세션에서 마무리한 작업
+
+- PH9 targeted test closure 완료
+  - `internal/onboard/huh_prompter_test.go`, `internal/onboard/prompter_test.go`, `internal/onboard/template_definition_test.go`: onboarding 전용 테스트 공백 보강
+  - `internal/task/query_test.go`: `Query` direct coverage 추가
+  - `internal/transport/transport_test.go`, `internal/agent/heartbeat_test.go`: transport/heartbeat lifecycle coverage 추가
+  - `internal/mcp/server_test.go`: empty params / malformed request 등 MCP error matrix 보강
+  - 검증 완료: `go test ./internal/onboard/... -count=1`, `go test ./internal/task/... -count=1`, `go test ./internal/transport/... -count=1`, `go test ./internal/agent/... -count=1`, `go test ./internal/mcp/... -count=1`, `go test ./... -count=1`, `go build ./...`
+  - 수동 QA: 사용자 표면 변경 없음(test-only phase)으로 별도 runtime manual QA는 생략하고 전체 회귀를 근거로 종료
+
+- PH8 MCP surface rebaseline 구현 완료
+  - `internal/mcp/tools.go`, `internal/mcp/handler.go`: `inbox`, `health`, `deregister`, `doctor`, `version`, `user_reply` MCP tool schema와 handler wiring 추가
+  - `internal/mcp/server_test.go`: `tools/list` surface 회귀와 새 tool family semantics 회귀 테스트 추가
+  - 검증 완료: `go test ./internal/mcp/... -count=1`, `go test ./... -count=1`, `go build ./...`
+  - 수동 QA 완료:
+    - `/tmp/agentcom-ph8-qa-project`에서 real `mcp-server` roundtrip으로 `version`, `health`, `doctor`, `user_reply`, `inbox`, `deregister` 호출 성공 확인
+    - `MCP_USER_REPLY` 응답에 response envelope 확인, `MCP_INBOX`에서 count/message 확인, `MCP_DEREGISTER`에서 `{"status":"deregistered"}` 확인
+
+- PH7 runtime config and observability 구현 완료
+  - `internal/config/runtime.go`, `internal/config/runtime_test.go`, `internal/config/config.go`: runtime config surface와 env override contract 추가, `Config`에 runtime 값 연결
+  - `internal/transport/uds.go`, `internal/transport/fallback.go`, `internal/agent/heartbeat.go`, `internal/agent/registry.go`, `internal/cli/root.go`, `internal/cli/up.go`: PH6에서 확정된 timeout/retry/interval 값을 실제 runtime wiring에 연결
+  - `internal/cli/task.go`, `internal/cli/task_test.go`, `internal/cli/register.go`, `internal/cli/register_test.go`: unknown assignee / invalid register name의 structured user-facing error 적용
+  - `internal/message/router.go`, `cmd/agentcom/e2e_test.go`: fallback/failure log level 재조정과 combined output JSON extraction 보강
+  - `internal/cli/up.go`, `internal/cli/up_test.go`: supervisor signal action(`SIGUSR1` state dump, `SIGHUP` no-op) 추가 및 테스트 보강
+  - 검증 완료: `go test ./internal/config/... -count=1`, `go test ./internal/cli/... -count=1`, `go test ./... -count=1`, `go build ./...`
+  - 수동 QA 완료:
+    - `AGENTCOM_CLIENT_DIAL_TIMEOUT=bad agentcom --json status` -> `config.LoadRuntime` parse failure 확인
+    - `/tmp/agentcom-ph7-qa-project`에서 `agentcom task create "needs assignee" --assign missing-agent` -> structured `Error/Reason/Hint` 출력 확인
+    - `/tmp/agentcom-ph7-signal-project`에서 `agentcom --json up --only plan` 후 `kill -USR1 <supervisor_pid>` 실행, `.agentcom/run/up.json` mtime `1773742133 -> 1773742135` 증가 확인
+
+- PH6 runtime reliability 구현 완료
+  - `internal/cli/up.go`, `internal/cli/up_test.go`: shutdown cleanup에 timeout helper 도입, stale runtime state 자동 정리, stale child heartbeat 탐지 helper와 supervisor health ticker 추가
+  - `internal/transport/uds.go`, `internal/transport/transport_test.go`: accept deadline/read deadline, bounded retry backoff+jitter, idle connection 및 retry regression 테스트 추가
+  - `internal/agent/registry.go`, `internal/agent/registry_test.go`: agent name regex/reserved-name validation 추가, dead agent socket cleanup 보강
+  - `internal/db/sqlite.go`, `internal/db/sqlite_test.go`: `HealthCheck()` helper 추가, journal mode / integrity check 검증 테스트 추가
+  - `internal/message/router.go`, `internal/message/router_test.go`: per-agent rate limit, inbox FIFO cleanup, duplicate broadcast throttle 추가
+  - `.agents/plans/PH6-runtime-reliability-execution.md`, `.agents/plans/PH7-runtime-config-observability-execution.md`, `.agents/plans/PH8-mcp-surface-rebaseline-execution.md`, `.agents/plans/PH9-targeted-test-closure-execution.md`: phase별 세분화 실행 문서 추가
+  - 검증 완료: `go test ./internal/cli/... -count=1`, `go test ./internal/transport/... -count=1`, `go test ./internal/agent/... -count=1`, `go test ./internal/db/... -count=1`, `go test ./internal/message/... -count=1`, `go test ./... -count=1`, `go build ./...`
+  - 수동 QA 완료:
+    - `/tmp/agentcom-ph6-qa-project`에서 `agentcom --json up --only plan` -> `agentcom --json down --force` 결과 `{"status":"stopped","stopped_roles":["plan"]}` 및 `.agentcom/run/up.json` 제거 확인
+    - `/tmp/agentcom-ph6-stale-project`에서 fake stale `up.json` + stale socket 생성 후 `agentcom --json up --only plan` 실행, 새 supervisor 시작 및 `STALE_SOCKET=removed` 확인
+
+- PH5-03 terminal state reopen/retry 지원 완료
+  - `internal/task/model.go`: terminal 상태 재전이 5개만 허용하도록 전이 맵 최소 확장 (`completed -> pending|cancelled`, `failed -> pending|cancelled`, `cancelled -> pending`)
+  - `internal/task/model_test.go`: reopen/retry/resurrect 전이 unit test를 TDD로 먼저 추가하고 failing red 상태 확인 후 green 통과
+  - `internal/task/manager_test.go`: completed/failed/cancelled 재개와 reviewer 회귀 테스트 추가, 재오픈된 reviewer task가 다시 `in_progress -> completed`에서 `blocked`로 전환되는지 검증
+  - `README.md`, `README.ko.md`, `README.ja.md`, `README.zh.md`: `task update`로 가능한 terminal reopen semantics 문서화
+  - `.agents/plans/NEW-NEXT-PHASE-PLAN.md`: PH5-03 상태를 done으로 반영하고 PH5 잔여 공수를 0h로 조정
+  - 검증 완료: `go test ./internal/task/... -run TestValidateTransition -count=1`(red 확인 후 green), `go test ./internal/task/... -count=1`, `go test ./... -count=1`, `go build ./...`
+  - 수동 QA 완료:
+    - `AGENTCOM_HOME=/tmp/agentcom-ph5-03-qa-home` + `/tmp/agentcom-ph5-03-qa-run`에서 `agentcom --json init --batch --project demo-app --template company`
+    - `agentcom --json task create "retry me" --priority medium` -> `{"id":"tsk_mfQaAfWWs7HY-trHErUMV","status":"pending"...}`
+    - `agentcom --json task update tsk_mfQaAfWWs7HY-trHErUMV --status completed --result "done"` -> `{"status":"completed","result":"done"...}`
+    - `agentcom --json task update tsk_mfQaAfWWs7HY-trHErUMV --status pending --result "reopened"` -> `{"status":"pending","result":"reopened"...}`
+
+- PH5-02 MCP handler 파라미터 검증 강화 완료
+  - `internal/mcp/handler.go`: optional/required JSON unmarshal helper 추가, required-field 검증을 `invalidParamsError`로 정렬, `send_message`/`broadcast`/`send_to_user`/`get_user_messages`/`delegate_task`의 caller-input agent reference 실패를 `-32602` 경로로 승격
+  - `internal/mcp/handler.go`: `list_tasks.status`에 명시적 status validation 추가, `list_tasks.assignee`와 `create_task.assigned_to/created_by`의 permissive fallback은 유지
+  - `internal/mcp/server_test.go`: malformed JSON/type mismatch, required fields, invalid status filter, bad agent reference, runtime boundary를 검증하는 invalid-params matrix 추가
+  - `cmd/agentcom/e2e_test.go`: repo-root `.agentcom.json`에 오염되지 않도록 `waitForAgents()`가 projectDir를 사용하게 수정해 full-suite verification 안정화
+  - `README.md`, `README.ko.md`, `README.ja.md`, `README.zh.md`: MCP `-32602` vs `-32000` 경계를 malformed args / missing required fields / invalid status filter / caller-input agent reference / missing session state 기준으로 명시
+  - `.agents/plans/NEW-NEXT-PHASE-PLAN.md`: PH5-02 상태를 done으로 갱신하고 PH5 잔여 공수를 1h, 전체 잔여 공수를 약 49h로 조정
+  - 검증 완료: `go test ./internal/mcp/... -count=1`, `go test ./... -count=1`, `go build ./...`
+  - 수동 QA 완료:
+    - `go run ./cmd/agentcom mcp-server` + `send_message(from="", to="plan")` -> `{"error":{"code":-32602,"message":"mcp.handleSendMessage: from and to are required"}}`
+    - `AGENTCOM_HOME=/tmp/agentcom-ph5-02-qa`에서 `plan`만 register한 뒤 `send_to_user(from="plan", text="Proceed?")` -> `{"error":{"code":-32000,"message":"mcp.handleSendToUser: no user agent registered; start a session with \`agentcom up\` first"}}`
+
+- PH5-01 MCP JSON-RPC error alignment 완료
+  - feature 브랜치 `feature/PH5-01-mcp-jsonrpc-error-alignment` 생성 후 `.agents/plans/PH5-01-mcp-jsonrpc-error-alignment.md` 실행 계획 문서 작성
+  - `internal/mcp/server.go`: unknown tool을 JSON-RPC `error.code=-32601`로 반환하도록 수정하고, 일반 tool runtime error를 `error.code=-32000`으로 정렬
+  - `internal/mcp/server_test.go`: unknown tool / invalid params / runtime tool error roundtrip 회귀 테스트 추가, error path에서 `result` 미포함 검증 보강
+  - `README.md`, `README.ko.md`, `README.ja.md`, `README.zh.md`: MCP tool-call failure의 JSON-RPC error semantics 문구 반영
+  - `.agents/plans/NEW-NEXT-PHASE-PLAN.md`: PH5-01 상태를 done으로 갱신하고 PH5 잔여 공수를 4h로 축소
+  - 검증 완료: `go test ./internal/mcp/... -count=1`, `go test ./... -count=1`, `go build ./...`
+  - 수동 QA 완료: 임시 `AGENTCOM_HOME`에서 `go run ./cmd/agentcom mcp-server` 실행 후 `initialize` -> `tools/list` -> unknown tool 호출 시 `{"error":{"code":-32601,"message":"unknown tool: no_such_tool"}}` 응답 확인
+
+- v0.2.3 릴리즈 및 Homebrew 복구 완료
+  - `feature/PH10-priority-review-policy`를 `develop`에 병합하고, 이어서 `develop`을 `main`에 릴리즈 머지
+  - `6cda47f` `chore(release): prepare v0.2.3 install defaults`, `d0b1478` `chore(release): update scoop manifest for v0.2.3`, `c848a33` `Merge branch 'main' into develop` 반영 완료
+  - GitHub release/tag `v0.2.3` 발행 및 release asset 업로드 확인
+  - 누락됐던 `agentcom_0.2.3_darwin_arm64.tar.gz` asset을 수동 빌드/업로드해 Apple Silicon Homebrew 설치 경로 복구
+  - `malleus35/homebrew-tap`의 `Formula/agentcom.rb`를 `0.2.3`으로 직접 갱신 (`d95ad97`)
+  - `.github/workflows/release.yml`에 Homebrew tap 자동 갱신 단계 추가 및 darwin arm64 runner를 `macos-14`로 조정 (`0e72c4a` on develop, `ae78ad1` on main)
+  - 수동 QA 완료: `brew info malleus35/tap/agentcom`에서 `stable 0.2.3` 확인, `brew upgrade agentcom` 후 `agentcom version`이 `0.2.3` 출력 확인
 
 - PH10 priority-review-policy 구현 완료
   - `internal/task/model.go`, `internal/task/policy.go`, `internal/task/manager.go`: priority enum/검증/비교, reviewer-aware transition, review policy resolve, approve/reject flow 추가
@@ -271,6 +354,7 @@
 | 2026-03-17 | `review_chain` 태스크 레벨 컬럼 거부 | 어떤 프로덕션 시스템도 review_chain을 태스크 테이블 컬럼으로 두지 않음. 워크플로우 그래프/별도 테이블이 올바른 추상화 |
 | 2026-03-17 | MCP를 "CLI-first, MCP는 선택적 어댑터"로 포지셔닝 변경 | MCP 9개 도구 모두 CLI 대응 존재, 고유 기능 0, 토큰 비용 4-32x, 셸 없는 런타임에서만 필요 |
 | 2026-03-17 | `reviewer` 필드는 에이전트 ID + "user" 모두 지원 (자유 문자열) | 추가 비용 0, agentcom "에이전트 유형 자유" 원칙 부합, 멀티에이전트 프레임워크 패턴 지원 |
+| 2026-03-17 | MCP handler input policy는 malformed JSON/type mismatch, required-field errors, invalid task status filters, caller-input agent reference failures만 `invalidParamsError`로 승격 | JSON-RPC `-32602`를 caller input 오류에만 일관되게 매핑하고, missing session state/DB/template/runtime failures는 `-32000` runtime error로 유지하기 위해 |
 | 2026-03-17 | 에이전트 리뷰 자동화 로직(retry, cascading, guardrail)은 agentcom 범위 밖 | agentcom은 통신 인프라이지 실행 엔진이 아님. 리뷰 라우팅과 상태 전환 제어만 담당 |
 | 2026-03-17 | reviewer가 있는 태스크의 `in_progress -> completed`는 direct completion 대신 `blocked`로 전환 | 선택적 review gate를 최소 변경으로 도입하면서 기존 상태 머신과 CLI/MCP surface를 최대한 유지하기 위해 |
 | 2026-03-17 | template `review_policy`는 project scaffold의 `template.json`에서 읽어 CLI/MCP task create에 공통 적용 | built-in/custom template 구분 없이 동일한 런타임 입력을 사용하고 추가 선언 파일 도입을 피하기 위해 |
@@ -333,4 +417,6 @@
   - [x] Phase D: MCP update_task tool (tools.go, handler.go)
   - [x] Phase E: Test coverage (manager_test.go, model_test.go, db/task_test.go, e2e_test.go)
   - [x] Phase F: Documentation (README×4, AGENTS.md, MEMORY.md)
-- [ ] **TODO: PH5~PH8 MCP 확장 계획의 범위를 CLI-first 원칙에 맞게 재검토**
+- [x] **PH5-01 완료**: MCP tool error path를 JSON-RPC `error`로 정렬하고 회귀 테스트/문서 반영 완료
+- [x] **PH5-02 완료**: MCP handler 파라미터 검증 강화, regression matrix, manual QA, README 반영 완료
+- [x] **PH5-03 완료**: terminal state reopen/retry 지원, 회귀 테스트, manual QA, README 반영 완료

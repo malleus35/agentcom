@@ -485,6 +485,7 @@ agentcom task reject <task-id> --result "changes requested"
 - `--reviewer` 可使用 agent 名称、agent ID，或 `user`
 - 如果 active template 定义了 `review_policy`，reviewer 可以自动分配
 - `--assign`、`--creator` 可接受 agent 名称或 ID
+- terminal 状态也可以通过 `task update` 显式重新打开：`completed -> pending|cancelled`、`failed -> pending|cancelled`、`cancelled -> pending`
 - 带 reviewer 的任务不能直接从 `in_progress` 变成 `completed`；它会先转成 `blocked`，然后再通过 `approve` 或 `reject` 收尾
 - `task delegate` 会把 `assigned_to` 更新为目标代理，并把状态改成 `assigned`
 
@@ -618,6 +619,7 @@ agentcom mcp-server --register mcp-agent --type mcp
 ```
 
 - 调用 `tools/list`、`tools/call` 之前必须先 `initialize`
+- tool-call 失败会通过 JSON-RPC `error` 返回：unknown tool=`-32601`，参数 JSON 格式错误、必填字段缺失、无效的 task status 过滤器、以及可明确归因于调用方输入的 agent reference 错误会返回 `-32602`，像会话状态缺失这类 runtime tool error 仍返回 `-32000`
 - 提供的工具包括代理列表、消息发送、广播、任务创建/委派、任务列表、状态查询
 
 ## JSON 输出示例

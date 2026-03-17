@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"time"
 
 	gonanoid "github.com/matoous/go-nanoid/v2"
@@ -16,12 +18,14 @@ import (
 	"github.com/malleus35/agentcom/internal/db"
 )
 
-const heartbeatStaleThreshold = 30 * time.Second
-
 var (
 	// ErrAgentNotFound indicates the target agent cannot be found.
-	ErrAgentNotFound = errors.New("agent not found")
+	ErrAgentNotFound        = errors.New("agent not found")
+	ErrInvalidAgentName     = errors.New("invalid agent name")
+	heartbeatStaleThreshold = 30 * time.Second
 )
+
+var agentNamePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$`)
 
 // Registry manages agent lifecycle.
 type Registry struct {
@@ -39,6 +43,10 @@ func NewRegistry(database *db.DB, cfg *config.Config) *Registry {
 
 // Register registers a new agent and persists it in SQLite.
 func (r *Registry) Register(ctx context.Context, name, agentType string, capabilities []string, workdir string, project string) (*db.Agent, error) {
+	if err := ValidateAgentName(name); err != nil {
+		return nil, fmt.Errorf("agent.Register: %w", err)
+	}
+
 	rawID, err := gonanoid.New()
 	if err != nil {
 		return nil, fmt.Errorf("agent.Register: %w", err)
@@ -93,6 +101,20 @@ func (r *Registry) Deregister(ctx context.Context, nameOrID string, project stri
 
 	slog.Debug("agent deregistered", "agent_id", agent.ID, "name", agent.Name)
 
+	return nil
+}
+
+func ValidateAgentName(name string) error {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return fmt.Errorf("%w: name is required", ErrInvalidAgentName)
+	}
+	if trimmed == "user" {
+		return fmt.Errorf("%w: %q is reserved", ErrInvalidAgentName, trimmed)
+	}
+	if !agentNamePattern.MatchString(trimmed) {
+		return fmt.Errorf("%w: %q", ErrInvalidAgentName, name)
+	}
 	return nil
 }
 
@@ -155,9 +177,16 @@ func (r *Registry) MarkInactive(ctx context.Context) error {
 		if err := r.db.UpdateAgent(ctx, a); err != nil {
 			return fmt.Errorf("agent.MarkInactive: %w", err)
 		}
+		if err := os.Remove(a.SocketPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("agent.MarkInactive: %w", err)
+		}
 
 		slog.Debug("agent marked dead", "agent_id", a.ID, "name", a.Name, "pid", a.PID)
 	}
 
 	return nil
+}
+
+func ApplyRegistryRuntimeConfig(runtime config.RuntimeConfig) {
+	heartbeatStaleThreshold = runtime.HeartbeatStaleThreshold
 }

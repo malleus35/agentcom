@@ -162,3 +162,68 @@ func TestPollerDeliversUnreadMessages(t *testing.T) {
 		t.Fatal("DeliveredAt was not set by poller")
 	}
 }
+
+func TestHandleConnectionReturnsAfterReadTimeout(t *testing.T) {
+	originalTimeout := serverReadTimeout
+	serverReadTimeout = 25 * time.Millisecond
+	defer func() { serverReadTimeout = originalTimeout }()
+
+	serverConn, clientConn := net.Pipe()
+	defer clientConn.Close()
+
+	server := NewServer("/tmp/test.sock", nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan struct{})
+	go func() {
+		server.handleConnection(ctx, serverConn)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(250 * time.Millisecond):
+		t.Fatal("handleConnection() did not return after read timeout")
+	}
+}
+
+func TestClientSendRetriesWithBackoff(t *testing.T) {
+	originalBackoffs := clientRetryBackoffs
+	originalJitter := clientRetryJitterMax
+	clientRetryBackoffs = []time.Duration{20 * time.Millisecond, 40 * time.Millisecond}
+	clientRetryJitterMax = 0
+	defer func() {
+		clientRetryBackoffs = originalBackoffs
+		clientRetryJitterMax = originalJitter
+	}()
+
+	start := time.Now()
+	err := NewClient().Send(context.Background(), filepath.Join(t.TempDir(), "missing.sock"), []byte(`{"type":"ping"}`))
+	if err == nil {
+		t.Fatal("Client.Send() error = nil, want error")
+	}
+	if elapsed := time.Since(start); elapsed < 60*time.Millisecond {
+		t.Fatalf("Client.Send() elapsed = %v, want at least 60ms of backoff", elapsed)
+	}
+}
+
+func TestServerStopRemovesSocketPath(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	socketPath := setupSocketPath(t, "stop.sock")
+	server := NewServer(socketPath, nil)
+	if err := server.Start(ctx); err != nil {
+		t.Fatalf("Server.Start() error = %v", err)
+	}
+	if _, err := os.Stat(socketPath); err != nil {
+		t.Fatalf("Stat(socketPath) error = %v", err)
+	}
+	if err := server.Stop(); err != nil {
+		t.Fatalf("Server.Stop() error = %v", err)
+	}
+	if _, err := os.Stat(socketPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("socket stat error = %v, want not exist", err)
+	}
+}

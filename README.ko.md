@@ -637,6 +637,7 @@ agentcom task reject <task-id> --result "changes requested"
 - `--assign`, `--creator`는 agent 이름 또는 ID를 받을 수 있습니다.
 - `task list --assignee`는 조회 전에 이름을 ID로 해석하려고 시도합니다.
 - `task update`는 task manager를 통해 상태 전이를 검증합니다.
+- terminal 상태도 `task update`로 명시적으로 다시 열 수 있습니다: `completed -> pending|cancelled`, `failed -> pending|cancelled`, `cancelled -> pending`.
 - reviewer가 있는 태스크는 `in_progress -> completed`가 바로 완료되지 않고 `blocked`로 전환된 뒤 `approve` 또는 `reject`를 거칩니다.
 - `task delegate`는 `assigned_to`를 갱신하고 상태를 `assigned`로 바꿉니다.
 
@@ -787,6 +788,7 @@ agentcom mcp-server --register mcp-agent --type mcp
 참고:
 
 - `tools/list`, `tools/call` 전에 반드시 `initialize`가 먼저 와야 합니다.
+- tool-call 실패는 JSON-RPC `error`로 반환됩니다: unknown tool=`-32601`, 잘못된 인자 JSON/필수값 누락/유효하지 않은 task status 필터/호출자 입력으로 판정되는 agent reference 오류는 `-32602`, 세션 상태 누락 같은 일반 runtime tool error는 `-32000`입니다.
 - 제공 도구는 agent 조회, 메시지 전송, broadcast, 태스크 생성/위임, 태스크 조회, 상태 조회를 포함합니다.
 
 ## JSON 출력 예시

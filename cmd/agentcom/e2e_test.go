@@ -38,7 +38,7 @@ func TestAgentcomE2EFlow(t *testing.T) {
 	beta := startRegisterProcess(t, binPath, homeDir, "beta", "reviewer")
 	defer stopRegisterProcess(t, beta)
 
-	waitForAgents(t, binPath, homeDir, 2)
+	waitForAgents(t, binPath, homeDir, "", 2)
 
 	runAgentcomJSON(t, binPath, homeDir, "", "send", "--from", "alpha", "beta", `{"text":"hello"}`)
 
@@ -74,7 +74,7 @@ func TestAgentcomE2EFlow(t *testing.T) {
 	stopRegisterProcess(t, beta)
 	beta = nil
 
-	waitForAgents(t, binPath, homeDir, 0)
+	waitForAgents(t, binPath, homeDir, "", 0)
 	agents := runAgentcomJSONArray(t, binPath, homeDir, "", "list")
 	if len(agents) != 0 {
 		t.Fatalf("remaining agents = %d, want 0", len(agents))
@@ -103,7 +103,7 @@ func TestAgentcomUpDownFlow(t *testing.T) {
 		t.Fatalf("runtime state missing: %v", err)
 	}
 
-	waitForAgents(t, binPath, homeDir, 3)
+	waitForAgents(t, binPath, homeDir, projectDir, 3)
 	allAgents := runAgentcomJSONArray(t, binPath, homeDir, projectDir, "list")
 	userAgent := findAgentByName(t, allAgents, "user")
 	userType := userAgent["type"]
@@ -120,7 +120,7 @@ func TestAgentcomUpDownFlow(t *testing.T) {
 		t.Fatalf("stopped_roles = %#v, want 2 entries", downOutput["stopped_roles"])
 	}
 
-	waitForAgents(t, binPath, homeDir, 0)
+	waitForAgents(t, binPath, homeDir, projectDir, 0)
 	if _, err := os.Stat(filepath.Join(projectDir, ".agentcom", "run", "up.json")); !os.IsNotExist(err) {
 		t.Fatalf("runtime state should be removed, stat err=%v", err)
 	}
@@ -134,7 +134,7 @@ func TestUserEndpointE2E(t *testing.T) {
 	runAgentcomJSON(t, binPath, homeDir, projectDir, "init", "--project", "demo-app", "--template", "company")
 	runAgentcomJSON(t, binPath, homeDir, projectDir, "up", "--only", "frontend,plan")
 
-	waitForAgents(t, binPath, homeDir, 3)
+	waitForAgents(t, binPath, homeDir, projectDir, 3)
 	allAgents := runAgentcomJSONArray(t, binPath, homeDir, projectDir, "list")
 	userAgent := findAgentByName(t, allAgents, "user")
 	userAgentID, _ := userAgent["id"].(string)
@@ -173,7 +173,7 @@ func TestUserEndpointE2E(t *testing.T) {
 	}
 
 	runAgentcomJSON(t, binPath, homeDir, projectDir, "down")
-	waitForAgents(t, binPath, homeDir, 0)
+	waitForAgents(t, binPath, homeDir, projectDir, 0)
 	remaining := runAgentcomJSONArray(t, binPath, homeDir, projectDir, "list")
 	if len(remaining) != 0 {
 		t.Fatalf("remaining agents = %d, want 0", len(remaining))
@@ -294,19 +294,19 @@ func stopRegisterProcess(t *testing.T, proc *registerProcess) {
 	proc.cmd = nil
 }
 
-func waitForAgents(t *testing.T, binPath, homeDir string, want int) {
+func waitForAgents(t *testing.T, binPath, homeDir, dir string, want int) {
 	t.Helper()
 
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		agents := runAgentcomJSONArray(t, binPath, homeDir, "", "list")
+		agents := runAgentcomJSONArray(t, binPath, homeDir, dir, "list")
 		if len(agents) == want {
 			return
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	agents := runAgentcomJSONArray(t, binPath, homeDir, "", "list")
+	agents := runAgentcomJSONArray(t, binPath, homeDir, dir, "list")
 	t.Fatalf("agent count = %d, want %d", len(agents), want)
 }
 
@@ -323,6 +323,7 @@ func runAgentcomJSON(t *testing.T, binPath, homeDir, dir string, args ...string)
 	if err != nil {
 		t.Fatalf("%s failed: %v\n%s", fmt.Sprintf("%v", args), err, string(output))
 	}
+	output = extractJSONPayload(t, output, args)
 
 	var parsed map[string]any
 	if err := json.Unmarshal(output, &parsed); err != nil {
@@ -345,6 +346,7 @@ func runAgentcomJSONArray(t *testing.T, binPath, homeDir, dir string, args ...st
 	if err != nil {
 		t.Fatalf("%s failed: %v\n%s", fmt.Sprintf("%v", args), err, string(output))
 	}
+	output = extractJSONPayload(t, output, args)
 
 	var parsed []map[string]any
 	if err := json.Unmarshal(output, &parsed); err != nil {
@@ -352,6 +354,25 @@ func runAgentcomJSONArray(t *testing.T, binPath, homeDir, dir string, args ...st
 	}
 
 	return parsed
+}
+
+func extractJSONPayload(t *testing.T, output []byte, args []string) []byte {
+	t.Helper()
+	trimmed := bytes.TrimSpace(output)
+	if json.Valid(trimmed) {
+		return trimmed
+	}
+	for i := len(trimmed) - 1; i >= 0; i-- {
+		if trimmed[i] != '{' && trimmed[i] != '[' {
+			continue
+		}
+		candidate := bytes.TrimSpace(trimmed[i:])
+		if json.Valid(candidate) {
+			return candidate
+		}
+	}
+	t.Fatalf("no JSON payload found for %v output=%s", args, string(output))
+	return nil
 }
 
 func intFromMap(t *testing.T, m map[string]any, key string) int {
