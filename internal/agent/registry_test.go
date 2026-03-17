@@ -95,6 +95,9 @@ func TestRegistryMarkInactive(t *testing.T) {
 	if _, err := database.ExecContext(ctx, `UPDATE agents SET pid = ?, last_heartbeat = datetime('now', '-31 seconds') WHERE id = ?`, -1, stale.ID); err != nil {
 		t.Fatalf("ExecContext(stale update) error = %v", err)
 	}
+	if err := os.WriteFile(stale.SocketPath, []byte("socket"), 0o600); err != nil {
+		t.Fatalf("WriteFile(stale socket) error = %v", err)
+	}
 	if _, err := database.ExecContext(ctx, `UPDATE agents SET pid = ?, last_heartbeat = datetime('now') WHERE id = ?`, os.Getpid(), alive.ID); err != nil {
 		t.Fatalf("ExecContext(alive update) error = %v", err)
 	}
@@ -110,6 +113,9 @@ func TestRegistryMarkInactive(t *testing.T) {
 	if staleAgent.Status != "dead" {
 		t.Fatalf("stale agent status = %q, want dead", staleAgent.Status)
 	}
+	if _, err := os.Stat(stale.SocketPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("stale socket stat error = %v, want not exist", err)
+	}
 
 	aliveAgent, err := registry.FindByID(ctx, alive.ID)
 	if err != nil {
@@ -124,9 +130,9 @@ func TestRegistryMarkInactiveSkipsHuman(t *testing.T) {
 	registry, database, _ := setupRegistryTest(t)
 	ctx := context.Background()
 
-	human, err := registry.Register(ctx, "user", "human", nil, "", "project-a")
-	if err != nil {
-		t.Fatalf("Register(user) error = %v", err)
+	human := &db.Agent{Name: "user", Type: "human", Project: "project-a", Status: "alive", PID: 1}
+	if err := database.InsertAgent(ctx, human); err != nil {
+		t.Fatalf("InsertAgent(user) error = %v", err)
 	}
 	worker, err := registry.Register(ctx, "worker", "worker", nil, "", "project-a")
 	if err != nil {
@@ -239,5 +245,35 @@ func TestRegistryProjectFiltering(t *testing.T) {
 	}
 	if len(projectBAlive) != 1 || projectBAlive[0].ID != beta.ID {
 		t.Fatalf("ListAlive(project-b) = %+v, want only %q", projectBAlive, beta.ID)
+	}
+}
+
+func TestRegistryRegisterValidatesAgentName(t *testing.T) {
+	registry, _, _ := setupRegistryTest(t)
+	ctx := context.Background()
+
+	tests := []struct {
+		name    string
+		agent   string
+		wantErr bool
+	}{
+		{name: "simple alnum", agent: "alpha1"},
+		{name: "underscore and hyphen", agent: "alpha_beta-1"},
+		{name: "leading hyphen invalid", agent: "-alpha", wantErr: true},
+		{name: "space invalid", agent: "alpha beta", wantErr: true},
+		{name: "symbol invalid", agent: "alpha.beta", wantErr: true},
+		{name: "reserved user invalid", agent: "user", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := registry.Register(ctx, tt.agent, "worker", nil, "", "project-a")
+			if tt.wantErr && err == nil {
+				t.Fatalf("Register(%q) error = nil, want error", tt.agent)
+			}
+			if !tt.wantErr && err != nil {
+				t.Fatalf("Register(%q) error = %v", tt.agent, err)
+			}
+		})
 	}
 }

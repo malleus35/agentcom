@@ -4,16 +4,16 @@
 
 ## 현재 상태
 
-- **Phase**: PH5-03 terminal state reopen/retry 완료
-- **마지막 작업**: v0.2.3 릴리즈 및 Homebrew 배포 복구 완료
-- **현재 브랜치**: `feature/PH5-02-mcp-handler-params-validation`
+- **Phase**: PH6 runtime reliability 완료
+- **마지막 작업**: PH6 runtime reliability 구현 및 `develop` 머지 준비 완료
+- **현재 브랜치**: `feature/PH6-runtime-reliability`
 - **현재 버전**: `v0.2.3` 공개 릴리즈 완료
 - **P10 상태**: 구현/문서/테스트 완료, 관련 변경은 현재 브랜치에 포함됨
 - **P11 상태**: 구현 완료, 테스트/수동 QA/README 반영 완료, develop 머지 및 release 대기
 - **P12 상태**: 구현/검증/문서 반영 완료 (user endpoint, pseudo-agent, MCP tools)
 - **계획 문서 상태**: PH10 PRD 최종 통합본 완료 (`.agents/plans/PH10-priority-review-policy-PRD.md`), 6 Phase / 18 Tasks / ~62 Subtasks / ~16h
-- **다음 작업**: PH6-02 shutdown timeout context 정리
-- **후속 계획**: `.agents/plans/NEXT-PHASE-PLAN.md` — PH5~PH9 (26 tasks, 56.5h 추정, CLI-first 원칙으로 재검토 필요)
+- **다음 작업**: PH7 runtime config and observability
+- **후속 계획**: `.agents/plans/NEW-NEXT-PHASE-PLAN.md` — PH5~PH6 완료, PH7~PH9 (14 tasks, 약 29.5h 추정)
 - **PH10 PRD**: `.agents/plans/PH10-priority-review-policy-PRD.md` — priority enforcement + review policy (18 tasks, ~16h, 아키텍처 결정 8건 포함)
 - **PH10 문서 정리**: 기존 산재 문서 4개(`PH10-priority-review-policy.md`, `PH10-architectural-decisions.md`, `PH10-review-system-analysis.md`, `PH10-user-task-approver-design.md`) → 최종 PRD에 통합 후 삭제 완료
 
@@ -31,6 +31,18 @@
 - P10 project column 핵심 구현 완료
 
 ## 이번 세션에서 마무리한 작업
+
+- PH6 runtime reliability 구현 완료
+  - `internal/cli/up.go`, `internal/cli/up_test.go`: shutdown cleanup에 timeout helper 도입, stale runtime state 자동 정리, stale child heartbeat 탐지 helper와 supervisor health ticker 추가
+  - `internal/transport/uds.go`, `internal/transport/transport_test.go`: accept deadline/read deadline, bounded retry backoff+jitter, idle connection 및 retry regression 테스트 추가
+  - `internal/agent/registry.go`, `internal/agent/registry_test.go`: agent name regex/reserved-name validation 추가, dead agent socket cleanup 보강
+  - `internal/db/sqlite.go`, `internal/db/sqlite_test.go`: `HealthCheck()` helper 추가, journal mode / integrity check 검증 테스트 추가
+  - `internal/message/router.go`, `internal/message/router_test.go`: per-agent rate limit, inbox FIFO cleanup, duplicate broadcast throttle 추가
+  - `.agents/plans/PH6-runtime-reliability-execution.md`, `.agents/plans/PH7-runtime-config-observability-execution.md`, `.agents/plans/PH8-mcp-surface-rebaseline-execution.md`, `.agents/plans/PH9-targeted-test-closure-execution.md`: phase별 세분화 실행 문서 추가
+  - 검증 완료: `go test ./internal/cli/... -count=1`, `go test ./internal/transport/... -count=1`, `go test ./internal/agent/... -count=1`, `go test ./internal/db/... -count=1`, `go test ./internal/message/... -count=1`, `go test ./... -count=1`, `go build ./...`
+  - 수동 QA 완료:
+    - `/tmp/agentcom-ph6-qa-project`에서 `agentcom --json up --only plan` -> `agentcom --json down --force` 결과 `{"status":"stopped","stopped_roles":["plan"]}` 및 `.agentcom/run/up.json` 제거 확인
+    - `/tmp/agentcom-ph6-stale-project`에서 fake stale `up.json` + stale socket 생성 후 `agentcom --json up --only plan` 실행, 새 supervisor 시작 및 `STALE_SOCKET=removed` 확인
 
 - PH5-03 terminal state reopen/retry 지원 완료
   - `internal/task/model.go`: terminal 상태 재전이 5개만 허용하도록 전이 맵 최소 확장 (`completed -> pending|cancelled`, `failed -> pending|cancelled`, `cancelled -> pending`)

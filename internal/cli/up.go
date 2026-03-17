@@ -22,6 +22,8 @@ import (
 
 const upSupervisorCommandName = "__up-supervisor"
 
+const upSupervisorHealthCheckInterval = 5 * time.Second
+
 type templateManifest struct {
 	Name        string                 `json:"name"`
 	Description string                 `json:"description"`
@@ -315,6 +317,12 @@ func handleExistingRuntimeState(projectDir string, force bool) error {
 	if state.SupervisorPID == 0 {
 		return nil
 	}
+	if !processAliveCheck(state.SupervisorPID) {
+		if err := cleanupStaleRuntimeState(projectDir, state); err != nil {
+			return err
+		}
+		return nil
+	}
 	if !force {
 		return fmt.Errorf("an up session is already running")
 	}
@@ -413,7 +421,9 @@ func runUpSupervisor(ctx context.Context, projectDir, projectName, templateName 
 	}
 	defer func() {
 		_ = removeUpRuntimeState(projectDir)
-		_ = deregisterUserPseudoAgent(context.Background(), app.db, state.UserAgent)
+		_ = runWithCleanupTimeout(5*time.Second, func(cleanupCtx context.Context) error {
+			return deregisterUserPseudoAgent(cleanupCtx, app.db, state.UserAgent)
+		})
 	}()
 
 	for _, role := range roles {
@@ -453,6 +463,8 @@ func runUpSupervisor(ctx context.Context, projectDir, projectName, templateName 
 	for _, agentState := range state.Agents {
 		active[agentState.PID] = agentState
 	}
+	healthTicker := time.NewTicker(upSupervisorHealthCheckInterval)
+	defer healthTicker.Stop()
 
 	for len(active) > 0 {
 		select {
@@ -461,6 +473,15 @@ func runUpSupervisor(ctx context.Context, projectDir, projectName, templateName 
 				return fmt.Errorf("cli.runUpSupervisor: shutdown children: %w", err)
 			}
 			return nil
+		case <-healthTicker.C:
+			staleAgents, err := collectStaleRuntimeAgents(ctx, app.db, flattenActiveAgents(active), 30*time.Second, time.Now().UTC())
+			if err != nil {
+				return fmt.Errorf("cli.runUpSupervisor: collect stale agents: %w", err)
+			}
+			if len(staleAgents) > 0 {
+				_ = shutdownChildCommands(children, true, 5*time.Second)
+				return fmt.Errorf("cli.runUpSupervisor: stale child agents detected: %d", len(staleAgents))
+			}
 		case exited := <-exitCh:
 			delete(active, exited.pid)
 			state.Agents = flattenActiveAgents(active)
@@ -612,7 +633,9 @@ func stopRuntimeState(projectDir string, state upRuntimeState, onlyRoles []strin
 			return nil, nil, fmt.Errorf("signal supervisor: %w", err)
 		}
 		if force {
-			if err := deregisterUserPseudoAgent(context.Background(), app.db, state.UserAgent); err != nil {
+			if err := runWithCleanupTimeout(5*time.Second, func(cleanupCtx context.Context) error {
+				return deregisterUserPseudoAgent(cleanupCtx, app.db, state.UserAgent)
+			}); err != nil {
 				return nil, nil, err
 			}
 			if err := removeUpRuntimeState(projectDir); err != nil {
@@ -623,7 +646,9 @@ func stopRuntimeState(projectDir string, state upRuntimeState, onlyRoles []strin
 		if err := waitForRuntimeStateRemoval(projectDir, timeout); err != nil {
 			return nil, nil, err
 		}
-		if err := deregisterUserPseudoAgent(context.Background(), app.db, state.UserAgent); err != nil {
+		if err := runWithCleanupTimeout(5*time.Second, func(cleanupCtx context.Context) error {
+			return deregisterUserPseudoAgent(cleanupCtx, app.db, state.UserAgent)
+		}); err != nil {
 			return nil, nil, err
 		}
 		return stopped, nil, nil
@@ -686,6 +711,53 @@ func shutdownChildCommands(children []*exec.Cmd, force bool, timeout time.Durati
 		}
 	}
 	return nil
+}
+
+func runWithCleanupTimeout(timeout time.Duration, fn func(context.Context) error) error {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return fn(ctx)
+}
+
+func cleanupStaleRuntimeState(projectDir string, state upRuntimeState) error {
+	for _, agentState := range state.Agents {
+		if agentState.SocketPath == "" {
+			continue
+		}
+		if err := os.Remove(agentState.SocketPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("cleanup stale socket %s: %w", agentState.Role, err)
+		}
+	}
+	if state.UserAgent != nil && state.UserAgent.SocketPath != "" {
+		if err := os.Remove(state.UserAgent.SocketPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("cleanup stale user socket: %w", err)
+		}
+	}
+	if err := removeUpRuntimeState(projectDir); err != nil {
+		return err
+	}
+	return nil
+}
+
+func collectStaleRuntimeAgents(ctx context.Context, database *db.DB, agents []upRuntimeStateAgent, staleThreshold time.Duration, now time.Time) ([]upRuntimeStateAgent, error) {
+	stale := make([]upRuntimeStateAgent, 0)
+	for _, agentState := range agents {
+		if agentState.AgentID == "" || agentState.Type == "human" {
+			continue
+		}
+		agentRecord, err := database.FindAgentByID(ctx, agentState.AgentID)
+		if err != nil {
+			return nil, fmt.Errorf("collect stale agent %s: %w", agentState.Role, err)
+		}
+		if now.Sub(agentRecord.LastHeartbeat) <= staleThreshold {
+			continue
+		}
+		if processAliveCheck(agentState.PID) {
+			continue
+		}
+		stale = append(stale, agentState)
+	}
+	return stale, nil
 }
 
 func waitForRuntimeStateRemoval(projectDir string, timeout time.Duration) error {

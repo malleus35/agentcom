@@ -18,6 +18,11 @@ type DB struct {
 	*sql.DB
 }
 
+type HealthStatus struct {
+	JournalMode    string
+	IntegrityCheck string
+}
+
 // Open creates a new SQLite connection with WAL mode, busy timeout, and foreign keys enabled.
 func Open(path string) (*DB, error) {
 	dsn := fmt.Sprintf(dsnTemplate, path)
@@ -49,6 +54,22 @@ func OpenMemory() (*DB, error) {
 	sqlDB.SetMaxOpenConns(1)
 	sqlDB.SetMaxIdleConns(1)
 	return &DB{sqlDB}, nil
+}
+
+func (d *DB) HealthCheck(ctx context.Context) (HealthStatus, error) {
+	if err := d.PingContext(ctx); err != nil {
+		return HealthStatus{}, fmt.Errorf("db.HealthCheck: ping: %w", err)
+	}
+
+	var status HealthStatus
+	if err := d.QueryRowContext(ctx, `PRAGMA journal_mode;`).Scan(&status.JournalMode); err != nil {
+		return HealthStatus{}, fmt.Errorf("db.HealthCheck: journal_mode: %w", err)
+	}
+	if err := d.QueryRowContext(ctx, `PRAGMA integrity_check;`).Scan(&status.IntegrityCheck); err != nil {
+		return HealthStatus{}, fmt.Errorf("db.HealthCheck: integrity_check: %w", err)
+	}
+
+	return status, nil
 }
 
 // Close closes the database connection.

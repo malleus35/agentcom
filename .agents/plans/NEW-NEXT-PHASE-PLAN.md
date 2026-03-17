@@ -132,111 +132,64 @@
 
 | 태스크 | 상태 | 메모 |
 |-------|------|------|
-| PH6-01 supervisor child health monitoring | open | exit 감지만 있음 |
-| PH6-02 shutdown timeout context | open | `context.Background()` 3곳 잔존 |
-| PH6-03 UDS accept/read timeout | open | `Accept`, `Decode` deadline 없음 |
-| PH6-04 UDS retry backoff/jitter | open | 2회 즉시 재시도만 존재 |
-| PH6-05 rate limit / queue overflow protection | open | 보호장치 없음 |
-| PH6-06 orphan runtime/socket cleanup | partial | stale socket cleanup는 있으나 stale runtime 정리 없음 |
-| PH6-07 agent name validation | open | register path regex validation 없음 |
-| PH6-08 SQLite runtime health checks | open | open 시 ping만 수행 |
+| PH6-01 supervisor child health monitoring | done | stale child heartbeat 탐지 + fail-fast shutdown 추가 |
+| PH6-02 shutdown timeout context | done | timeout-backed cleanup helper로 3경로 정리 |
+| PH6-03 UDS accept/read timeout | done | periodic accept deadline + read deadline 추가 |
+| PH6-04 UDS retry backoff/jitter | done | bounded retry backoff+jitter 회귀 테스트 반영 |
+| PH6-05 rate limit / queue overflow protection | done | per-agent rate limit, inbox FIFO cleanup, duplicate broadcast throttle 추가 |
+| PH6-06 orphan runtime/socket cleanup | done | stale runtime auto cleanup + dead socket cleanup 추가 |
+| PH6-07 agent name validation | done | regex + reserved `user` name 검증 추가 |
+| PH6-08 SQLite runtime health checks | done | `HealthCheck()` helper와 journal/integrity 검증 추가 |
 
 ### PH6-01: Supervisor 자식 프로세스 liveness 모니터링
 - **대상**: `internal/cli/up.go`
-- **현재 상태**: child exit만 감지, heartbeat 기반 hang 탐지는 없음
-- **수정**:
-  - runtime state의 자식 목록을 heartbeat 조회와 연결
-  - N회 연속 stale이면 restart 또는 fail-fast 정책 적용
-  - restart 정책은 `--no-restart` 없이 시작하지 말고 우선 기본 정책만 설계 후 구현
-- **검증**:
-  - hung child 시뮬레이션 테스트 또는 supervisor 단위 테스트 추가
-- **예상 공수**: 4h
+- **완료 상태**: runtime state active agent를 heartbeat와 연결해 stale child를 감지하고 fail-fast shutdown 수행
+- **검증**: `TestCollectStaleRuntimeAgents`, full CLI/package tests, PH6 stale-runtime manual QA
+- **실소요 공수**: 약 2h
 
 ### PH6-02: shutdown 경로의 무기한 블로킹 제거
 - **대상**: `internal/cli/up.go`
-- **현재 상태**: `deregisterUserPseudoAgent(context.Background(), ...)`가 defer / force / non-force 경로에 존재
-- **수정**:
-  - `context.WithTimeout(context.Background(), 5*time.Second)` wrapper 적용
-  - helper 함수로 중복 제거 가능 여부 검토
-- **검증**:
-  - `agentcom down --force` / 일반 `down` 경로에서 timeout context 사용 확인
-- **예상 공수**: 30min
+- **완료 상태**: timeout-backed cleanup helper로 defer / force / graceful shutdown 경로 정리
+- **검증**: `TestRunWithCleanupTimeout*`, `agentcom --json down --force` manual QA
+- **실소요 공수**: 약 30min
 
 ### PH6-03: UDS server accept/read deadline 도입
 - **대상**: `internal/transport/uds.go`
-- **현재 상태**:
-  - `listener.Accept()` blocking
-  - `decoder.Decode()` blocking
-- **수정**:
-  - accept loop에 periodic deadline
-  - connection read deadline 적용
-  - timeout은 정상 루프로 처리하고 noisy error를 피함
-- **검증**:
-  - slow client / idle connection 시 server가 종료 가능하고 hang하지 않는 테스트 추가
-- **예상 공수**: 2h
+- **완료 상태**: periodic accept deadline과 connection read deadline 추가, timeout 경로는 조용히 회수
+- **검증**: `TestHandleConnectionReturnsAfterReadTimeout`, transport/full suite
+- **실소요 공수**: 약 1.5h
 
 ### PH6-04: UDS client retry를 exponential backoff + jitter로 개선
 - **대상**: `internal/transport/uds.go`
-- **현재 상태**: 2회 즉시 재시도 + debug log만 존재
-- **수정**:
-  - 3회 재시도
-  - 100ms -> 200ms -> 400ms backoff
-  - 소규모 jitter 추가
-  - 최종 실패 WARN, fallback 전환 INFO로 로깅 정책 연결
-- **검증**:
-  - retry count / backoff 동작 테스트
-- **예상 공수**: 2h
+- **완료 상태**: bounded retry backoff+jitter 추가, retry timing regression 테스트 반영
+- **검증**: `TestClientSendRetriesWithBackoff`, transport/full suite
+- **실소요 공수**: 약 1.5h
 
 ### PH6-05: 메시지 rate limit / overflow 보호
 - **대상**: `internal/message/router.go`, `internal/db/message.go`
-- **현재 상태**: per-agent inbox size / per-agent send rate / broadcast dedupe 없음
-- **수정**:
-  - 인박스 상한
-  - FIFO cleanup 정책
-  - per-agent rate limit
-  - 동일 topic broadcast throttle
-- **검증**:
-  - limit 초과 시 반환 에러와 cleanup 동작 테스트
-- **예상 공수**: 4h
+- **완료 상태**: per-agent rate limit, inbox FIFO cleanup, duplicate broadcast throttle를 router 정책으로 추가
+- **검증**: router regression 3종 + full suite
+- **실소요 공수**: 약 3h
 
 ### PH6-06: stale runtime / orphan socket 정리 강화
 - **대상**: `internal/agent/registry.go`, `internal/cli/up.go`
-- **현재 상태**:
-  - UDS 시작 시 stale socket cleanup는 존재
-  - `Deregister()`는 socket 제거
-  - `MarkInactive()`는 dead marking만 하고 socket 정리는 안 함
-  - stale `.agentcom/run/up.json` 자동 정리 없음
-- **수정**:
-  - `MarkInactive()`의 socket cleanup 검토
-  - `up` 시작 시 stale runtime state 감지 및 cleanup/warn
-  - `down --cleanup` 또는 동등한 복구 경로 제공 여부 결정
-- **검증**:
-  - supervisor crash 후 재실행 recovery 테스트
-- **예상 공수**: 3h
+- **완료 상태**: dead agent socket cleanup과 stale runtime auto cleanup 구현, stale supervisor 재시작 경로를 수동 QA로 검증
+- **검증**: `TestHandleExistingRuntimeStateRemovesStaleState`, `TestRegistryMarkInactive`, stale runtime manual QA
+- **실소요 공수**: 약 2h
 
 ### PH6-07: agent name validation 추가
 - **대상**: `internal/agent/registry.go`, `internal/cli/register.go`, MCP message/task resolution 진입점
-- **현재 상태**: register 시 name regex validation 부재
-- **수정**:
-  - `^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$`
-  - 예약어 `user` 처리 정책 정리
-  - project scope와 충돌 없는지 확인
-- **검증**:
-  - table-driven validation 테스트
-- **예상 공수**: 1h
+- **완료 상태**: regex + reserved `user` name 정책을 registration path에 추가
+- **검증**: `TestRegistryRegisterValidatesAgentName`, agent/full suite
+- **실소요 공수**: 약 45min
 
 ### PH6-08: SQLite runtime health check 도입
 - **대상**: `internal/db/sqlite.go`
-- **현재 상태**: open 시 ping만 수행
-- **수정**:
-  - 선택적 integrity check
-  - WAL mode 재확인
-  - health probe helper 추가
-- **검증**:
-  - 최소 단위 테스트 + health path 호출 검증
-- **예상 공수**: 2h
+- **완료 상태**: `HealthCheck()` helper로 ping, journal mode, integrity check surface 추가
+- **검증**: `TestHealthCheck*`, db/full suite
+- **실소요 공수**: 약 1h
 
-**PH6 예상 잔여 공수: 18.5h**
+**PH6 예상 잔여 공수: 0h**
 
 ---
 
@@ -454,11 +407,11 @@ Worktree E: PH8 / PH9 (PH5 완료 후)
 | Phase | 남은 태스크 수 | 예상 잔여 공수 |
 |-------|----------------|----------------|
 | PH5 | 0 | 0h |
-| PH6 | 8 | 18.5h |
+| PH6 | 0 | 0h |
 | PH7 | 4 | 13h |
 | PH8 | 6 | 7.5h |
 | PH9 | 4 | 9h |
-| **총계** | **22** | **약 48h** |
+| **총계** | **14** | **약 29.5h** |
 
 차이 설명:
 
@@ -470,8 +423,8 @@ Worktree E: PH8 / PH9 (PH5 완료 후)
 
 ## 완료 기준
 
-- [ ] PH5 완료: MCP error path가 모두 JSON-RPC `error`를 사용하고, terminal state reopen/retry가 가능하다.
-- [ ] PH6 완료: `up/down`, UDS, runtime cleanup 경로에 운영상 치명적인 무기한 블로킹/누수 경로가 없다.
+- [x] PH5 완료: MCP error path가 모두 JSON-RPC `error`를 사용하고, terminal state reopen/retry가 가능하다.
+- [x] PH6 완료: `up/down`, UDS, runtime cleanup 경로에 운영상 치명적인 무기한 블로킹/누수 경로가 없다.
 - [ ] PH7 완료: timeout/retry/interval 값이 외부화되고 운영 로그/에러 UX가 일관적이다.
 - [ ] PH8 완료: 남은 필수 CLI parity MCP 도구가 추가된다.
 - [ ] PH9 완료: onboard/query/transport lifecycle/MCP error matrix 테스트가 보강된다.
