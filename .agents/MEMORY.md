@@ -4,7 +4,7 @@
 
 ## 현재 상태
 
-- **Phase**: PH5-02 MCP handler parameter validation 완료
+- **Phase**: PH5-03 terminal state reopen/retry 완료
 - **마지막 작업**: v0.2.3 릴리즈 및 Homebrew 배포 복구 완료
 - **현재 브랜치**: `feature/PH5-02-mcp-handler-params-validation`
 - **현재 버전**: `v0.2.3` 공개 릴리즈 완료
@@ -12,7 +12,7 @@
 - **P11 상태**: 구현 완료, 테스트/수동 QA/README 반영 완료, develop 머지 및 release 대기
 - **P12 상태**: 구현/검증/문서 반영 완료 (user endpoint, pseudo-agent, MCP tools)
 - **계획 문서 상태**: PH10 PRD 최종 통합본 완료 (`.agents/plans/PH10-priority-review-policy-PRD.md`), 6 Phase / 18 Tasks / ~62 Subtasks / ~16h
-- **다음 작업**: PH5-03 terminal state reopen/retry 지원
+- **다음 작업**: PH6-02 shutdown timeout context 정리
 - **후속 계획**: `.agents/plans/NEXT-PHASE-PLAN.md` — PH5~PH9 (26 tasks, 56.5h 추정, CLI-first 원칙으로 재검토 필요)
 - **PH10 PRD**: `.agents/plans/PH10-priority-review-policy-PRD.md` — priority enforcement + review policy (18 tasks, ~16h, 아키텍처 결정 8건 포함)
 - **PH10 문서 정리**: 기존 산재 문서 4개(`PH10-priority-review-policy.md`, `PH10-architectural-decisions.md`, `PH10-review-system-analysis.md`, `PH10-user-task-approver-design.md`) → 최종 PRD에 통합 후 삭제 완료
@@ -31,6 +31,19 @@
 - P10 project column 핵심 구현 완료
 
 ## 이번 세션에서 마무리한 작업
+
+- PH5-03 terminal state reopen/retry 지원 완료
+  - `internal/task/model.go`: terminal 상태 재전이 5개만 허용하도록 전이 맵 최소 확장 (`completed -> pending|cancelled`, `failed -> pending|cancelled`, `cancelled -> pending`)
+  - `internal/task/model_test.go`: reopen/retry/resurrect 전이 unit test를 TDD로 먼저 추가하고 failing red 상태 확인 후 green 통과
+  - `internal/task/manager_test.go`: completed/failed/cancelled 재개와 reviewer 회귀 테스트 추가, 재오픈된 reviewer task가 다시 `in_progress -> completed`에서 `blocked`로 전환되는지 검증
+  - `README.md`, `README.ko.md`, `README.ja.md`, `README.zh.md`: `task update`로 가능한 terminal reopen semantics 문서화
+  - `.agents/plans/NEW-NEXT-PHASE-PLAN.md`: PH5-03 상태를 done으로 반영하고 PH5 잔여 공수를 0h로 조정
+  - 검증 완료: `go test ./internal/task/... -run TestValidateTransition -count=1`(red 확인 후 green), `go test ./internal/task/... -count=1`, `go test ./... -count=1`, `go build ./...`
+  - 수동 QA 완료:
+    - `AGENTCOM_HOME=/tmp/agentcom-ph5-03-qa-home` + `/tmp/agentcom-ph5-03-qa-run`에서 `agentcom --json init --batch --project demo-app --template company`
+    - `agentcom --json task create "retry me" --priority medium` -> `{"id":"tsk_mfQaAfWWs7HY-trHErUMV","status":"pending"...}`
+    - `agentcom --json task update tsk_mfQaAfWWs7HY-trHErUMV --status completed --result "done"` -> `{"status":"completed","result":"done"...}`
+    - `agentcom --json task update tsk_mfQaAfWWs7HY-trHErUMV --status pending --result "reopened"` -> `{"status":"pending","result":"reopened"...}`
 
 - PH5-02 MCP handler 파라미터 검증 강화 완료
   - `internal/mcp/handler.go`: optional/required JSON unmarshal helper 추가, required-field 검증을 `invalidParamsError`로 정렬, `send_message`/`broadcast`/`send_to_user`/`get_user_messages`/`delegate_task`의 caller-input agent reference 실패를 `-32602` 경로로 승격
@@ -366,4 +379,4 @@
   - [x] Phase F: Documentation (README×4, AGENTS.md, MEMORY.md)
 - [x] **PH5-01 완료**: MCP tool error path를 JSON-RPC `error`로 정렬하고 회귀 테스트/문서 반영 완료
 - [x] **PH5-02 완료**: MCP handler 파라미터 검증 강화, regression matrix, manual QA, README 반영 완료
-- [ ] **TODO: PH5-03 terminal state reopen/retry 지원**
+- [x] **PH5-03 완료**: terminal state reopen/retry 지원, 회귀 테스트, manual QA, README 반영 완료

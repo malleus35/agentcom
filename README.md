@@ -654,6 +654,7 @@ Important details:
 - `--assign` and `--creator` accept agent name or ID.
 - `task list --assignee` tries to resolve names to IDs before querying.
 - `task update` validates status transitions through the task manager.
+- Terminal tasks can be explicitly reopened through `task update`: `completed -> pending|cancelled`, `failed -> pending|cancelled`, and `cancelled -> pending`.
 - Tasks with a reviewer cannot go directly from `in_progress` to `completed`; the manager converts that transition to `blocked` until review is approved or rejected.
 - `task delegate` updates `assigned_to` to the resolved target agent and sets the task status to `assigned`.
 

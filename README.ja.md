@@ -485,6 +485,7 @@ agentcom task reject <task-id> --result "changes requested"
 - `--reviewer` は agent 名、agent ID、または `user` を受け付けます
 - active template に `review_policy` がある場合、reviewer は自動設定されることがあります
 - `--assign`, `--creator` は名前または ID を受け付けます
+- terminal 状態も `task update` で明示的に再オープンできます: `completed -> pending|cancelled`, `failed -> pending|cancelled`, `cancelled -> pending`
 - reviewer 付きタスクは `in_progress -> completed` を直接通らず、いったん `blocked` になってから `approve` / `reject` を使います
 - `task delegate` は `assigned_to` を対象 agent に更新し、状態を `assigned` にします
 
