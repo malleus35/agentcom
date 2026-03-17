@@ -787,6 +787,7 @@ agentcom mcp-server --register mcp-agent --type mcp
 참고:
 
 - `tools/list`, `tools/call` 전에 반드시 `initialize`가 먼저 와야 합니다.
+- tool-call 실패는 JSON-RPC `error`로 반환됩니다: unknown tool=`-32601`, invalid params=`-32602`, 일반 runtime tool error=`-32000`.
 - 제공 도구는 agent 조회, 메시지 전송, broadcast, 태스크 생성/위임, 태스크 조회, 상태 조회를 포함합니다.
 
 ## JSON 출력 예시
