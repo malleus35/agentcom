@@ -79,6 +79,7 @@ func NewRootCmd() *cobra.Command {
 		newSendCmd(),
 		newBroadcastCmd(),
 		newInboxCmd(),
+		newUserCmd(),
 		newTaskCmd(),
 		newStatusCmd(),
 		newHealthCmd(),
