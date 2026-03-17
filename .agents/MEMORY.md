@@ -4,15 +4,15 @@
 
 ## 현재 상태
 
-- **Phase**: PH10 priority-review-policy 구현 시작
-- **마지막 작업**: PH10 PRD 작성 완료, 아키텍처 결정 완료, feature 브랜치 생성
+- **Phase**: PH10 priority-review-policy 구현 완료
+- **마지막 작업**: PH10 구현/테스트/문서/수동 QA 완료
 - **현재 브랜치**: `feature/PH10-priority-review-policy` (from `feature/P12-user-endpoint`)
 - **현재 버전**: v0.1.7이 최신 공개 릴리스, 다음 릴리스 버전은 아직 미확정
 - **P10 상태**: 구현/문서/테스트 완료, 관련 변경은 현재 브랜치에 포함됨
 - **P11 상태**: 구현 완료, 테스트/수동 QA/README 반영 완료, develop 머지 및 release 대기
 - **P12 상태**: 구현/검증/문서 반영 완료 (user endpoint, pseudo-agent, MCP tools)
 - **계획 문서 상태**: PH10 PRD 최종 통합본 완료 (`.agents/plans/PH10-priority-review-policy-PRD.md`), 6 Phase / 18 Tasks / ~62 Subtasks / ~16h
-- **다음 작업**: PH10 Phase A 구현 시작 (priority validation 강제)
+- **다음 작업**: PH5~PH9 계획 재정렬 또는 다음 우선순위 기능 선정
 - **후속 계획**: `.agents/plans/NEXT-PHASE-PLAN.md` — PH5~PH9 (26 tasks, 56.5h 추정, CLI-first 원칙으로 재검토 필요)
 - **PH10 PRD**: `.agents/plans/PH10-priority-review-policy-PRD.md` — priority enforcement + review policy (18 tasks, ~16h, 아키텍처 결정 8건 포함)
 - **PH10 문서 정리**: 기존 산재 문서 4개(`PH10-priority-review-policy.md`, `PH10-architectural-decisions.md`, `PH10-review-system-analysis.md`, `PH10-user-task-approver-design.md`) → 최종 PRD에 통합 후 삭제 완료
@@ -31,6 +31,17 @@
 - P10 project column 핵심 구현 완료
 
 ## 이번 세션에서 마무리한 작업
+
+- PH10 priority-review-policy 구현 완료
+  - `internal/task/model.go`, `internal/task/policy.go`, `internal/task/manager.go`: priority enum/검증/비교, reviewer-aware transition, review policy resolve, approve/reject flow 추가
+  - `internal/db/migrations.go`, `internal/db/task.go`: `tasks.reviewer` 마이그레이션, reviewer persistence, InsertTask preset ID 보존으로 double ID 버그 수정
+  - `internal/cli/task.go`: `task create/update/delegate`를 manager 기반으로 전환하고 `--reviewer`, `task approve`, `task reject` 추가
+  - `internal/cli/agents.go`, `internal/cli/template_store.go`, `internal/cli/template_import.go`, `internal/onboard/template_definition.go`: template `review_policy` import/export/store 및 built-in template 기본 policy 반영
+  - `internal/mcp/tools.go`, `internal/mcp/handler.go`, `internal/mcp/server.go`: `create_task` priority/reviewer/policy 적용, `update_task`/`approve_task`/`reject_task` 도구 추가, invalid params를 JSON-RPC 에러로 반환하도록 확장
+  - `internal/task/*_test.go`, `internal/db/*_test.go`, `internal/cli/task_test.go`, `internal/mcp/server_test.go`, `cmd/agentcom/e2e_test.go`: PH10 회귀 테스트 및 E2E 추가
+  - `README.md`, `README.ko.md`, `README.ja.md`, `README.zh.md`, `AGENTS.md`: priority/reviewer/review_policy 및 MCP/CLI 새 명령 문서 반영
+  - 검증 완료: `go test ./... -count=1`, `go build ./...`
+  - 수동 QA 완료: project template에서 invalid priority 거부, policy 기반 reviewer 자동 지정, `task update`의 `blocked` 전환, `task approve` 완료 흐름 확인
 
 - P12 user endpoint 구현 완료
   - `internal/db/agent.go`, `internal/db/message.go`: user message flow용 query helper(`FindAgentByTypeAndProject`, `ListMessagesFromAgent`, `ListUnreadRequestsForAgent`) 추가
@@ -261,6 +272,8 @@
 | 2026-03-17 | MCP를 "CLI-first, MCP는 선택적 어댑터"로 포지셔닝 변경 | MCP 9개 도구 모두 CLI 대응 존재, 고유 기능 0, 토큰 비용 4-32x, 셸 없는 런타임에서만 필요 |
 | 2026-03-17 | `reviewer` 필드는 에이전트 ID + "user" 모두 지원 (자유 문자열) | 추가 비용 0, agentcom "에이전트 유형 자유" 원칙 부합, 멀티에이전트 프레임워크 패턴 지원 |
 | 2026-03-17 | 에이전트 리뷰 자동화 로직(retry, cascading, guardrail)은 agentcom 범위 밖 | agentcom은 통신 인프라이지 실행 엔진이 아님. 리뷰 라우팅과 상태 전환 제어만 담당 |
+| 2026-03-17 | reviewer가 있는 태스크의 `in_progress -> completed`는 direct completion 대신 `blocked`로 전환 | 선택적 review gate를 최소 변경으로 도입하면서 기존 상태 머신과 CLI/MCP surface를 최대한 유지하기 위해 |
+| 2026-03-17 | template `review_policy`는 project scaffold의 `template.json`에서 읽어 CLI/MCP task create에 공통 적용 | built-in/custom template 구분 없이 동일한 런타임 입력을 사용하고 추가 선언 파일 도입을 피하기 위해 |
 
 ## 발견된 이슈
 
@@ -313,11 +326,11 @@
 - [x] **NEXT-PHASE-PLAN.md 작성 완료**: PH5(MCP 스펙), PH6(안정성), PH7(설정/옵저버빌리티), PH8(MCP 확장), PH9(테스트) — 총 26 태스크, 56.5h 추정
 - [x] **PH10 PRD 최종 통합본 완료**: `.agents/plans/PH10-priority-review-policy-PRD.md` — 6 Phase, 18 Tasks, ~62 Subtasks, ~16h (기존 4개 문서 흡수·삭제)
 - [x] **AGENTS.md line 166 변경 완료**: "MCP 퍼스트" → "CLI-first, MCP는 셸 없는 런타임용 선택적 어댑터"
-- [ ] **PH10 구현**: `feature/PH10-priority-review-policy` 브랜치에서 PRD 순서대로 구현
-  - [ ] Phase A: Priority Validation (model.go, manager.go, task.go CLI, handler.go MCP)
-  - [ ] Phase B: Reviewer Field + State Machine (migrations.go, db/task.go, model.go, manager.go)
-  - [ ] Phase C: Review Policy — Template Integration (policy.go new, agents.go, template_store.go, task.go CLI, handler.go MCP)
-  - [ ] Phase D: MCP update_task tool (tools.go, handler.go)
-  - [ ] Phase E: Test coverage (manager_test.go, model_test.go, db/task_test.go, e2e_test.go)
-  - [ ] Phase F: Documentation (README×4, AGENTS.md, MEMORY.md)
+- [x] **PH10 구현**: `feature/PH10-priority-review-policy` 브랜치에서 PRD 순서대로 구현
+  - [x] Phase A: Priority Validation (model.go, manager.go, task.go CLI, handler.go MCP)
+  - [x] Phase B: Reviewer Field + State Machine (migrations.go, db/task.go, model.go, manager.go)
+  - [x] Phase C: Review Policy — Template Integration (policy.go new, agents.go, template_store.go, task.go CLI, handler.go MCP)
+  - [x] Phase D: MCP update_task tool (tools.go, handler.go)
+  - [x] Phase E: Test coverage (manager_test.go, model_test.go, db/task_test.go, e2e_test.go)
+  - [x] Phase F: Documentation (README×4, AGENTS.md, MEMORY.md)
 - [ ] **TODO: PH5~PH8 MCP 확장 계획의 범위를 CLI-first 원칙에 맞게 재검토**
