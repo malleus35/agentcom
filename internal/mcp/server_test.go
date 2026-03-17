@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -201,49 +202,77 @@ func TestServerRunJSONRPCRoundTrip(t *testing.T) {
 
 func TestCreateTaskInvalidPriorityReturnsJSONRPCError(t *testing.T) {
 	server, _ := setupMCPTestServer(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	inReader, inWriter := io.Pipe()
-	outReader, outWriter := io.Pipe()
-	runErr := make(chan error, 1)
-	go func() {
-		runErr <- server.Run(ctx, inReader, outWriter)
-	}()
-
-	enc := json.NewEncoder(inWriter)
-	dec := json.NewDecoder(outReader)
-	if err := enc.Encode(Request{JSONRPC: jsonRPCVersion, ID: 1, Method: "initialize", Params: json.RawMessage(`{}`)}); err != nil {
-		t.Fatalf("encode initialize error = %v", err)
-	}
-	var resp Response
-	if err := dec.Decode(&resp); err != nil {
-		t.Fatalf("decode initialize response error = %v", err)
-	}
-	if err := enc.Encode(Request{JSONRPC: jsonRPCVersion, Method: "notifications/initialized", Params: json.RawMessage(`{}`)}); err != nil {
-		t.Fatalf("encode initialized notification error = %v", err)
-	}
-	if err := enc.Encode(Request{JSONRPC: jsonRPCVersion, ID: 2, Method: "tools/call", Params: json.RawMessage(`{
+	responses := runMCPRoundTripRequests(t, server,
+		Request{JSONRPC: jsonRPCVersion, ID: 1, Method: "initialize", Params: json.RawMessage(`{}`)},
+		Request{JSONRPC: jsonRPCVersion, Method: "notifications/initialized", Params: json.RawMessage(`{}`)},
+		Request{JSONRPC: jsonRPCVersion, ID: 2, Method: "tools/call", Params: json.RawMessage(`{
 			"name":"create_task",
 			"arguments":{"title":"bad task","priority":"urgent"}
-		}`)}); err != nil {
-		t.Fatalf("encode tools/call error = %v", err)
-	}
-	if err := dec.Decode(&resp); err != nil {
-		t.Fatalf("decode invalid priority response error = %v", err)
-	}
+		}`)},
+	)
+	resp := decodeResponseMap(t, responses[1])
 	if resp.Error == nil {
 		t.Fatal("resp.Error = nil, want invalid params error")
 	}
 	if resp.Error.Code != errInvalidParams {
 		t.Fatalf("resp.Error.Code = %d, want %d", resp.Error.Code, errInvalidParams)
 	}
-
-	if err := inWriter.Close(); err != nil {
-		t.Fatalf("inWriter.Close() error = %v", err)
+	if _, ok := responses[1]["result"]; ok {
+		t.Fatal("invalid priority response unexpectedly included result")
 	}
-	if err := <-runErr; err != nil {
-		t.Fatalf("Server.Run() error = %v", err)
+	if resp.Error.Message == "" {
+		t.Fatal("resp.Error.Message = empty, want invalid params detail")
+	}
+}
+
+func TestUnknownToolReturnsJSONRPCMethodNotFound(t *testing.T) {
+	server, _ := setupMCPTestServer(t)
+
+	responses := runMCPRoundTripRequests(t, server,
+		Request{JSONRPC: jsonRPCVersion, ID: 1, Method: "initialize", Params: json.RawMessage(`{}`)},
+		Request{JSONRPC: jsonRPCVersion, Method: "notifications/initialized", Params: json.RawMessage(`{}`)},
+		Request{JSONRPC: jsonRPCVersion, ID: 2, Method: "tools/call", Params: json.RawMessage(`{"name":"no_such_tool","arguments":{}}`)},
+	)
+
+	resp := decodeResponseMap(t, responses[1])
+	if resp.Error == nil {
+		t.Fatal("resp.Error = nil, want method not found error")
+	}
+	if resp.Error.Code != errMethodNotFound {
+		t.Fatalf("resp.Error.Code = %d, want %d", resp.Error.Code, errMethodNotFound)
+	}
+	if resp.Error.Message != "unknown tool: no_such_tool" {
+		t.Fatalf("resp.Error.Message = %q, want %q", resp.Error.Message, "unknown tool: no_such_tool")
+	}
+	if _, ok := responses[1]["result"]; ok {
+		t.Fatal("unknown tool response unexpectedly included result")
+	}
+}
+
+func TestToolRuntimeErrorReturnsJSONRPCError(t *testing.T) {
+	server, _ := setupMCPTestServer(t)
+	server.tools["runtime_failure"] = func(context.Context, json.RawMessage) (interface{}, error) {
+		return nil, errors.New("boom")
+	}
+
+	responses := runMCPRoundTripRequests(t, server,
+		Request{JSONRPC: jsonRPCVersion, ID: 1, Method: "initialize", Params: json.RawMessage(`{}`)},
+		Request{JSONRPC: jsonRPCVersion, Method: "notifications/initialized", Params: json.RawMessage(`{}`)},
+		Request{JSONRPC: jsonRPCVersion, ID: 2, Method: "tools/call", Params: json.RawMessage(`{"name":"runtime_failure","arguments":{}}`)},
+	)
+
+	resp := decodeResponseMap(t, responses[1])
+	if resp.Error == nil {
+		t.Fatal("resp.Error = nil, want tool execution error")
+	}
+	if resp.Error.Code != errToolExecution {
+		t.Fatalf("resp.Error.Code = %d, want %d", resp.Error.Code, errToolExecution)
+	}
+	if resp.Error.Message != "boom" {
+		t.Fatalf("resp.Error.Message = %q, want boom", resp.Error.Message)
+	}
+	if _, ok := responses[1]["result"]; ok {
+		t.Fatal("runtime failure response unexpectedly included result")
 	}
 }
 
@@ -504,4 +533,58 @@ func withMCPWorkingDir(t *testing.T, dir string) {
 			t.Fatalf("restore cwd: %v", err)
 		}
 	})
+}
+
+func runMCPRoundTripRequests(t *testing.T, server *Server, requests ...Request) []map[string]interface{} {
+	t.Helper()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	inReader, inWriter := io.Pipe()
+	outReader, outWriter := io.Pipe()
+	runErr := make(chan error, 1)
+	go func() {
+		runErr <- server.Run(ctx, inReader, outWriter)
+	}()
+
+	enc := json.NewEncoder(inWriter)
+	dec := json.NewDecoder(outReader)
+	responses := make([]map[string]interface{}, 0, len(requests))
+	for _, req := range requests {
+		if err := enc.Encode(req); err != nil {
+			t.Fatalf("encode %s error = %v", req.Method, err)
+		}
+		if req.ID == nil {
+			continue
+		}
+		var raw map[string]interface{}
+		if err := dec.Decode(&raw); err != nil {
+			t.Fatalf("decode %s response error = %v", req.Method, err)
+		}
+		responses = append(responses, raw)
+	}
+
+	if err := inWriter.Close(); err != nil {
+		t.Fatalf("inWriter.Close() error = %v", err)
+	}
+	if err := <-runErr; err != nil {
+		t.Fatalf("Server.Run() error = %v", err)
+	}
+
+	return responses
+}
+
+func decodeResponseMap(t *testing.T, raw map[string]interface{}) Response {
+	t.Helper()
+
+	b, err := json.Marshal(raw)
+	if err != nil {
+		t.Fatalf("json.Marshal(raw) error = %v", err)
+	}
+	var resp Response
+	if err := json.Unmarshal(b, &resp); err != nil {
+		t.Fatalf("json.Unmarshal(raw) error = %v", err)
+	}
+	return resp
 }
