@@ -3,9 +3,11 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/malleus35/agentcom/internal/config"
 	"github.com/malleus35/agentcom/internal/db"
@@ -167,5 +169,120 @@ func TestLoadUpRuntimeStateBackwardsCompatibleWithoutUserAgent(t *testing.T) {
 	}
 	if len(state.Agents) != 1 {
 		t.Fatalf("len(state.Agents) = %d, want 1", len(state.Agents))
+	}
+}
+
+func TestHandleExistingRuntimeStateRemovesStaleState(t *testing.T) {
+	projectDir := t.TempDir()
+	staleSocketPath := filepath.Join(projectDir, "stale.sock")
+	if err := os.WriteFile(staleSocketPath, []byte("socket"), 0o644); err != nil {
+		t.Fatalf("WriteFile(stale socket) error = %v", err)
+	}
+
+	if err := writeUpRuntimeState(projectDir, upRuntimeState{
+		ProjectDir:    projectDir,
+		Template:      "company",
+		StartedAt:     time.Now().UTC(),
+		SupervisorPID: -1,
+		Agents: []upRuntimeStateAgent{{
+			Role:       "frontend",
+			Name:       "frontend",
+			Type:       "worker",
+			PID:        -1,
+			SocketPath: staleSocketPath,
+		}},
+	}); err != nil {
+		t.Fatalf("writeUpRuntimeState() error = %v", err)
+	}
+
+	if err := handleExistingRuntimeState(projectDir, false); err != nil {
+		t.Fatalf("handleExistingRuntimeState() error = %v", err)
+	}
+
+	state, _, err := loadUpRuntimeState(projectDir)
+	if err != nil {
+		t.Fatalf("loadUpRuntimeState() error = %v", err)
+	}
+	if state.SupervisorPID != 0 {
+		t.Fatalf("SupervisorPID = %d, want stale state removed", state.SupervisorPID)
+	}
+	if _, err := os.Stat(staleSocketPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("stale socket stat error = %v, want not exist", err)
+	}
+}
+
+func TestCollectStaleRuntimeAgents(t *testing.T) {
+	database := setupUpTestDB(t)
+	ctx := context.Background()
+
+	staleWorker := &db.Agent{Name: "stale", Type: "worker", Status: "alive", PID: -1, Project: "demo-app"}
+	if err := database.InsertAgent(ctx, staleWorker); err != nil {
+		t.Fatalf("InsertAgent(staleWorker) error = %v", err)
+	}
+	aliveWorker := &db.Agent{Name: "alive", Type: "worker", Status: "alive", PID: os.Getpid(), Project: "demo-app"}
+	if err := database.InsertAgent(ctx, aliveWorker); err != nil {
+		t.Fatalf("InsertAgent(aliveWorker) error = %v", err)
+	}
+	human := &db.Agent{Name: "user", Type: "human", Status: "alive", PID: -1, Project: "demo-app"}
+	if err := database.InsertAgent(ctx, human); err != nil {
+		t.Fatalf("InsertAgent(human) error = %v", err)
+	}
+
+	if _, err := database.ExecContext(ctx, `UPDATE agents SET last_heartbeat = datetime('now', '-31 seconds') WHERE id IN (?, ?)`, staleWorker.ID, human.ID); err != nil {
+		t.Fatalf("ExecContext(stale heartbeat) error = %v", err)
+	}
+
+	staleAgents, err := collectStaleRuntimeAgents(ctx, database, []upRuntimeStateAgent{
+		{Role: "stale", AgentID: staleWorker.ID, PID: staleWorker.PID, Type: staleWorker.Type},
+		{Role: "alive", AgentID: aliveWorker.ID, PID: aliveWorker.PID, Type: aliveWorker.Type},
+		{Role: "user", AgentID: human.ID, PID: human.PID, Type: human.Type},
+	}, 30*time.Second, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("collectStaleRuntimeAgents() error = %v", err)
+	}
+	if len(staleAgents) != 1 {
+		t.Fatalf("len(staleAgents) = %d, want 1", len(staleAgents))
+	}
+	if staleAgents[0].AgentID != staleWorker.ID {
+		t.Fatalf("stale agent = %+v, want %q", staleAgents[0], staleWorker.ID)
+	}
+}
+
+func TestRunWithCleanupTimeoutProvidesDeadline(t *testing.T) {
+	const timeout = 250 * time.Millisecond
+
+	var (
+		hasDeadline bool
+		remaining   time.Duration
+	)
+
+	err := runWithCleanupTimeout(timeout, func(ctx context.Context) error {
+		deadline, ok := ctx.Deadline()
+		if !ok {
+			return errors.New("missing deadline")
+		}
+		hasDeadline = true
+		remaining = time.Until(deadline)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("runWithCleanupTimeout() error = %v", err)
+	}
+	if !hasDeadline {
+		t.Fatal("cleanup callback did not observe a deadline")
+	}
+	if remaining <= 0 || remaining > timeout {
+		t.Fatalf("deadline remaining = %v, want > 0 and <= %v", remaining, timeout)
+	}
+}
+
+func TestRunWithCleanupTimeoutReturnsCallbackError(t *testing.T) {
+	wantErr := errors.New("boom")
+
+	err := runWithCleanupTimeout(100*time.Millisecond, func(ctx context.Context) error {
+		return wantErr
+	})
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("runWithCleanupTimeout() error = %v, want %v", err, wantErr)
 	}
 }
