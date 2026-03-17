@@ -116,6 +116,9 @@ func (r *Router) Broadcast(
 		if agent.ID == from || agent.Name == from {
 			continue
 		}
+		if agent.Type == "human" {
+			continue
+		}
 
 		env, sendErr := r.Send(ctx, from, agent.ID, "broadcast", topic, payload)
 		if sendErr != nil {
