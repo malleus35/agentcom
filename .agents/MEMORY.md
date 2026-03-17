@@ -4,15 +4,15 @@
 
 ## 현재 상태
 
-- **Phase**: selected-agent template scaffold fix 구현/검증 완료, 커밋/merge 진행 중
-- **마지막 작업**: `init --template` scaffold가 선택되지 않은 `.gemini` 등 agent skill까지 생성하던 문제를 selected agents 기준으로 제한
-- **현재 브랜치**: `feature/init-template-selected-skill-targets`
+- **Phase**: P12 user-endpoint 구현/검증 진행 중
+- **마지막 작업**: human-in-the-loop user endpoint(P12) 구현 및 검증 진행
+- **현재 브랜치**: `feature/P12-user-endpoint`
 - **현재 버전**: v0.1.7이 최신 공개 릴리스, 다음 릴리스 버전은 아직 미확정
 - **P10 상태**: 구현/문서/테스트 완료, 관련 변경은 현재 브랜치에 포함됨
 - **P11 상태**: 구현 완료, 테스트/수동 QA/README 반영 완료, develop 머지 및 release 대기
 - **계획 문서 상태**: `AGENTCOM_IMPROVEMENT_PROPOSAL.md` 기반 후속 개선안 분석 완료, PH1 구현 완료, PH2~PH4 계획 유지
-- **다음 작업**: selected-agent template scaffold fix 원자 커밋 정리 후 `develop` 머지
-- **워킹트리**: template scaffold selected-agents 관련 CLI/test 변경 존재
+- **다음 작업**: P12 전체 검증, 수동 QA, 원자 커밋 정리
+- **워킹트리**: P12 user pseudo-agent / `agentcom user` / MCP user tools 관련 변경 존재
 
 ## 완료된 태스크
 
@@ -28,6 +28,15 @@
 - P10 project column 핵심 구현 완료
 
 ## 이번 세션에서 마무리한 작업
+
+- P12 user endpoint 구현 진행
+  - `internal/db/agent.go`, `internal/db/message.go`: user message flow용 query helper(`FindAgentByTypeAndProject`, `ListMessagesFromAgent`, `ListUnreadRequestsForAgent`) 추가
+  - `internal/agent/registry.go`, `internal/message/router.go`, `internal/mcp/handler.go`: `type="human"` heartbeat/broadcast exclusion guard 추가
+  - `internal/cli/up.go`, `internal/cli/up_state.go`: `agentcom up`가 project별 `user` pseudo-agent를 자동 등록하고 runtime state에 기록, 종료 시 정리하도록 확장
+  - `internal/cli/user.go`: `agentcom user inbox|pending|reply` 구현
+  - `internal/mcp/tools.go`, `internal/mcp/handler.go`: `send_to_user`, `get_user_messages` MCP tools 추가
+  - `internal/*/*_test.go`, `cmd/agentcom/e2e_test.go`: DB/guard/CLI/MCP/E2E 테스트 보강
+  - 검증 진행 중: targeted DB/agent/message/cli/mcp tests 통과, 전체 `go test ./...` 및 수동 QA 대기
 
 - selected-agent template scaffold fix 구현 완료
   - `internal/cli/skill.go`: template skill target resolver를 selected agents 기반 helper로 분리하고, 선택값이 없을 때만 기본 4개 agent fallback 사용

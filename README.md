@@ -313,6 +313,14 @@ Send a direct message between managed agents:
 agentcom send --from frontend plan '{"text":"hello"}'
 ```
 
+Send a message to the human operator and reply from the user inbox:
+
+```bash
+agentcom send --from plan user '{"text":"Should I proceed with the refactor?"}'
+agentcom user inbox
+agentcom user reply plan '{"text":"Yes, proceed"}'
+```
+
 Broadcast an update:
 
 ```bash
@@ -873,11 +881,33 @@ Available tools:
 
 - `list_agents`
 - `send_message`
+- `send_to_user`
+- `get_user_messages`
 - `broadcast`
 - `create_task`
 - `delegate_task`
 - `list_tasks`
 - `get_status`
+
+## Human Operator Communication
+
+`agentcom` now treats the human operator as a per-project pseudo-agent named `user`.
+`agentcom up` registers that pseudo-agent automatically, direct sends to `user` work through the existing message path, and `agentcom down` cleans the pseudo-agent up with the rest of the managed session.
+
+Human-oriented CLI helpers:
+
+```bash
+agentcom user inbox
+agentcom user pending
+agentcom user reply plan '{"text":"Approved"}'
+```
+
+MCP clients can use:
+
+```text
+send_to_user(from="plan", text="Should I proceed?", topic="approval")
+get_user_messages(agent="plan", unread_only=true)
+```
 
 ## Architecture
 
