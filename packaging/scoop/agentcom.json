@@ -5,11 +5,11 @@
   "architecture": {
     "64bit": {
       "url": "https://github.com/malleus35/agentcom/releases/download/v0.3.0/agentcom_0.3.0_windows_amd64.zip",
-      "hash": "8e02ddc88da7dc0dc87cdadc8070f0eba8d1ab89512179bfb67c3a36f40c5c48"
+      "hash": "637bde1281d23bf5187f1298d4cb0534f63f1df405394b922f8a6f9ce081a859"
     },
     "arm64": {
       "url": "https://github.com/malleus35/agentcom/releases/download/v0.3.0/agentcom_0.3.0_windows_arm64.zip",
-      "hash": "6f7a72de0c9e999c8f59521b0d0c34532f133a2e7d9ad5f3219a98bbe8269be9"
+      "hash": "ae7767fe4b62fef46368c5ce019abd6fe57a3e50eee2e9a2d46c4086dfa0df8a"
     }
   },
   "bin": "agentcom.exe",
