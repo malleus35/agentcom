@@ -225,6 +225,160 @@ func TestCreateTaskInvalidPriorityReturnsJSONRPCError(t *testing.T) {
 	}
 }
 
+func TestMCPHandlerInvalidParamsMatrix(t *testing.T) {
+	tests := []struct {
+		name         string
+		setup        func(t *testing.T, database *db.DB)
+		request      string
+		wantCode     int
+		wantMessage  string
+		messageMatch string
+	}{
+		{
+			name:     "list_agents rejects wrong alive_only type",
+			request:  `{"name":"list_agents","arguments":{"alive_only":"yes"}}`,
+			wantCode: errInvalidParams,
+		},
+		{
+			name:        "send_message rejects missing from",
+			request:     `{"name":"send_message","arguments":{"from":"","to":"receiver"}}`,
+			wantCode:    errInvalidParams,
+			wantMessage: "mcp.handleSendMessage: from and to are required",
+		},
+		{
+			name: "send_message rejects unknown recipient",
+			setup: func(t *testing.T, database *db.DB) {
+				t.Helper()
+				ctx := context.Background()
+				sender := &db.Agent{Name: "sender", Type: "worker", Project: "project-a", Status: "alive"}
+				if err := database.InsertAgent(ctx, sender); err != nil {
+					t.Fatalf("InsertAgent(sender) error = %v", err)
+				}
+			},
+			request:      `{"name":"send_message","arguments":{"from":"sender","to":"missing"}}`,
+			wantCode:     errInvalidParams,
+			messageMatch: "mcp.handleSendMessage:",
+		},
+		{
+			name:        "send_to_user rejects missing text",
+			request:     `{"name":"send_to_user","arguments":{"from":"plan","text":""}}`,
+			wantCode:    errInvalidParams,
+			wantMessage: "mcp.handleSendToUser: from and text are required",
+		},
+		{
+			name: "get_user_messages rejects unknown agent filter",
+			setup: func(t *testing.T, database *db.DB) {
+				t.Helper()
+				ctx := context.Background()
+				user := &db.Agent{Name: "user", Type: "human", Project: "project-a", Status: "alive"}
+				if err := database.InsertAgent(ctx, user); err != nil {
+					t.Fatalf("InsertAgent(user) error = %v", err)
+				}
+			},
+			request:      `{"name":"get_user_messages","arguments":{"agent":"missing"}}`,
+			wantCode:     errInvalidParams,
+			messageMatch: "mcp.handleGetUserMessages:",
+		},
+		{
+			name:        "broadcast rejects missing from",
+			request:     `{"name":"broadcast","arguments":{"from":""}}`,
+			wantCode:    errInvalidParams,
+			wantMessage: "mcp.handleBroadcast: from is required",
+		},
+		{
+			name: "delegate_task rejects unknown target",
+			setup: func(t *testing.T, database *db.DB) {
+				t.Helper()
+				ctx := context.Background()
+				creator := &db.Agent{Name: "creator", Type: "worker", Project: "project-a", Status: "alive"}
+				if err := database.InsertAgent(ctx, creator); err != nil {
+					t.Fatalf("InsertAgent(creator) error = %v", err)
+				}
+				created := &db.Task{Title: "task", Status: "pending"}
+				if err := database.InsertTask(ctx, created); err != nil {
+					t.Fatalf("InsertTask() error = %v", err)
+				}
+			},
+			request:      `{"name":"delegate_task","arguments":{"task_id":"tsk_test","to":"missing"}}`,
+			wantCode:     errInvalidParams,
+			messageMatch: "mcp.handleDelegateTask:",
+		},
+		{
+			name:         "list_tasks rejects invalid status filter",
+			request:      `{"name":"list_tasks","arguments":{"status":"paused"}}`,
+			wantCode:     errInvalidParams,
+			messageMatch: "mcp.handleListTasks:",
+		},
+		{
+			name:     "get_status rejects wrong project type",
+			request:  `{"name":"get_status","arguments":{"project":123}}`,
+			wantCode: errInvalidParams,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server, database := setupMCPTestServer(t)
+			if tt.setup != nil {
+				tt.setup(t, database)
+			}
+
+			responses := runMCPRoundTripRequests(t, server,
+				Request{JSONRPC: jsonRPCVersion, ID: 1, Method: "initialize", Params: json.RawMessage(`{}`)},
+				Request{JSONRPC: jsonRPCVersion, Method: "notifications/initialized", Params: json.RawMessage(`{}`)},
+				Request{JSONRPC: jsonRPCVersion, ID: 2, Method: "tools/call", Params: json.RawMessage(tt.request)},
+			)
+
+			resp := decodeResponseMap(t, responses[1])
+			if resp.Error == nil {
+				t.Fatal("resp.Error = nil, want JSON-RPC error")
+			}
+			if resp.Error.Code != tt.wantCode {
+				t.Fatalf("resp.Error.Code = %d, want %d", resp.Error.Code, tt.wantCode)
+			}
+			if tt.wantMessage != "" && resp.Error.Message != tt.wantMessage {
+				t.Fatalf("resp.Error.Message = %q, want %q", resp.Error.Message, tt.wantMessage)
+			}
+			if tt.messageMatch != "" && !strings.Contains(resp.Error.Message, tt.messageMatch) {
+				t.Fatalf("resp.Error.Message = %q, want substring %q", resp.Error.Message, tt.messageMatch)
+			}
+			if _, ok := responses[1]["result"]; ok {
+				t.Fatal("error response unexpectedly included result")
+			}
+		})
+	}
+}
+
+func TestMCPRuntimeErrorBoundaryMatrix(t *testing.T) {
+	server, database := setupMCPTestServer(t)
+	ctx := context.Background()
+
+	plan := &db.Agent{Name: "plan", Type: "worker", Project: "project-a", Status: "alive"}
+	if err := database.InsertAgent(ctx, plan); err != nil {
+		t.Fatalf("InsertAgent(plan) error = %v", err)
+	}
+
+	responses := runMCPRoundTripRequests(t, server,
+		Request{JSONRPC: jsonRPCVersion, ID: 1, Method: "initialize", Params: json.RawMessage(`{}`)},
+		Request{JSONRPC: jsonRPCVersion, Method: "notifications/initialized", Params: json.RawMessage(`{}`)},
+		Request{JSONRPC: jsonRPCVersion, ID: 2, Method: "tools/call", Params: json.RawMessage(`{"name":"send_to_user","arguments":{"from":"plan","text":"Proceed?"}}`)},
+	)
+
+	resp := decodeResponseMap(t, responses[1])
+	if resp.Error == nil {
+		t.Fatal("resp.Error = nil, want runtime error")
+	}
+	if resp.Error.Code != errToolExecution {
+		t.Fatalf("resp.Error.Code = %d, want %d", resp.Error.Code, errToolExecution)
+	}
+	if resp.Error.Message != "mcp.handleSendToUser: no user agent registered; start a session with `agentcom up` first" {
+		t.Fatalf("resp.Error.Message = %q", resp.Error.Message)
+	}
+	if _, ok := responses[1]["result"]; ok {
+		t.Fatal("runtime error response unexpectedly included result")
+	}
+}
+
 func TestUnknownToolReturnsJSONRPCMethodNotFound(t *testing.T) {
 	server, _ := setupMCPTestServer(t)
 

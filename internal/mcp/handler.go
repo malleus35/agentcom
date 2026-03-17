@@ -26,6 +26,44 @@ func newInvalidParamsError(format string, args ...any) error {
 	return &invalidParamsError{message: fmt.Sprintf(format, args...)}
 }
 
+func unmarshalOptionalParams(params json.RawMessage, target any, handler string) error {
+	if len(params) == 0 {
+		return nil
+	}
+	if err := json.Unmarshal(params, target); err != nil {
+		return newInvalidParamsError("%s: %v", handler, err)
+	}
+	return nil
+}
+
+func unmarshalRequiredParams(params json.RawMessage, target any, handler string) error {
+	if err := json.Unmarshal(params, target); err != nil {
+		return newInvalidParamsError("%s: %v", handler, err)
+	}
+	return nil
+}
+
+func requireTrimmed(value string) string {
+	return strings.TrimSpace(value)
+}
+
+func requireField(handler string, value string, message string) (string, error) {
+	trimmed := requireTrimmed(value)
+	if trimmed == "" {
+		return "", newInvalidParamsError("%s: %s", handler, message)
+	}
+	return trimmed, nil
+}
+
+func validateTaskStatus(status string) error {
+	switch strings.TrimSpace(status) {
+	case task.StatusPending, task.StatusAssigned, task.StatusInProgress, task.StatusBlocked, task.StatusCompleted, task.StatusFailed, task.StatusCancelled:
+		return nil
+	default:
+		return fmt.Errorf("invalid status %q", status)
+	}
+}
+
 func (s *Server) registerTools() {
 	s.tools["list_agents"] = s.handleListAgents
 	s.tools["send_message"] = s.handleSendMessage
@@ -48,10 +86,8 @@ func (s *Server) handleListAgents(ctx context.Context, params json.RawMessage) (
 	}
 
 	var p listAgentsParams
-	if len(params) > 0 {
-		if err := json.Unmarshal(params, &p); err != nil {
-			return nil, fmt.Errorf("mcp.handleListAgents: %w", err)
-		}
+	if err := unmarshalOptionalParams(params, &p, "mcp.handleListAgents"); err != nil {
+		return nil, err
 	}
 
 	project := s.requestedProject(p.Project)
@@ -85,11 +121,16 @@ func (s *Server) handleSendMessage(ctx context.Context, params json.RawMessage) 
 	}
 
 	var p sendMessageParams
-	if err := json.Unmarshal(params, &p); err != nil {
-		return nil, fmt.Errorf("mcp.handleSendMessage: %w", err)
+	if err := unmarshalRequiredParams(params, &p, "mcp.handleSendMessage"); err != nil {
+		return nil, err
 	}
-	if strings.TrimSpace(p.From) == "" || strings.TrimSpace(p.To) == "" {
-		return nil, fmt.Errorf("mcp.handleSendMessage: from and to are required")
+	from, err := requireField("mcp.handleSendMessage", p.From, "from and to are required")
+	if err != nil {
+		return nil, err
+	}
+	to, err := requireField("mcp.handleSendMessage", p.To, "from and to are required")
+	if err != nil {
+		return nil, err
 	}
 
 	project := s.requestedProject(p.Project)
@@ -102,14 +143,14 @@ func (s *Server) handleSendMessage(ctx context.Context, params json.RawMessage) 
 		payload = json.RawMessage(`{}`)
 	}
 
-	senderAgent, err := s.resolveAgentByNameOrID(ctx, p.From, project)
+	senderAgent, err := s.resolveAgentByNameOrID(ctx, from, project)
 	if err != nil {
-		return nil, fmt.Errorf("mcp.handleSendMessage: %w", err)
+		return nil, newInvalidParamsError("mcp.handleSendMessage: %v", err)
 	}
 
-	targetAgent, err := s.resolveAgentByNameOrID(ctx, p.To, project)
+	targetAgent, err := s.resolveAgentByNameOrID(ctx, to, project)
 	if err != nil {
-		return nil, fmt.Errorf("mcp.handleSendMessage: %w", err)
+		return nil, newInvalidParamsError("mcp.handleSendMessage: %v", err)
 	}
 
 	msg := &db.Message{
@@ -138,11 +179,12 @@ func (s *Server) handleBroadcast(ctx context.Context, params json.RawMessage) (i
 	}
 
 	var p broadcastParams
-	if err := json.Unmarshal(params, &p); err != nil {
-		return nil, fmt.Errorf("mcp.handleBroadcast: %w", err)
+	if err := unmarshalRequiredParams(params, &p, "mcp.handleBroadcast"); err != nil {
+		return nil, err
 	}
-	if strings.TrimSpace(p.From) == "" {
-		return nil, fmt.Errorf("mcp.handleBroadcast: from is required")
+	from, err := requireField("mcp.handleBroadcast", p.From, "from is required")
+	if err != nil {
+		return nil, err
 	}
 
 	project := s.requestedProject(p.Project)
@@ -151,9 +193,9 @@ func (s *Server) handleBroadcast(ctx context.Context, params json.RawMessage) (i
 		payload = json.RawMessage(`{}`)
 	}
 
-	senderAgent, err := s.resolveAgentByNameOrID(ctx, p.From, project)
+	senderAgent, err := s.resolveAgentByNameOrID(ctx, from, project)
 	if err != nil {
-		return nil, fmt.Errorf("mcp.handleBroadcast: %w", err)
+		return nil, newInvalidParamsError("mcp.handleBroadcast: %v", err)
 	}
 
 	agents, err := s.db.ListAliveAgentsByProject(ctx, project)
@@ -202,17 +244,21 @@ func (s *Server) handleSendToUser(ctx context.Context, params json.RawMessage) (
 	}
 
 	var p sendToUserParams
-	if err := json.Unmarshal(params, &p); err != nil {
-		return nil, fmt.Errorf("mcp.handleSendToUser: %w", err)
+	if err := unmarshalRequiredParams(params, &p, "mcp.handleSendToUser"); err != nil {
+		return nil, err
 	}
-	if strings.TrimSpace(p.From) == "" || strings.TrimSpace(p.Text) == "" {
-		return nil, fmt.Errorf("mcp.handleSendToUser: from and text are required")
+	from, err := requireField("mcp.handleSendToUser", p.From, "from and text are required")
+	if err != nil {
+		return nil, err
+	}
+	if _, err := requireField("mcp.handleSendToUser", p.Text, "from and text are required"); err != nil {
+		return nil, err
 	}
 
 	project := s.requestedProject(p.Project)
-	senderAgent, err := s.resolveAgentByNameOrID(ctx, p.From, project)
+	senderAgent, err := s.resolveAgentByNameOrID(ctx, from, project)
 	if err != nil {
-		return nil, fmt.Errorf("mcp.handleSendToUser: %w", err)
+		return nil, newInvalidParamsError("mcp.handleSendToUser: %v", err)
 	}
 	userAgent, err := s.resolveUserAgent(ctx, project)
 	if err != nil {
@@ -253,10 +299,8 @@ func (s *Server) handleGetUserMessages(ctx context.Context, params json.RawMessa
 	}
 
 	var p getUserMessagesParams
-	if len(params) > 0 {
-		if err := json.Unmarshal(params, &p); err != nil {
-			return nil, fmt.Errorf("mcp.handleGetUserMessages: %w", err)
-		}
+	if err := unmarshalOptionalParams(params, &p, "mcp.handleGetUserMessages"); err != nil {
+		return nil, err
 	}
 
 	project := s.requestedProject(p.Project)
@@ -274,7 +318,7 @@ func (s *Server) handleGetUserMessages(ctx context.Context, params json.RawMessa
 	if strings.TrimSpace(p.Agent) != "" {
 		agentRecord, err := s.resolveAgentByNameOrID(ctx, p.Agent, project)
 		if err != nil {
-			return nil, fmt.Errorf("mcp.handleGetUserMessages: %w", err)
+			return nil, newInvalidParamsError("mcp.handleGetUserMessages: %v", err)
 		}
 		targetAgentID = agentRecord.ID
 	}
@@ -379,17 +423,21 @@ func (s *Server) handleDelegateTask(ctx context.Context, params json.RawMessage)
 	}
 
 	var p delegateTaskParams
-	if err := json.Unmarshal(params, &p); err != nil {
-		return nil, fmt.Errorf("mcp.handleDelegateTask: %w", err)
+	if err := unmarshalRequiredParams(params, &p, "mcp.handleDelegateTask"); err != nil {
+		return nil, err
 	}
-	if strings.TrimSpace(p.TaskID) == "" || strings.TrimSpace(p.To) == "" {
-		return nil, fmt.Errorf("mcp.handleDelegateTask: task_id and to are required")
+	if _, err := requireField("mcp.handleDelegateTask", p.TaskID, "task_id and to are required"); err != nil {
+		return nil, err
+	}
+	to, err := requireField("mcp.handleDelegateTask", p.To, "task_id and to are required")
+	if err != nil {
+		return nil, err
 	}
 
 	project := s.requestedProject(p.Project)
-	agentRecord, err := s.resolveAgentByNameOrID(ctx, p.To, project)
+	agentRecord, err := s.resolveAgentByNameOrID(ctx, to, project)
 	if err != nil {
-		return nil, fmt.Errorf("mcp.handleDelegateTask: %w", err)
+		return nil, newInvalidParamsError("mcp.handleDelegateTask: %v", err)
 	}
 
 	manager := task.NewManager(s.db)
@@ -488,15 +536,18 @@ func (s *Server) handleListTasks(ctx context.Context, params json.RawMessage) (i
 	}
 
 	var p listTasksParams
-	if len(params) > 0 {
-		if err := json.Unmarshal(params, &p); err != nil {
-			return nil, fmt.Errorf("mcp.handleListTasks: %w", err)
-		}
+	if err := unmarshalOptionalParams(params, &p, "mcp.handleListTasks"); err != nil {
+		return nil, err
 	}
 
 	status := strings.TrimSpace(p.Status)
 	assignee := strings.TrimSpace(p.Assignee)
 	project := s.requestedProject(p.Project)
+	if status != "" {
+		if err := validateTaskStatus(status); err != nil {
+			return nil, newInvalidParamsError("mcp.handleListTasks: %v", err)
+		}
+	}
 
 	var (
 		tasks []*db.Task
@@ -544,10 +595,8 @@ func (s *Server) handleGetStatus(ctx context.Context, params json.RawMessage) (i
 	}
 
 	var p getStatusParams
-	if len(params) > 0 {
-		if err := json.Unmarshal(params, &p); err != nil {
-			return nil, fmt.Errorf("mcp.handleGetStatus: %w", err)
-		}
+	if err := unmarshalOptionalParams(params, &p, "mcp.handleGetStatus"); err != nil {
+		return nil, err
 	}
 	project := s.requestedProject(p.Project)
 
@@ -609,9 +658,15 @@ func (s *Server) resolveAgentByNameOrID(ctx context.Context, nameOrID string, pr
 	if err == nil {
 		return agentRecord, nil
 	}
+	if err != nil && !errors.Is(err, db.ErrAgentNotFound) {
+		return nil, fmt.Errorf("mcp.resolveAgentByNameOrID: %w", err)
+	}
 
 	agentRecord, err = s.db.FindAgentByID(ctx, nameOrID)
 	if err != nil {
+		if errors.Is(err, db.ErrAgentNotFound) {
+			return nil, fmt.Errorf("unknown agent %q", nameOrID)
+		}
 		return nil, fmt.Errorf("mcp.resolveAgentByNameOrID: %w", err)
 	}
 

@@ -4,15 +4,15 @@
 
 ## 현재 상태
 
-- **Phase**: PH5-01 MCP JSON-RPC error alignment 완료
+- **Phase**: PH5-02 MCP handler parameter validation 완료
 - **마지막 작업**: v0.2.3 릴리즈 및 Homebrew 배포 복구 완료
-- **현재 브랜치**: `feature/PH5-01-mcp-jsonrpc-error-alignment`
+- **현재 브랜치**: `feature/PH5-02-mcp-handler-params-validation`
 - **현재 버전**: `v0.2.3` 공개 릴리즈 완료
 - **P10 상태**: 구현/문서/테스트 완료, 관련 변경은 현재 브랜치에 포함됨
 - **P11 상태**: 구현 완료, 테스트/수동 QA/README 반영 완료, develop 머지 및 release 대기
 - **P12 상태**: 구현/검증/문서 반영 완료 (user endpoint, pseudo-agent, MCP tools)
 - **계획 문서 상태**: PH10 PRD 최종 통합본 완료 (`.agents/plans/PH10-priority-review-policy-PRD.md`), 6 Phase / 18 Tasks / ~62 Subtasks / ~16h
-- **다음 작업**: PH5-02 MCP handler 파라미터 검증 강화
+- **다음 작업**: PH5-03 terminal state reopen/retry 지원
 - **후속 계획**: `.agents/plans/NEXT-PHASE-PLAN.md` — PH5~PH9 (26 tasks, 56.5h 추정, CLI-first 원칙으로 재검토 필요)
 - **PH10 PRD**: `.agents/plans/PH10-priority-review-policy-PRD.md` — priority enforcement + review policy (18 tasks, ~16h, 아키텍처 결정 8건 포함)
 - **PH10 문서 정리**: 기존 산재 문서 4개(`PH10-priority-review-policy.md`, `PH10-architectural-decisions.md`, `PH10-review-system-analysis.md`, `PH10-user-task-approver-design.md`) → 최종 PRD에 통합 후 삭제 완료
@@ -31,6 +31,18 @@
 - P10 project column 핵심 구현 완료
 
 ## 이번 세션에서 마무리한 작업
+
+- PH5-02 MCP handler 파라미터 검증 강화 완료
+  - `internal/mcp/handler.go`: optional/required JSON unmarshal helper 추가, required-field 검증을 `invalidParamsError`로 정렬, `send_message`/`broadcast`/`send_to_user`/`get_user_messages`/`delegate_task`의 caller-input agent reference 실패를 `-32602` 경로로 승격
+  - `internal/mcp/handler.go`: `list_tasks.status`에 명시적 status validation 추가, `list_tasks.assignee`와 `create_task.assigned_to/created_by`의 permissive fallback은 유지
+  - `internal/mcp/server_test.go`: malformed JSON/type mismatch, required fields, invalid status filter, bad agent reference, runtime boundary를 검증하는 invalid-params matrix 추가
+  - `cmd/agentcom/e2e_test.go`: repo-root `.agentcom.json`에 오염되지 않도록 `waitForAgents()`가 projectDir를 사용하게 수정해 full-suite verification 안정화
+  - `README.md`, `README.ko.md`, `README.ja.md`, `README.zh.md`: MCP `-32602` vs `-32000` 경계를 malformed args / missing required fields / invalid status filter / caller-input agent reference / missing session state 기준으로 명시
+  - `.agents/plans/NEW-NEXT-PHASE-PLAN.md`: PH5-02 상태를 done으로 갱신하고 PH5 잔여 공수를 1h, 전체 잔여 공수를 약 49h로 조정
+  - 검증 완료: `go test ./internal/mcp/... -count=1`, `go test ./... -count=1`, `go build ./...`
+  - 수동 QA 완료:
+    - `go run ./cmd/agentcom mcp-server` + `send_message(from="", to="plan")` -> `{"error":{"code":-32602,"message":"mcp.handleSendMessage: from and to are required"}}`
+    - `AGENTCOM_HOME=/tmp/agentcom-ph5-02-qa`에서 `plan`만 register한 뒤 `send_to_user(from="plan", text="Proceed?")` -> `{"error":{"code":-32000,"message":"mcp.handleSendToUser: no user agent registered; start a session with \`agentcom up\` first"}}`
 
 - PH5-01 MCP JSON-RPC error alignment 완료
   - feature 브랜치 `feature/PH5-01-mcp-jsonrpc-error-alignment` 생성 후 `.agents/plans/PH5-01-mcp-jsonrpc-error-alignment.md` 실행 계획 문서 작성
@@ -289,6 +301,7 @@
 | 2026-03-17 | `review_chain` 태스크 레벨 컬럼 거부 | 어떤 프로덕션 시스템도 review_chain을 태스크 테이블 컬럼으로 두지 않음. 워크플로우 그래프/별도 테이블이 올바른 추상화 |
 | 2026-03-17 | MCP를 "CLI-first, MCP는 선택적 어댑터"로 포지셔닝 변경 | MCP 9개 도구 모두 CLI 대응 존재, 고유 기능 0, 토큰 비용 4-32x, 셸 없는 런타임에서만 필요 |
 | 2026-03-17 | `reviewer` 필드는 에이전트 ID + "user" 모두 지원 (자유 문자열) | 추가 비용 0, agentcom "에이전트 유형 자유" 원칙 부합, 멀티에이전트 프레임워크 패턴 지원 |
+| 2026-03-17 | MCP handler input policy는 malformed JSON/type mismatch, required-field errors, invalid task status filters, caller-input agent reference failures만 `invalidParamsError`로 승격 | JSON-RPC `-32602`를 caller input 오류에만 일관되게 매핑하고, missing session state/DB/template/runtime failures는 `-32000` runtime error로 유지하기 위해 |
 | 2026-03-17 | 에이전트 리뷰 자동화 로직(retry, cascading, guardrail)은 agentcom 범위 밖 | agentcom은 통신 인프라이지 실행 엔진이 아님. 리뷰 라우팅과 상태 전환 제어만 담당 |
 | 2026-03-17 | reviewer가 있는 태스크의 `in_progress -> completed`는 direct completion 대신 `blocked`로 전환 | 선택적 review gate를 최소 변경으로 도입하면서 기존 상태 머신과 CLI/MCP surface를 최대한 유지하기 위해 |
 | 2026-03-17 | template `review_policy`는 project scaffold의 `template.json`에서 읽어 CLI/MCP task create에 공통 적용 | built-in/custom template 구분 없이 동일한 런타임 입력을 사용하고 추가 선언 파일 도입을 피하기 위해 |
@@ -352,4 +365,5 @@
   - [x] Phase E: Test coverage (manager_test.go, model_test.go, db/task_test.go, e2e_test.go)
   - [x] Phase F: Documentation (README×4, AGENTS.md, MEMORY.md)
 - [x] **PH5-01 완료**: MCP tool error path를 JSON-RPC `error`로 정렬하고 회귀 테스트/문서 반영 완료
-- [ ] **TODO: PH5-02 MCP handler 파라미터 검증 강화**
+- [x] **PH5-02 완료**: MCP handler 파라미터 검증 강화, regression matrix, manual QA, README 반영 완료
+- [ ] **TODO: PH5-03 terminal state reopen/retry 지원**

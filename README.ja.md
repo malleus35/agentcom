@@ -618,7 +618,7 @@ agentcom mcp-server --register mcp-agent --type mcp
 ```
 
 - `initialize` の後に `tools/list`, `tools/call` を呼ぶ必要があります
-- tool-call 失敗は JSON-RPC `error` で返ります: unknown tool=`-32601`、invalid params=`-32602`、runtime tool error=`-32000` です
+- tool-call 失敗は JSON-RPC `error` で返ります: unknown tool=`-32601`、不正な引数 JSON・必須項目不足・無効な task status filter・呼び出し側入力に起因する agent reference エラーは `-32602`、セッション状態不足のような runtime tool error は `-32000` です
 - 提供ツールは agent 一覧、メッセージ送信、broadcast、タスク作成/委譲、タスク一覧、状態取得です
 
 ## JSON 出力例
