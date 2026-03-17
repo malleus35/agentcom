@@ -4,15 +4,15 @@
 
 ## 현재 상태
 
-- **Phase**: PH10 priority-review-policy 구현 완료
+- **Phase**: PH5-01 MCP JSON-RPC error alignment 완료
 - **마지막 작업**: v0.2.3 릴리즈 및 Homebrew 배포 복구 완료
-- **현재 브랜치**: `develop`
+- **현재 브랜치**: `feature/PH5-01-mcp-jsonrpc-error-alignment`
 - **현재 버전**: `v0.2.3` 공개 릴리즈 완료
 - **P10 상태**: 구현/문서/테스트 완료, 관련 변경은 현재 브랜치에 포함됨
 - **P11 상태**: 구현 완료, 테스트/수동 QA/README 반영 완료, develop 머지 및 release 대기
 - **P12 상태**: 구현/검증/문서 반영 완료 (user endpoint, pseudo-agent, MCP tools)
 - **계획 문서 상태**: PH10 PRD 최종 통합본 완료 (`.agents/plans/PH10-priority-review-policy-PRD.md`), 6 Phase / 18 Tasks / ~62 Subtasks / ~16h
-- **다음 작업**: PH5~PH9 계획 재정렬 또는 다음 우선순위 기능 선정
+- **다음 작업**: PH5-02 MCP handler 파라미터 검증 강화
 - **후속 계획**: `.agents/plans/NEXT-PHASE-PLAN.md` — PH5~PH9 (26 tasks, 56.5h 추정, CLI-first 원칙으로 재검토 필요)
 - **PH10 PRD**: `.agents/plans/PH10-priority-review-policy-PRD.md` — priority enforcement + review policy (18 tasks, ~16h, 아키텍처 결정 8건 포함)
 - **PH10 문서 정리**: 기존 산재 문서 4개(`PH10-priority-review-policy.md`, `PH10-architectural-decisions.md`, `PH10-review-system-analysis.md`, `PH10-user-task-approver-design.md`) → 최종 PRD에 통합 후 삭제 완료
@@ -31,6 +31,15 @@
 - P10 project column 핵심 구현 완료
 
 ## 이번 세션에서 마무리한 작업
+
+- PH5-01 MCP JSON-RPC error alignment 완료
+  - feature 브랜치 `feature/PH5-01-mcp-jsonrpc-error-alignment` 생성 후 `.agents/plans/PH5-01-mcp-jsonrpc-error-alignment.md` 실행 계획 문서 작성
+  - `internal/mcp/server.go`: unknown tool을 JSON-RPC `error.code=-32601`로 반환하도록 수정하고, 일반 tool runtime error를 `error.code=-32000`으로 정렬
+  - `internal/mcp/server_test.go`: unknown tool / invalid params / runtime tool error roundtrip 회귀 테스트 추가, error path에서 `result` 미포함 검증 보강
+  - `README.md`, `README.ko.md`, `README.ja.md`, `README.zh.md`: MCP tool-call failure의 JSON-RPC error semantics 문구 반영
+  - `.agents/plans/NEW-NEXT-PHASE-PLAN.md`: PH5-01 상태를 done으로 갱신하고 PH5 잔여 공수를 4h로 축소
+  - 검증 완료: `go test ./internal/mcp/... -count=1`, `go test ./... -count=1`, `go build ./...`
+  - 수동 QA 완료: 임시 `AGENTCOM_HOME`에서 `go run ./cmd/agentcom mcp-server` 실행 후 `initialize` -> `tools/list` -> unknown tool 호출 시 `{"error":{"code":-32601,"message":"unknown tool: no_such_tool"}}` 응답 확인
 
 - v0.2.3 릴리즈 및 Homebrew 복구 완료
   - `feature/PH10-priority-review-policy`를 `develop`에 병합하고, 이어서 `develop`을 `main`에 릴리즈 머지
@@ -342,4 +351,5 @@
   - [x] Phase D: MCP update_task tool (tools.go, handler.go)
   - [x] Phase E: Test coverage (manager_test.go, model_test.go, db/task_test.go, e2e_test.go)
   - [x] Phase F: Documentation (README×4, AGENTS.md, MEMORY.md)
-- [ ] **TODO: PH5~PH8 MCP 확장 계획의 범위를 CLI-first 원칙에 맞게 재검토**
+- [x] **PH5-01 완료**: MCP tool error path를 JSON-RPC `error`로 정렬하고 회귀 테스트/문서 반영 완료
+- [ ] **TODO: PH5-02 MCP handler 파라미터 검증 강화**
