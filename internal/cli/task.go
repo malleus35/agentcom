@@ -4,11 +4,14 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"text/tabwriter"
 
 	"github.com/malleus35/agentcom/internal/agent"
-	gonanoid "github.com/matoous/go-nanoid/v2"
+	"github.com/malleus35/agentcom/internal/config"
+	"github.com/malleus35/agentcom/internal/task"
 	"github.com/spf13/cobra"
 )
 
@@ -23,6 +26,8 @@ func newTaskCmd() *cobra.Command {
 		newTaskListCmd(),
 		newTaskUpdateCmd(),
 		newTaskDelegateCmd(),
+		newTaskApproveCmd(),
+		newTaskRejectCmd(),
 	)
 
 	return cmd
@@ -34,6 +39,7 @@ func newTaskCreateCmd() *cobra.Command {
 	var priority string
 	var blockedBy string
 	var creator string
+	var reviewer string
 
 	cmd := &cobra.Command{
 		Use:   "create <title>",
@@ -41,6 +47,15 @@ func newTaskCreateCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			title := args[0]
+			normalizedPriority := task.NormalizePriority(priority)
+			if err := task.ValidatePriority(normalizedPriority); err != nil {
+				return newUserError(
+					"Task priority is invalid",
+					"Task priority must be one of low, medium, high, or critical.",
+					"Retry with `--priority low`, `--priority medium`, `--priority high`, or `--priority critical`.",
+				)
+			}
+
 			registry := agent.NewRegistry(app.db, app.cfg)
 
 			assignedID := ""
@@ -62,40 +77,38 @@ func newTaskCreateCmd() *cobra.Command {
 			}
 
 			blocked := splitCSV(blockedBy)
-			blockedJSON, err := json.Marshal(blocked)
+			cwd, err := os.Getwd()
 			if err != nil {
-				return fmt.Errorf("cli.newTaskCreateCmd: marshal blocked_by: %w", err)
+				return fmt.Errorf("cli.newTaskCreateCmd: getwd: %w", err)
+			}
+			policy, err := loadActiveTaskReviewPolicy(cwd)
+			if err != nil {
+				return fmt.Errorf("cli.newTaskCreateCmd: load review policy: %w", err)
 			}
 
-			rawID, err := gonanoid.New()
+			manager := task.NewManager(app.db)
+			created, err := manager.Create(cmd.Context(), title, desc, normalizedPriority, reviewer, assignedID, creatorID, blocked, policy)
 			if err != nil {
-				return fmt.Errorf("cli.newTaskCreateCmd: generate id: %w", err)
-			}
-			taskID := "tsk_" + rawID
-
-			if _, err := app.db.ExecContext(cmd.Context(), `
-				INSERT INTO tasks (id, title, description, status, priority, assigned_to, created_by, blocked_by)
-				VALUES (?, ?, ?, 'pending', ?, ?, ?, ?)
-			`, taskID, title, nullIfEmpty(desc), priority, nullIfEmpty(assignedID), nullIfEmpty(creatorID), string(blockedJSON)); err != nil {
-				return fmt.Errorf("cli.newTaskCreateCmd: insert task: %w", err)
+				return fmt.Errorf("cli.newTaskCreateCmd: create task: %w", err)
 			}
 
 			if jsonOutput {
 				enc := json.NewEncoder(cmd.OutOrStdout())
 				enc.SetIndent("", "  ")
 				return enc.Encode(map[string]any{
-					"id":          taskID,
+					"id":          created.ID,
 					"title":       title,
 					"description": desc,
-					"status":      "pending",
-					"priority":    priority,
+					"status":      created.Status,
+					"priority":    created.Priority,
+					"reviewer":    created.Reviewer,
 					"assigned_to": assignedID,
 					"created_by":  creatorID,
 					"blocked_by":  blocked,
 				})
 			}
 
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "created task %s\n", taskID)
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "created task %s\n", created.ID)
 			if err != nil {
 				return fmt.Errorf("cli.newTaskCreateCmd: write output: %w", err)
 			}
@@ -107,9 +120,10 @@ func newTaskCreateCmd() *cobra.Command {
 	f := cmd.Flags()
 	f.StringVar(&desc, "desc", "", "Task description")
 	f.StringVar(&assign, "assign", "", "Assignee agent name or ID")
-	f.StringVar(&priority, "priority", "medium", "Task priority: low|medium|high|critical")
+	f.StringVar(&priority, "priority", task.PriorityMedium, "Task priority: low|medium|high|critical (default: medium)")
 	f.StringVar(&blockedBy, "blocked-by", "", "Comma-separated blocking task IDs")
 	f.StringVar(&creator, "creator", "", "Creator agent name or ID")
+	f.StringVar(&reviewer, "reviewer", "", "Reviewer agent name, ID, or user")
 
 	return cmd
 }
@@ -215,34 +229,28 @@ func newTaskUpdateCmd() *cobra.Command {
 				return fmt.Errorf("cli.newTaskUpdateCmd: --status is required")
 			}
 
-			res, err := app.db.ExecContext(cmd.Context(), `
-				UPDATE tasks
-				SET status = ?, result = NULLIF(?, ''), updated_at = datetime('now')
-				WHERE id = ?
-			`, status, result, taskID)
-			if err != nil {
+			manager := task.NewManager(app.db)
+			if err := manager.UpdateStatus(cmd.Context(), taskID, status, result); err != nil {
 				return fmt.Errorf("cli.newTaskUpdateCmd: update task: %w", err)
 			}
 
-			rows, err := res.RowsAffected()
+			updated, err := app.db.FindTaskByID(cmd.Context(), taskID)
 			if err != nil {
-				return fmt.Errorf("cli.newTaskUpdateCmd: rows affected: %w", err)
-			}
-			if rows == 0 {
-				return fmt.Errorf("cli.newTaskUpdateCmd: task not found: %s", taskID)
+				return fmt.Errorf("cli.newTaskUpdateCmd: find task: %w", err)
 			}
 
 			if jsonOutput {
 				enc := json.NewEncoder(cmd.OutOrStdout())
 				enc.SetIndent("", "  ")
 				return enc.Encode(map[string]string{
-					"id":     taskID,
-					"status": status,
-					"result": result,
+					"id":       updated.ID,
+					"status":   updated.Status,
+					"result":   updated.Result,
+					"reviewer": updated.Reviewer,
 				})
 			}
 
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "updated task %s status=%s\n", taskID, status)
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "updated task %s status=%s\n", taskID, updated.Status)
 			if err != nil {
 				return fmt.Errorf("cli.newTaskUpdateCmd: write output: %w", err)
 			}
@@ -273,33 +281,27 @@ func newTaskDelegateCmd() *cobra.Command {
 				return fmt.Errorf("cli.newTaskDelegateCmd: resolve target: %w", err)
 			}
 
-			res, err := app.db.ExecContext(cmd.Context(), `
-				UPDATE tasks
-				SET assigned_to = ?, updated_at = datetime('now')
-				WHERE id = ?
-			`, assigneeID, taskID)
-			if err != nil {
+			manager := task.NewManager(app.db)
+			if err := manager.Delegate(cmd.Context(), taskID, assigneeID); err != nil {
 				return fmt.Errorf("cli.newTaskDelegateCmd: delegate task: %w", err)
 			}
 
-			rows, err := res.RowsAffected()
+			updated, err := app.db.FindTaskByID(cmd.Context(), taskID)
 			if err != nil {
-				return fmt.Errorf("cli.newTaskDelegateCmd: rows affected: %w", err)
-			}
-			if rows == 0 {
-				return fmt.Errorf("cli.newTaskDelegateCmd: task not found: %s", taskID)
+				return fmt.Errorf("cli.newTaskDelegateCmd: find task: %w", err)
 			}
 
 			if jsonOutput {
 				enc := json.NewEncoder(cmd.OutOrStdout())
 				enc.SetIndent("", "  ")
 				return enc.Encode(map[string]string{
-					"id":           taskID,
-					"delegated_to": assigneeID,
+					"id":           updated.ID,
+					"delegated_to": updated.AssignedTo,
+					"status":       updated.Status,
 				})
 			}
 
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "delegated task %s to %s\n", taskID, assigneeID)
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "delegated task %s to %s\n", taskID, updated.AssignedTo)
 			if err != nil {
 				return fmt.Errorf("cli.newTaskDelegateCmd: write output: %w", err)
 			}
@@ -311,6 +313,70 @@ func newTaskDelegateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&to, "to", "", "Target agent name or ID")
 	_ = cmd.MarkFlagRequired("to")
 
+	return cmd
+}
+
+func newTaskApproveCmd() *cobra.Command {
+	var result string
+
+	cmd := &cobra.Command{
+		Use:   "approve <id>",
+		Short: "Approve a blocked review task",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			manager := task.NewManager(app.db)
+			if err := manager.ApproveTask(cmd.Context(), args[0], result); err != nil {
+				return fmt.Errorf("cli.newTaskApproveCmd: approve task: %w", err)
+			}
+			updated, err := app.db.FindTaskByID(cmd.Context(), args[0])
+			if err != nil {
+				return fmt.Errorf("cli.newTaskApproveCmd: find task: %w", err)
+			}
+			if jsonOutput {
+				enc := json.NewEncoder(cmd.OutOrStdout())
+				enc.SetIndent("", "  ")
+				return enc.Encode(map[string]string{"id": updated.ID, "status": updated.Status, "result": updated.Result})
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "approved task %s\n", updated.ID)
+			if err != nil {
+				return fmt.Errorf("cli.newTaskApproveCmd: write output: %w", err)
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&result, "result", "", "Approval result text")
+	return cmd
+}
+
+func newTaskRejectCmd() *cobra.Command {
+	var result string
+
+	cmd := &cobra.Command{
+		Use:   "reject <id>",
+		Short: "Reject a blocked review task",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			manager := task.NewManager(app.db)
+			if err := manager.RejectTask(cmd.Context(), args[0], result); err != nil {
+				return fmt.Errorf("cli.newTaskRejectCmd: reject task: %w", err)
+			}
+			updated, err := app.db.FindTaskByID(cmd.Context(), args[0])
+			if err != nil {
+				return fmt.Errorf("cli.newTaskRejectCmd: find task: %w", err)
+			}
+			if jsonOutput {
+				enc := json.NewEncoder(cmd.OutOrStdout())
+				enc.SetIndent("", "  ")
+				return enc.Encode(map[string]string{"id": updated.ID, "status": updated.Status, "result": updated.Result})
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "rejected task %s\n", updated.ID)
+			if err != nil {
+				return fmt.Errorf("cli.newTaskRejectCmd: write output: %w", err)
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&result, "result", "", "Rejection result text")
 	return cmd
 }
 
@@ -350,4 +416,36 @@ func nullIfEmpty(v string) any {
 		return nil
 	}
 	return v
+}
+
+func loadActiveTaskReviewPolicy(projectDir string) (*task.ReviewPolicy, error) {
+	projectCfg, _, err := config.LoadProjectConfig(projectDir)
+	if err != nil {
+		return nil, fmt.Errorf("load project config: %w", err)
+	}
+	if strings.TrimSpace(projectCfg.Template.Active) == "" {
+		return nil, nil
+	}
+
+	manifestPath := filepath.Join(projectDir, ".agentcom", "templates", projectCfg.Template.Active, "template.json")
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read template manifest: %w", err)
+	}
+
+	var manifest struct {
+		ReviewPolicy *task.ReviewPolicy `json:"review_policy,omitempty"`
+	}
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return nil, fmt.Errorf("unmarshal template manifest: %w", err)
+	}
+	if manifest.ReviewPolicy != nil {
+		if err := manifest.ReviewPolicy.Validate(); err != nil {
+			return nil, fmt.Errorf("validate review policy: %w", err)
+		}
+	}
+	return manifest.ReviewPolicy, nil
 }

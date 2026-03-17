@@ -141,6 +141,9 @@ func (r *Registry) MarkInactive(ctx context.Context) error {
 
 	now := time.Now().UTC()
 	for _, a := range agents {
+		if a.Type == "human" {
+			continue
+		}
 		if now.Sub(a.LastHeartbeat) <= heartbeatStaleThreshold {
 			continue
 		}

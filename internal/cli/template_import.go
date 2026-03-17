@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/malleus35/agentcom/internal/task"
 	"gopkg.in/yaml.v3"
 )
 
@@ -58,6 +59,11 @@ func templateDefinitionFromMap(raw map[string]any, sourcePath string) (templateD
 		Reference:   optionalStringField(raw, "reference", "file"),
 		CommonTitle: optionalStringField(raw, "common_title", fmt.Sprintf("%s Template Common Instructions", titleWords(strings.ReplaceAll(name, "-", " ")))),
 		CommonBody:  optionalStringField(raw, "common_body", defaultImportedCommonBody(name)),
+	}
+	if reviewPolicy, err := optionalReviewPolicyField(raw, "review_policy"); err != nil {
+		return templateDefinition{}, err
+	} else {
+		definition.ReviewPolicy = reviewPolicy
 	}
 
 	if isStringRoleList(roleList) {
@@ -171,4 +177,20 @@ func defaultImportedCommonBody(name string) string {
 - Review template changes in version control before sharing them with the rest of the team.
 
 This COMMON.md was generated from the imported template definition for %s.`, title))
+}
+
+func optionalReviewPolicyField(values map[string]any, key string) (*task.ReviewPolicy, error) {
+	value, ok := values[key]
+	if !ok || value == nil {
+		return nil, nil
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, fmt.Errorf("marshal %s: %w", key, err)
+	}
+	var policy task.ReviewPolicy
+	if err := json.Unmarshal(data, &policy); err != nil {
+		return nil, fmt.Errorf("parse %s: %w", key, err)
+	}
+	return &policy, nil
 }

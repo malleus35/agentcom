@@ -313,6 +313,14 @@ Send a direct message between managed agents:
 agentcom send --from frontend plan '{"text":"hello"}'
 ```
 
+Send a message to the human operator and reply from the user inbox:
+
+```bash
+agentcom send --from plan user '{"text":"Should I proceed with the refactor?"}'
+agentcom user inbox
+agentcom user reply plan '{"text":"Yes, proceed"}'
+```
+
 Broadcast an update:
 
 ```bash
@@ -322,10 +330,11 @@ agentcom broadcast --from alpha --topic sync '{"status":"ready"}'
 Create, delegate, and update a task:
 
 ```bash
-agentcom task create "Implement MCP tests" --creator frontend --assign plan --priority high
+agentcom task create "Implement MCP tests" --creator frontend --assign plan --priority high --reviewer user
 agentcom task list --assignee plan
 agentcom task delegate <task-id> --to plan
 agentcom task update <task-id> --status in_progress --result "started"
+agentcom task approve <task-id> --result "approved"
 ```
 
 Inspect inbox and system status:
@@ -386,12 +395,25 @@ Notes:
 - `--template` writes `.agentcom/templates/<template>/COMMON.md`, `.agentcom/templates/<template>/template.json`, a shared `agentcom/SKILL.md` per supported agent, and six namespaced role skills: `agentcom/<template>-frontend`, `agentcom/<template>-backend`, `agentcom/<template>-plan`, `agentcom/<template>-review`, `agentcom/<template>-architect`, and `agentcom/<template>-design`.
 - Re-running `--template` updates generated shared/role `SKILL.md` files idempotently while leaving existing `COMMON.md` and `template.json` in place.
 - Generated scaffold instructions treat `agentcom init --template <name>` -> `agentcom up` -> `agentcom down` as the default team lifecycle, with `agentcom register` reserved for low-level standalone use.
+- Template manifests can include `review_policy`, which auto-assigns reviewers once a task priority meets a configured threshold.
 - When `--template` is set, `.agentcom.json` also records `template.active` so `agentcom up` can start the same template later without repeating the flag.
 - Supported built-in templates are `company` and `oh-my-opencode`; `custom` launches a template-creation wizard in interactive mode, with a quick 2-field flow by default and the original detailed flow behind `--advanced`.
 - `--from-file <path>` imports a custom template definition from YAML or JSON, validates it, stores it under `.agentcom/templates/<name>/`, and scaffolds it as the current active template.
 - `agentcom agents template --list` shows built-in and custom templates, and `agentcom agents template --delete <name>` removes a custom template after confirmation.
 - `agentcom agents template edit <name> add-role <role>` and `remove-role <role>` update an existing custom template, refresh its communication graph, and regenerate the affected skill files.
 - `agentcom agents template export <name>` exports the current template definition as YAML for sharing or roundtrip import.
+- Example `review_policy`:
+
+```yaml
+review_policy:
+  require_review_above: high
+  default_reviewer: user
+  rules:
+    - priority: critical
+      reviewer: user
+    - priority: high
+      reviewer: review
+```
 - JSON output includes `path`, `status`, `project`, `project_config_path`, `template`, `active_template`, `instruction_files`, `agents_md`, `memory_files`, `custom_template_path`, and `generated_files` when applicable.
 - `--dry-run --json` also includes `dry_run: true` and a `preview` array of `{action,path}` entries.
 - Because the current implementation prepares the home directory before `init` checks it, `status` may appear as `already_initialized` even for a newly prepared path.
@@ -583,12 +605,12 @@ Flags:
 
 ### `agentcom task`
 
-Task management is split into four subcommands.
+Task management is split into six subcommands.
 
 Create a task:
 
 ```bash
-agentcom task create "Implement docs" --desc "Expand README" --creator alpha --assign beta --priority high
+agentcom task create "Implement docs" --desc "Expand README" --creator alpha --assign beta --priority high --reviewer user
 agentcom task create "Ship release" --blocked-by P7-01,P7-02
 agentcom --json task create "Implement docs" --creator alpha
 ```
@@ -616,13 +638,24 @@ agentcom task delegate <task-id> --to beta
 agentcom --json task delegate <task-id> --to agt_xxx
 ```
 
+Approve or reject a blocked review task:
+
+```bash
+agentcom task approve <task-id> --result "approved"
+agentcom task reject <task-id> --result "changes requested"
+```
+
 Important details:
 
 - `task create` stores new tasks with status `pending`.
+- `--priority` accepts only `low|medium|high|critical`; mixed case is normalized before storage.
+- `--reviewer` accepts an agent name, an agent ID, or `user`.
+- If the active template defines `review_policy`, reviewer assignment can happen automatically.
 - `--assign` and `--creator` accept agent name or ID.
 - `task list --assignee` tries to resolve names to IDs before querying.
-- `task update` writes status/result directly.
-- `task delegate` updates `assigned_to` to the resolved target agent.
+- `task update` validates status transitions through the task manager.
+- Tasks with a reviewer cannot go directly from `in_progress` to `completed`; the manager converts that transition to `blocked` until review is approved or rejected.
+- `task delegate` updates `assigned_to` to the resolved target agent and sets the task status to `assigned`.
 
 ### `agentcom skill`
 
@@ -873,11 +906,38 @@ Available tools:
 
 - `list_agents`
 - `send_message`
+- `send_to_user`
+- `get_user_messages`
 - `broadcast`
 - `create_task`
 - `delegate_task`
+- `update_task`
+- `approve_task`
+- `reject_task`
 - `list_tasks`
 - `get_status`
+
+## Human Operator Communication
+
+`agentcom` now treats the human operator as a per-project pseudo-agent named `user`.
+`agentcom up` registers that pseudo-agent automatically, direct sends to `user` work through the existing message path, and `agentcom down` cleans the pseudo-agent up with the rest of the managed session.
+
+Human-oriented CLI helpers:
+
+```bash
+agentcom user inbox
+agentcom user pending
+agentcom user reply plan '{"text":"Approved"}'
+```
+
+MCP clients can use:
+
+```text
+send_to_user(from="plan", text="Should I proceed?", topic="approval")
+get_user_messages(agent="plan", unread_only=true)
+update_task(task_id="tsk_123", status="in_progress", result="started")
+approve_task(task_id="tsk_123", result="approved")
+```
 
 ## Architecture
 

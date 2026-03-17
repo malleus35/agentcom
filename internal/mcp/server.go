@@ -189,6 +189,10 @@ func (s *Server) handleToolCall(ctx context.Context, req *Request) *Response {
 
 	result, err := handler(ctx, params.Arguments)
 	if err != nil {
+		var invalidParamsErr *invalidParamsError
+		if errors.As(err, &invalidParamsErr) {
+			return newErrorResponse(req.ID, errInvalidParams, invalidParamsErr.Error())
+		}
 		slog.Debug("mcp tool call failed", "tool", params.Name, "error", err)
 		return &Response{
 			JSONRPC: jsonRPCVersion,

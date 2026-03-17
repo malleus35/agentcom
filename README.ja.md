@@ -273,13 +273,22 @@ agentcom send --from frontend plan '{"text":"hello"}'
 agentcom broadcast --from frontend --topic sync '{"status":"ready"}'
 ```
 
+人間オペレーターに送信し、`user` inbox から返信する例:
+
+```bash
+agentcom send --from plan user '{"text":"リファクタを進めますか？"}'
+agentcom user inbox
+agentcom user reply plan '{"text":"はい、進めてください"}'
+```
+
 タスク操作:
 
 ```bash
-agentcom task create "Implement MCP tests" --creator frontend --assign plan --priority high
+agentcom task create "Implement MCP tests" --creator frontend --assign plan --priority high --reviewer user
 agentcom task list --assignee plan
 agentcom task delegate <task-id> --to plan
 agentcom task update <task-id> --status in_progress --result "started"
+agentcom task approve <task-id> --result "approved"
 ```
 
 状態確認:
@@ -323,11 +332,24 @@ agentcom --json init
 - `--agents-md` を再実行しても既存のユーザー内容は保持され、agentcom が管理する marker ブロックだけが更新されます。共有パスでは agent ごとの marker ブロックを分けるため、後で一部の agent だけを独立更新できます
 - `--template` は `.agentcom/templates/<template>/COMMON.md`、`.agentcom/templates/<template>/template.json`、各対応 agent 向けの shared `agentcom/SKILL.md`、および `agentcom/<template>-frontend` 形式の 6 つの namespaced role skill を生成します
 - `--template` を再実行すると、生成済み shared/role `SKILL.md` は idempotent に更新され、`COMMON.md` と `template.json` はそのまま残ります
+- テンプレート manifest には `review_policy` を含められ、priority しきい値以上のタスクに reviewer を自動割り当てできます
 - `--template` を指定すると `.agentcom.json` に `template.active` も記録され、以後 `agentcom up` の既定入力として使われます
 - 組み込みテンプレートは `company` と `oh-my-opencode` で、`custom` はインタラクティブなテンプレート作成 wizard を起動します。既定は高速な 2 項目 wizard で、従来の詳細フローは `--advanced` で利用できます
 - `--from-file <path>` は YAML または JSON の custom template 定義を import し、`.agentcom/templates/<name>/` に保存したうえで現在の active template として scaffold します
 - `agentcom agents template --list` は built-in/custom テンプレートをまとめて表示し、`agentcom agents template --delete <name>` は確認後に custom テンプレートを削除します
 - `agentcom agents template edit <name> add-role <role>` と `remove-role <role>` は既存 custom template を更新し、communication graph と関連 skill ファイルを再生成します
+- `review_policy` 例:
+
+```yaml
+review_policy:
+  require_review_above: high
+  default_reviewer: user
+  rules:
+    - priority: critical
+      reviewer: user
+    - priority: high
+      reviewer: review
+```
 - JSON 出力には必要に応じて `path`, `status`, `project`, `project_config_path`, `template`, `active_template`, `instruction_files`, `agents_md`, `memory_files`, `custom_template_path`, `generated_files` が含まれます
 - 現在の実装では事前にホームディレクトリを準備するため、新しいパスでも `status` が `already_initialized` になる場合があります
 
@@ -444,18 +466,27 @@ agentcom --json inbox --agent beta --unread
 
 ### `agentcom task`
 
-タスク管理は 4 つのサブコマンドに分かれています。
+タスク管理は 6 つのサブコマンドに分かれています。
 
 ```bash
-agentcom task create "Implement docs" --desc "Expand README" --creator alpha --assign beta --priority high
+agentcom task create "Implement docs" --desc "Expand README" --creator alpha --assign beta --priority high --reviewer user
 agentcom task list --status pending
 agentcom task update <task-id> --status completed --result "done"
 agentcom task delegate <task-id> --to beta
 ```
 
+```bash
+agentcom task approve <task-id> --result "approved"
+agentcom task reject <task-id> --result "changes requested"
+```
+
 - `task create` は新規タスクを `pending` で保存します
+- `--priority` は `low|medium|high|critical` のみを受け付け、大小文字は正規化されます
+- `--reviewer` は agent 名、agent ID、または `user` を受け付けます
+- active template に `review_policy` がある場合、reviewer は自動設定されることがあります
 - `--assign`, `--creator` は名前または ID を受け付けます
-- `task delegate` は `assigned_to` を対象 agent に更新します
+- reviewer 付きタスクは `in_progress -> completed` を直接通らず、いったん `blocked` になってから `approve` / `reject` を使います
+- `task delegate` は `assigned_to` を対象 agent に更新し、状態を `assigned` にします
 
 ### `agentcom status`
 
@@ -665,11 +696,38 @@ agentcom mcp-server
 
 - `list_agents`
 - `send_message`
+- `send_to_user`
+- `get_user_messages`
 - `broadcast`
 - `create_task`
 - `delegate_task`
+- `update_task`
+- `approve_task`
+- `reject_task`
 - `list_tasks`
 - `get_status`
+
+## Human Operator Communication
+
+`agentcom` は人間オペレーターを project ごとの pseudo-agent `user` として扱います。
+`agentcom up` が `user` を自動登録し、既存の `send --to user` 経路でメッセージを届け、`agentcom down` が managed session と一緒に片付けます。
+
+人間向け CLI:
+
+```bash
+agentcom user inbox
+agentcom user pending
+agentcom user reply plan '{"text":"承認します"}'
+```
+
+MCP では次のツールを使います:
+
+```text
+send_to_user(from="plan", text="進めますか？", topic="approval")
+get_user_messages(agent="plan", unread_only=true)
+update_task(task_id="tsk_123", status="in_progress", result="started")
+approve_task(task_id="tsk_123", result="approved")
+```
 
 ## アーキテクチャ
 

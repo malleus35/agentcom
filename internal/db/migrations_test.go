@@ -47,6 +47,15 @@ func TestMigrateFreshDatabase(t *testing.T) {
 	if !hasTable(t, database, ctx, "projects") {
 		t.Fatal("projects table missing")
 	}
+
+	taskColumns := tableColumns(t, database, ctx, "tasks")
+	reviewer, ok := taskColumns["reviewer"]
+	if !ok {
+		t.Fatalf("tasks columns missing reviewer: %#v", taskColumns)
+	}
+	if reviewer.defaultValue != "''" {
+		t.Fatalf("reviewer default = %q, want %q", reviewer.defaultValue, "''")
+	}
 }
 
 func TestMigrateLegacyAgentsTable(t *testing.T) {
@@ -106,6 +115,50 @@ func TestMigrateIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestMigrateAddsReviewerToExistingTasks(t *testing.T) {
+	database, err := OpenMemory()
+	if err != nil {
+		t.Fatalf("OpenMemory() error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := database.Close(); err != nil {
+			t.Fatalf("Close() error = %v", err)
+		}
+	})
+
+	ctx := context.Background()
+	for i, stmt := range migrations[:len(migrations)-1] {
+		if _, err := database.ExecContext(ctx, stmt); err != nil {
+			t.Fatalf("ExecContext(migration %d) error = %v", i, err)
+		}
+	}
+	tx, err := database.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("BeginTx() error = %v", err)
+	}
+	if err := setSchemaVersion(ctx, tx, len(migrations)-1); err != nil {
+		t.Fatalf("setSchemaVersion() error = %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit() error = %v", err)
+	}
+	if _, err := database.ExecContext(ctx, `INSERT INTO tasks (id, title, status, priority, blocked_by) VALUES ('tsk_legacy', 'legacy', 'pending', 'medium', '[]')`); err != nil {
+		t.Fatalf("ExecContext(insert legacy task) error = %v", err)
+	}
+
+	if err := database.Migrate(ctx); err != nil {
+		t.Fatalf("Migrate() error = %v", err)
+	}
+
+	task, err := database.FindTaskByID(ctx, "tsk_legacy")
+	if err != nil {
+		t.Fatalf("FindTaskByID() error = %v", err)
+	}
+	if task.Reviewer != "" {
+		t.Fatalf("Reviewer = %q, want empty string", task.Reviewer)
+	}
+}
+
 type pragmaColumn struct {
 	notNull      int
 	defaultValue string
@@ -123,8 +176,13 @@ func currentSchemaVersion(t *testing.T, database *DB, ctx context.Context) int {
 
 func agentColumns(t *testing.T, database *DB, ctx context.Context) map[string]pragmaColumn {
 	t.Helper()
+	return tableColumns(t, database, ctx, "agents")
+}
 
-	rows, err := database.QueryContext(ctx, `PRAGMA table_info(agents)`)
+func tableColumns(t *testing.T, database *DB, ctx context.Context, tableName string) map[string]pragmaColumn {
+	t.Helper()
+
+	rows, err := database.QueryContext(ctx, fmt.Sprintf(`PRAGMA table_info(%s)`, tableName))
 	if err != nil {
 		t.Fatalf("QueryContext(PRAGMA table_info) error = %v", err)
 	}

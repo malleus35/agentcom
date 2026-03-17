@@ -12,17 +12,19 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/malleus35/agentcom/internal/task"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
 
 type templateDefinition struct {
-	Name        string         `json:"name"`
-	Description string         `json:"description"`
-	Reference   string         `json:"reference"`
-	CommonTitle string         `json:"common_title"`
-	CommonBody  string         `json:"-"`
-	Roles       []templateRole `json:"roles"`
+	Name         string             `json:"name"`
+	Description  string             `json:"description"`
+	Reference    string             `json:"reference"`
+	CommonTitle  string             `json:"common_title"`
+	CommonBody   string             `json:"-"`
+	ReviewPolicy *task.ReviewPolicy `json:"review_policy,omitempty"`
+	Roles        []templateRole     `json:"roles"`
 }
 
 type templateRole struct {
@@ -833,12 +835,13 @@ func templateExportMap(definition templateDefinition) map[string]any {
 		})
 	}
 	return map[string]any{
-		"name":         definition.Name,
-		"description":  definition.Description,
-		"reference":    definition.Reference,
-		"common_title": definition.CommonTitle,
-		"common_body":  definition.CommonBody,
-		"roles":        roles,
+		"name":          definition.Name,
+		"description":   definition.Description,
+		"reference":     definition.Reference,
+		"common_title":  definition.CommonTitle,
+		"common_body":   definition.CommonBody,
+		"review_policy": definition.ReviewPolicy,
+		"roles":         roles,
 	}
 }
 
@@ -980,6 +983,11 @@ func builtInTemplateDefinitions() []templateDefinition {
 			Description: "Company-style multi-agent template inspired by Paperclip org roles.",
 			Reference:   "paperclip",
 			CommonTitle: "Company Template Common Instructions",
+			ReviewPolicy: &task.ReviewPolicy{
+				RequireReviewAbove: task.PriorityHigh,
+				DefaultReviewer:    "user",
+				Rules:              []task.ReviewPolicyRule{{Priority: task.PriorityCritical, Reviewer: "user"}, {Priority: task.PriorityHigh, Reviewer: "review"}},
+			},
 			CommonBody: strings.TrimSpace(`Use this template when a small product team needs clear functional ownership.
 
 ## Team Model
@@ -1077,6 +1085,11 @@ This template is inspired by Paperclip's company/org model, but uses six deliver
 			Description: "Oh-My-OpenCode-inspired template with planner, reviewer, architect, and execution specialists.",
 			Reference:   "oh-my-opencode",
 			CommonTitle: "Oh-My-OpenCode Template Common Instructions",
+			ReviewPolicy: &task.ReviewPolicy{
+				RequireReviewAbove: task.PriorityHigh,
+				DefaultReviewer:    "user",
+				Rules:              []task.ReviewPolicyRule{{Priority: task.PriorityCritical, Reviewer: "user"}, {Priority: task.PriorityHigh, Reviewer: "review"}},
+			},
 			CommonBody: strings.TrimSpace(`Use this template when you want a planning-heavy workflow inspired by Oh-My-OpenCode.
 
 ## Team Model

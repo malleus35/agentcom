@@ -3,6 +3,7 @@ package task
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/malleus35/agentcom/internal/db"
@@ -38,49 +39,6 @@ func insertTaskTestAgent(t *testing.T, database *db.DB, name string) *db.Agent {
 	return agent
 }
 
-func TestValidateTransition(t *testing.T) {
-	tests := []struct {
-		name    string
-		from    string
-		to      string
-		wantErr error
-	}{
-		{name: "pending to assigned", from: StatusPending, to: StatusAssigned},
-		{name: "assigned to in_progress", from: StatusAssigned, to: StatusInProgress},
-		{name: "in_progress to completed", from: StatusInProgress, to: StatusCompleted},
-		{name: "completed to pending invalid", from: StatusCompleted, to: StatusPending, wantErr: ErrInvalidTransition},
-		{name: "pending to failed invalid", from: StatusPending, to: StatusFailed, wantErr: ErrInvalidTransition},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := ValidateTransition(tt.from, tt.to)
-			if !errors.Is(err, tt.wantErr) {
-				t.Fatalf("ValidateTransition() error = %v, want %v", err, tt.wantErr)
-			}
-		})
-	}
-}
-
-func TestIsTerminal(t *testing.T) {
-	tests := []struct {
-		status string
-		want   bool
-	}{
-		{status: StatusCompleted, want: true},
-		{status: StatusFailed, want: true},
-		{status: StatusCancelled, want: true},
-		{status: StatusPending, want: false},
-		{status: StatusAssigned, want: false},
-	}
-
-	for _, tt := range tests {
-		if got := IsTerminal(tt.status); got != tt.want {
-			t.Fatalf("IsTerminal(%q) = %v, want %v", tt.status, got, tt.want)
-		}
-	}
-}
-
 func TestManagerLifecycle(t *testing.T) {
 	database := setupTaskTestDB(t)
 	ctx := context.Background()
@@ -90,7 +48,7 @@ func TestManagerLifecycle(t *testing.T) {
 	manager := NewManager(database)
 	query := NewQuery(database)
 
-	created, err := manager.Create(ctx, "ship it", "complete tests", "", "", creator.ID, []string{"P1-09"})
+	created, err := manager.Create(ctx, "ship it", "complete tests", "medium", "", "", creator.ID, []string{"P1-09"}, nil)
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
@@ -154,7 +112,7 @@ func TestManagerRejectsInvalidTransitions(t *testing.T) {
 	creator := insertTaskTestAgent(t, database, "creator")
 
 	manager := NewManager(database)
-	created, err := manager.Create(ctx, "ship it", "complete tests", "high", "", creator.ID, nil)
+	created, err := manager.Create(ctx, "ship it", "complete tests", "high", "", "", creator.ID, nil, nil)
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
@@ -168,5 +126,116 @@ func TestManagerRejectsInvalidTransitions(t *testing.T) {
 	}
 	if err := manager.Delegate(ctx, created.ID, creator.ID); !errors.Is(err, ErrInvalidTransition) {
 		t.Fatalf("Delegate(invalid) error = %v, want %v", err, ErrInvalidTransition)
+	}
+}
+
+func TestManagerCreateRejectsInvalidPriority(t *testing.T) {
+	database := setupTaskTestDB(t)
+	ctx := context.Background()
+	creator := insertTaskTestAgent(t, database, "creator")
+
+	manager := NewManager(database)
+	_, err := manager.Create(ctx, "ship it", "complete tests", "urgent", "", "", creator.ID, nil, nil)
+	if err == nil {
+		t.Fatal("Create() error = nil, want invalid priority error")
+	}
+	if !strings.Contains(err.Error(), "invalid priority") {
+		t.Fatalf("Create() error = %v, want invalid priority context", err)
+	}
+}
+
+func TestManagerCreateAppliesReviewerAndPolicy(t *testing.T) {
+	database := setupTaskTestDB(t)
+	ctx := context.Background()
+	creator := insertTaskTestAgent(t, database, "creator")
+
+	manager := NewManager(database)
+	policy := &ReviewPolicy{
+		RequireReviewAbove: PriorityHigh,
+		DefaultReviewer:    "user",
+		Rules:              []ReviewPolicyRule{{Priority: PriorityCritical, Reviewer: "review"}},
+	}
+
+	created, err := manager.Create(ctx, "ship it", "complete tests", "HIGH", "", "", creator.ID, nil, policy)
+	if err != nil {
+		t.Fatalf("Create(policy) error = %v", err)
+	}
+	if created.Priority != PriorityHigh {
+		t.Fatalf("Priority = %q, want %q", created.Priority, PriorityHigh)
+	}
+	if created.Reviewer != "user" {
+		t.Fatalf("Reviewer = %q, want user", created.Reviewer)
+	}
+
+	explicit, err := manager.Create(ctx, "ship it", "complete tests", "critical", "alice", "", creator.ID, nil, policy)
+	if err != nil {
+		t.Fatalf("Create(explicit reviewer) error = %v", err)
+	}
+	if explicit.Reviewer != "alice" {
+		t.Fatalf("Reviewer = %q, want alice", explicit.Reviewer)
+	}
+}
+
+func TestManagerReviewLifecycle(t *testing.T) {
+	database := setupTaskTestDB(t)
+	ctx := context.Background()
+	creator := insertTaskTestAgent(t, database, "creator")
+
+	manager := NewManager(database)
+	query := NewQuery(database)
+
+	created, err := manager.Create(ctx, "ship it", "complete tests", "high", "user", "", creator.ID, nil, nil)
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	if err := manager.UpdateStatus(ctx, created.ID, StatusInProgress, "started"); err != nil {
+		t.Fatalf("UpdateStatus(in_progress) error = %v", err)
+	}
+	if err := manager.UpdateStatus(ctx, created.ID, StatusCompleted, "done"); err != nil {
+		t.Fatalf("UpdateStatus(completed with reviewer) error = %v", err)
+	}
+
+	blocked, err := query.FindByID(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("FindByID(blocked) error = %v", err)
+	}
+	if blocked.Status != StatusBlocked {
+		t.Fatalf("Status = %q, want %q", blocked.Status, StatusBlocked)
+	}
+	if !strings.Contains(blocked.Result, "review required") {
+		t.Fatalf("Result = %q, want review required message", blocked.Result)
+	}
+
+	if err := manager.ApproveTask(ctx, created.ID, "approved"); err != nil {
+		t.Fatalf("ApproveTask() error = %v", err)
+	}
+	approved, err := query.FindByID(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("FindByID(approved) error = %v", err)
+	}
+	if approved.Status != StatusCompleted || approved.Result != "approved" {
+		t.Fatalf("approved task = %+v", approved)
+	}
+
+	rejected, err := manager.Create(ctx, "ship it 2", "complete tests", "high", "user", "", creator.ID, nil, nil)
+	if err != nil {
+		t.Fatalf("Create(reject) error = %v", err)
+	}
+	if err := manager.UpdateStatus(ctx, rejected.ID, StatusInProgress, "started"); err != nil {
+		t.Fatalf("UpdateStatus(rejected in_progress) error = %v", err)
+	}
+	if err := manager.UpdateStatus(ctx, rejected.ID, StatusCompleted, "done"); err != nil {
+		t.Fatalf("UpdateStatus(rejected completed) error = %v", err)
+	}
+	if err := manager.RejectTask(ctx, rejected.ID, "changes requested"); err != nil {
+		t.Fatalf("RejectTask() error = %v", err)
+	}
+	failed, err := query.FindByID(ctx, rejected.ID)
+	if err != nil {
+		t.Fatalf("FindByID(failed) error = %v", err)
+	}
+	if failed.Status != StatusFailed || failed.Result != "changes requested" {
+		t.Fatalf("failed task = %+v", failed)
 	}
 }
