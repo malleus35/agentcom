@@ -3,6 +3,7 @@ package message
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -30,6 +31,15 @@ type Router struct {
 	project   string
 }
 
+var (
+	ErrSendRateLimited      = errors.New("send rate limited")
+	ErrBroadcastThrottled   = errors.New("broadcast throttled")
+	inboxLimitPerAgent      = 1000
+	sendRateLimitPerWindow  = 100
+	sendRateLimitWindow     = time.Second
+	broadcastThrottleWindow = time.Second
+)
+
 // NewRouter creates a message router.
 func NewRouter(database *db.DB, finder AgentFinder, transport Transport, project string) *Router {
 	return &Router{
@@ -55,6 +65,9 @@ func (r *Router) Send(
 		if err != nil {
 			return nil, fmt.Errorf("message.Router.Send: resolve target: %w", err)
 		}
+	}
+	if err := r.enforceMessagePolicies(ctx, from, target.ID, msgType, topic); err != nil {
+		return nil, fmt.Errorf("message.Router.Send: %w", err)
 	}
 
 	env := NewEnvelope(from, target.ID, msgType, topic, payload)
@@ -106,6 +119,16 @@ func (r *Router) Broadcast(
 	topic string,
 	payload json.RawMessage,
 ) ([]*Envelope, error) {
+	if topic != "" && broadcastThrottleWindow > 0 {
+		exists, err := r.hasRecentBroadcast(ctx, from, topic, time.Now().Add(-broadcastThrottleWindow))
+		if err != nil {
+			return nil, fmt.Errorf("message.Router.Broadcast: %w", err)
+		}
+		if exists {
+			return nil, fmt.Errorf("message.Router.Broadcast: %w", ErrBroadcastThrottled)
+		}
+	}
+
 	agents, err := r.finder.ListAlive(ctx, r.project)
 	if err != nil {
 		return nil, fmt.Errorf("message.Router.Broadcast: list alive agents: %w", err)
@@ -130,4 +153,66 @@ func (r *Router) Broadcast(
 	}
 
 	return envelopes, nil
+}
+
+func (r *Router) enforceMessagePolicies(ctx context.Context, from, targetID, msgType, topic string) error {
+	if sendRateLimitPerWindow > 0 {
+		count, err := r.countRecentMessagesFromAgent(ctx, from, time.Now().Add(-sendRateLimitWindow))
+		if err != nil {
+			return err
+		}
+		if count >= sendRateLimitPerWindow {
+			return ErrSendRateLimited
+		}
+	}
+	if inboxLimitPerAgent > 0 {
+		if err := r.trimInboxForAgent(ctx, targetID, inboxLimitPerAgent-1); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *Router) countRecentMessagesFromAgent(ctx context.Context, agentID string, since time.Time) (int, error) {
+	var count int
+	if err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM messages
+		WHERE from_agent = ? AND datetime(created_at) >= datetime(?)
+	`, agentID, since.Format(time.RFC3339)).Scan(&count); err != nil {
+		return 0, fmt.Errorf("message.Router.countRecentMessagesFromAgent: %w", err)
+	}
+	return count, nil
+}
+
+func (r *Router) hasRecentBroadcast(ctx context.Context, from, topic string, since time.Time) (bool, error) {
+	var count int
+	if err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM messages
+		WHERE from_agent = ? AND type = 'broadcast' AND topic = ? AND datetime(created_at) >= datetime(?)
+	`, from, topic, since.Format(time.RFC3339)).Scan(&count); err != nil {
+		return false, fmt.Errorf("message.Router.hasRecentBroadcast: %w", err)
+	}
+	return count > 0, nil
+}
+
+func (r *Router) trimInboxForAgent(ctx context.Context, agentID string, keep int) error {
+	for {
+		var count int
+		if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM messages WHERE to_agent = ?`, agentID).Scan(&count); err != nil {
+			return fmt.Errorf("message.Router.trimInboxForAgent: count: %w", err)
+		}
+		if count <= keep {
+			return nil
+		}
+		if _, err := r.db.ExecContext(ctx, `
+			DELETE FROM messages
+			WHERE id = (
+				SELECT id FROM messages WHERE to_agent = ? ORDER BY datetime(created_at) ASC, id ASC LIMIT 1
+			)
+		`, agentID); err != nil {
+			return fmt.Errorf("message.Router.trimInboxForAgent: delete oldest: %w", err)
+		}
+	}
 }
