@@ -11,11 +11,11 @@
 - **P10 상태**: 구현/문서/테스트 완료, 관련 변경은 현재 브랜치에 포함됨
 - **P11 상태**: 구현 완료, 테스트/수동 QA/README 반영 완료, develop 머지 및 release 대기
 - **P12 상태**: 구현/검증/문서 반영 완료 (user endpoint, pseudo-agent, MCP tools)
-- **계획 문서 상태**: PH10 PRD 작성 완료 (`.agents/plans/PH10-priority-review-policy.md`), 6 Phase / 15 Tasks / ~48 Subtasks / ~14.75h
+- **계획 문서 상태**: PH10 PRD 최종 통합본 완료 (`.agents/plans/PH10-priority-review-policy-PRD.md`), 6 Phase / 18 Tasks / ~62 Subtasks / ~16h
 - **다음 작업**: PH10 Phase A 구현 시작 (priority validation 강제)
 - **후속 계획**: `.agents/plans/NEXT-PHASE-PLAN.md` — PH5~PH9 (26 tasks, 56.5h 추정, CLI-first 원칙으로 재검토 필요)
-- **아키텍처 결정 문서**: `.agents/plans/PH10-architectural-decisions.md` — review_chain(거부), MCP(CLI-first), agent-review(지원)
-- **PH10 PRD**: `.agents/plans/PH10-priority-review-policy.md` — priority enforcement + review policy (15 tasks, ~14.75h)
+- **PH10 PRD**: `.agents/plans/PH10-priority-review-policy-PRD.md` — priority enforcement + review policy (18 tasks, ~16h, 아키텍처 결정 8건 포함)
+- **PH10 문서 정리**: 기존 산재 문서 4개(`PH10-priority-review-policy.md`, `PH10-architectural-decisions.md`, `PH10-review-system-analysis.md`, `PH10-user-task-approver-design.md`) → 최종 PRD에 통합 후 삭제 완료
 
 ## 완료된 태스크
 
@@ -311,8 +311,7 @@
 - [x] `feature/P12-user-endpoint` 브랜치 생성 완료
 - [x] **P12 user-endpoint 구현 완료**: TDD 기반 구현, 수동 QA, 문서 반영, 원자 커밋 완료
 - [x] **NEXT-PHASE-PLAN.md 작성 완료**: PH5(MCP 스펙), PH6(안정성), PH7(설정/옵저버빌리티), PH8(MCP 확장), PH9(테스트) — 총 26 태스크, 56.5h 추정
-- [x] **PH10 아키텍처 결정 문서 완료**: `.agents/plans/PH10-architectural-decisions.md` — review_chain(거부), MCP(CLI-first), agent-review(지원)
-- [x] **PH10 PRD 작성 완료**: `.agents/plans/PH10-priority-review-policy.md` — 6 Phase, 15 Tasks, ~48 Subtasks, ~14.75h
+- [x] **PH10 PRD 최종 통합본 완료**: `.agents/plans/PH10-priority-review-policy-PRD.md` — 6 Phase, 18 Tasks, ~62 Subtasks, ~16h (기존 4개 문서 흡수·삭제)
 - [x] **AGENTS.md line 166 변경 완료**: "MCP 퍼스트" → "CLI-first, MCP는 셸 없는 런타임용 선택적 어댑터"
 - [ ] **PH10 구현**: `feature/PH10-priority-review-policy` 브랜치에서 PRD 순서대로 구현
   - [ ] Phase A: Priority Validation (model.go, manager.go, task.go CLI, handler.go MCP)
