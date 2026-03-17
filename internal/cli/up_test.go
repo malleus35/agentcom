@@ -248,6 +248,42 @@ func TestCollectStaleRuntimeAgents(t *testing.T) {
 	}
 }
 
+func TestHandleSupervisorSignalWritesRuntimeStateOnUSR1(t *testing.T) {
+	projectDir := t.TempDir()
+	state := upRuntimeState{
+		ProjectDir:    projectDir,
+		Template:      "company",
+		StartedAt:     time.Now().UTC(),
+		SupervisorPID: 123,
+		Agents:        []upRuntimeStateAgent{{Role: "plan", Name: "plan", Type: "pm", PID: 456}},
+	}
+
+	if err := handleSupervisorSignal(projectDir, state, supervisorSignalDumpState); err != nil {
+		t.Fatalf("handleSupervisorSignal(SIGUSR1) error = %v", err)
+	}
+	loaded, _, err := loadUpRuntimeState(projectDir)
+	if err != nil {
+		t.Fatalf("loadUpRuntimeState() error = %v", err)
+	}
+	if loaded.SupervisorPID != state.SupervisorPID {
+		t.Fatalf("SupervisorPID = %d, want %d", loaded.SupervisorPID, state.SupervisorPID)
+	}
+}
+
+func TestHandleSupervisorSignalIgnoresSIGHUP(t *testing.T) {
+	projectDir := t.TempDir()
+	if err := handleSupervisorSignal(projectDir, upRuntimeState{}, supervisorSignalReload); err != nil {
+		t.Fatalf("handleSupervisorSignal(SIGHUP) error = %v", err)
+	}
+	state, _, err := loadUpRuntimeState(projectDir)
+	if err != nil {
+		t.Fatalf("loadUpRuntimeState() error = %v", err)
+	}
+	if state.SupervisorPID != 0 {
+		t.Fatalf("SupervisorPID = %d, want 0", state.SupervisorPID)
+	}
+}
+
 func TestRunWithCleanupTimeoutProvidesDeadline(t *testing.T) {
 	const timeout = 250 * time.Millisecond
 
