@@ -17,6 +17,7 @@ type upRuntimeState struct {
 	Template      string                `json:"template"`
 	StartedAt     time.Time             `json:"started_at"`
 	SupervisorPID int                   `json:"supervisor_pid"`
+	UserAgent     *upRuntimeStateAgent  `json:"user_agent,omitempty"`
 	Agents        []upRuntimeStateAgent `json:"agents"`
 }
 

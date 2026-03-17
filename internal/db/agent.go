@@ -197,6 +197,32 @@ func (d *DB) FindAgentByNameAndProject(ctx context.Context, name string, project
 	return agent, nil
 }
 
+// FindAgentByTypeAndProject finds a single agent by type within a project.
+func (d *DB) FindAgentByTypeAndProject(ctx context.Context, agentType string, project string) (*Agent, error) {
+	stmt, err := d.PrepareContext(ctx, `
+		SELECT
+			id, name, type, pid, socket_path, capabilities, workdir, project, status, registered_at, last_heartbeat
+		FROM agents
+		WHERE type = ? AND (? = '' OR project = ?)
+		ORDER BY registered_at ASC
+		LIMIT 1
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("db.FindAgentByTypeAndProject: prepare: %w", err)
+	}
+	defer stmt.Close()
+
+	agent, err := scanAgent(stmt.QueryRowContext(ctx, agentType, project, project))
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrAgentNotFound
+		}
+		return nil, fmt.Errorf("db.FindAgentByTypeAndProject: %w", err)
+	}
+
+	return agent, nil
+}
+
 // FindAgentByID finds a single agent by ID.
 func (d *DB) FindAgentByID(ctx context.Context, id string) (*Agent, error) {
 	stmt, err := d.PrepareContext(ctx, `

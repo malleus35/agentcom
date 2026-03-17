@@ -215,3 +215,37 @@ func TestProjectsTableExists(t *testing.T) {
 		}
 	})
 }
+
+func TestFindAgentByTypeAndProject(t *testing.T) {
+	database := setupTestDB(t)
+	ctx := context.Background()
+
+	alpha := &Agent{Name: "alpha", Type: "worker", Project: "project-a", Status: "alive"}
+	beta := &Agent{Name: "beta", Type: "human", Project: "project-a", Status: "alive"}
+	gamma := &Agent{Name: "gamma", Type: "human", Project: "project-b", Status: "alive"}
+	for _, agent := range []*Agent{alpha, beta, gamma} {
+		if err := database.InsertAgent(ctx, agent); err != nil {
+			t.Fatalf("InsertAgent(%s) error = %v", agent.Name, err)
+		}
+	}
+
+	got, err := database.FindAgentByTypeAndProject(ctx, "human", "project-a")
+	if err != nil {
+		t.Fatalf("FindAgentByTypeAndProject(project-a) error = %v", err)
+	}
+	if got.ID != beta.ID {
+		t.Fatalf("FindAgentByTypeAndProject(project-a) id = %q, want %q", got.ID, beta.ID)
+	}
+
+	got, err = database.FindAgentByTypeAndProject(ctx, "human", "project-b")
+	if err != nil {
+		t.Fatalf("FindAgentByTypeAndProject(project-b) error = %v", err)
+	}
+	if got.ID != gamma.ID {
+		t.Fatalf("FindAgentByTypeAndProject(project-b) id = %q, want %q", got.ID, gamma.ID)
+	}
+
+	if _, err := database.FindAgentByTypeAndProject(ctx, "reviewer", "project-a"); !errors.Is(err, ErrAgentNotFound) {
+		t.Fatalf("FindAgentByTypeAndProject(missing) error = %v, want %v", err, ErrAgentNotFound)
+	}
+}

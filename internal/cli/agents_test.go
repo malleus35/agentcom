@@ -368,7 +368,7 @@ func TestWriteTemplateScaffold(t *testing.T) {
 		t.Fatalf("Chdir() error = %v", err)
 	}
 
-	paths, err := writeTemplateScaffold(projectDir, "company", writeModeAppend)
+	paths, err := writeTemplateScaffold(projectDir, "company", writeModeAppend, nil)
 	if err != nil {
 		t.Fatalf("writeTemplateScaffold() error = %v", err)
 	}
@@ -481,7 +481,7 @@ func TestWriteTemplateScaffold(t *testing.T) {
 		t.Fatalf("plan skill missing escalation to architect: %s", planContent)
 	}
 
-	paths2, err := writeTemplateScaffold(projectDir, "company", writeModeAppend)
+	paths2, err := writeTemplateScaffold(projectDir, "company", writeModeAppend, nil)
 	if err != nil {
 		t.Fatalf("writeTemplateScaffold() second call error = %v, want nil", err)
 	}
@@ -522,7 +522,7 @@ func TestTemplateScaffoldReInit(t *testing.T) {
 		t.Fatalf("Chdir() error = %v", err)
 	}
 
-	paths1, err := writeTemplateScaffold(projectDir, "company", writeModeAppend)
+	paths1, err := writeTemplateScaffold(projectDir, "company", writeModeAppend, nil)
 	if err != nil {
 		t.Fatalf("first scaffold error = %v", err)
 	}
@@ -537,7 +537,7 @@ func TestTemplateScaffoldReInit(t *testing.T) {
 		t.Fatalf("ReadFile(common) error = %v", err)
 	}
 
-	paths2, err := writeTemplateScaffold(projectDir, "company", writeModeAppend)
+	paths2, err := writeTemplateScaffold(projectDir, "company", writeModeAppend, nil)
 	if err != nil {
 		t.Fatalf("second scaffold error = %v", err)
 	}
@@ -557,6 +557,50 @@ func TestTemplateScaffoldReInit(t *testing.T) {
 	}
 	if string(common1) != string(common2) {
 		t.Fatal("COMMON.md changed on re-scaffold")
+	}
+}
+
+func TestWriteTemplateScaffoldSelectedAgents(t *testing.T) {
+	projectDir := t.TempDir()
+	oldwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	defer func() {
+		if err := os.Chdir(oldwd); err != nil {
+			t.Fatalf("restore cwd: %v", err)
+		}
+	}()
+	if err := os.Chdir(projectDir); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+
+	paths, err := writeTemplateScaffold(projectDir, "company", writeModeAppend, []string{"claude", "opencode"})
+	if err != nil {
+		t.Fatalf("writeTemplateScaffold() error = %v", err)
+	}
+	if len(paths) != 16 {
+		t.Fatalf("len(paths) = %d, want 16", len(paths))
+	}
+
+	for _, path := range []string{
+		filepath.Join(projectDir, ".claude", "skills", "agentcom", "SKILL.md"),
+		filepath.Join(projectDir, ".claude", "skills", "agentcom", "company-frontend", "SKILL.md"),
+		filepath.Join(projectDir, ".opencode", "skills", "agentcom", "SKILL.md"),
+		filepath.Join(projectDir, ".opencode", "skills", "agentcom", "company-frontend", "SKILL.md"),
+	} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("Stat(%s) error = %v", path, err)
+		}
+	}
+
+	for _, path := range []string{
+		filepath.Join(projectDir, ".agents", "skills", "agentcom", "SKILL.md"),
+		filepath.Join(projectDir, ".gemini", "skills", "agentcom", "SKILL.md"),
+	} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("Stat(%s) err = %v, want not exist", path, err)
+		}
 	}
 }
 

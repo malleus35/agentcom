@@ -146,8 +146,9 @@ func TestRouterBroadcastSkipsSenderAndContinuesOnFailure(t *testing.T) {
 	alpha := &db.Agent{ID: "agt_alpha", Name: "alpha", Project: "project-a", Status: "alive"}
 	beta := &db.Agent{ID: "agt_beta", Name: "beta", Project: "project-a", SocketPath: "/tmp/beta.sock", Status: "alive"}
 	gamma := &db.Agent{ID: "agt_gamma", Name: "gamma", Project: "project-a", SocketPath: "/tmp/gamma.sock", Status: "alive"}
+	user := &db.Agent{ID: "agt_user", Name: "user", Type: "human", Project: "project-a", Status: "alive"}
 
-	finder := &stubFinder{alive: []*db.Agent{alpha, beta, gamma}, byID: map[string]*db.Agent{alpha.ID: alpha, beta.ID: beta, gamma.ID: gamma}, byName: map[string]*db.Agent{alpha.Name: alpha, beta.Name: beta, gamma.Name: gamma}}
+	finder := &stubFinder{alive: []*db.Agent{alpha, beta, gamma, user}, byID: map[string]*db.Agent{alpha.ID: alpha, beta.ID: beta, gamma.ID: gamma, user.ID: user}, byName: map[string]*db.Agent{alpha.Name: alpha, beta.Name: beta, gamma.Name: gamma, user.Name: user}}
 	transport := &stubTransport{err: errors.New("send failed")}
 	router := NewRouter(database, finder, transport, "project-a")
 
@@ -170,5 +171,24 @@ func TestRouterBroadcastSkipsSenderAndContinuesOnFailure(t *testing.T) {
 		if stored[0].ToAgent == alpha.ID {
 			t.Fatalf("broadcast stored sender as recipient: %+v", stored[0])
 		}
+	}
+
+	userMessages, err := database.ListMessagesForAgent(context.Background(), user.ID)
+	if err != nil {
+		t.Fatalf("ListMessagesForAgent(user) error = %v", err)
+	}
+	if len(userMessages) != 0 {
+		t.Fatalf("len(ListMessagesForAgent(user)) = %d, want 0", len(userMessages))
+	}
+
+	if _, err := router.Send(context.Background(), alpha.ID, user.ID, "request", "approval", json.RawMessage(`{"text":"continue?"}`)); err != nil {
+		t.Fatalf("Send(user) error = %v", err)
+	}
+	userMessages, err = database.ListMessagesForAgent(context.Background(), user.ID)
+	if err != nil {
+		t.Fatalf("ListMessagesForAgent(user after direct send) error = %v", err)
+	}
+	if len(userMessages) != 1 {
+		t.Fatalf("len(ListMessagesForAgent(user after direct send)) = %d, want 1", len(userMessages))
 	}
 }

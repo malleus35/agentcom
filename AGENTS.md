@@ -163,9 +163,11 @@ Phase 내 태스크는 의존성 순서를 따른다. Phase 간은 순차 진행
 
 1. **SQLite가 유일한 진실의 원천**: 모든 상태는 SQLite에 영속화. 크래시 후 복구 가능.
 2. **에이전트 유형 자유**: type 필드는 자유 문자열. enum 제한 없음.
-3. **MCP 퍼스트**: MCP 서버가 주 통합점. CLI는 인간/스크립트용 보조 인터페이스.
-4. **실패에 안전**: UDS 실패 → SQLite 폴백. 하트비트 없음 → dead 마킹.
-5. **테스트 필수**: 핵심 로직 80%+ 커버리지. DB 테스트는 in-memory SQLite.
+3. **CLI-first**: CLI가 주 인터페이스. MCP 서버는 셸 없는 런타임(IDE 플러그인 등)용 선택적 어댑터.
+4. **Priority는 4단계 고정 enum**: `low`, `medium`, `high`, `critical`만 허용하며 입력은 정규화 후 검증한다.
+5. **리뷰 게이트는 선택적**: reviewer가 있거나 template `review_policy`에 의해 reviewer가 자동 지정된 태스크만 `in_progress → blocked → completed|failed` 흐름을 따른다.
+6. **실패에 안전**: UDS 실패 → SQLite 폴백. 하트비트 없음 → dead 마킹.
+7. **테스트 필수**: 핵심 로직 80%+ 커버리지. DB 테스트는 in-memory SQLite.
 
 ## 빌드 & 실행
 

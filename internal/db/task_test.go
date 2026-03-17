@@ -20,10 +20,12 @@ func TestTaskCRUD(t *testing.T) {
 	}
 
 	task := &Task{
+		ID:          "tsk_custom",
 		Title:       "ship feature",
 		Description: "implement wave 8",
 		Status:      "pending",
 		Priority:    "high",
+		Reviewer:    "user",
 		AssignedTo:  assignee.ID,
 		CreatedBy:   creator.ID,
 		BlockedBy:   `["P1-09"]`,
@@ -39,9 +41,16 @@ func TestTaskCRUD(t *testing.T) {
 	if got.Title != task.Title {
 		t.Fatalf("Title = %q, want %q", got.Title, task.Title)
 	}
+	if got.Reviewer != task.Reviewer {
+		t.Fatalf("Reviewer = %q, want %q", got.Reviewer, task.Reviewer)
+	}
+	if task.ID != "tsk_custom" {
+		t.Fatalf("Task ID = %q, want preserved custom id", task.ID)
+	}
 
 	task.Status = "assigned"
 	task.Result = "delegated"
+	task.Reviewer = "review"
 	if err := database.UpdateTask(ctx, task); err != nil {
 		t.Fatalf("UpdateTask() error = %v", err)
 	}
@@ -56,6 +65,9 @@ func TestTaskCRUD(t *testing.T) {
 	}
 	if got.Status != "in_progress" || got.Result != "started" {
 		t.Fatalf("task after status update = %+v", got)
+	}
+	if got.Reviewer != "review" {
+		t.Fatalf("Reviewer(after update) = %q, want review", got.Reviewer)
 	}
 
 	all, err := database.ListAllTasks(ctx)

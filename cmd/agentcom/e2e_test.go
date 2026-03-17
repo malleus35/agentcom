@@ -86,7 +86,7 @@ func TestAgentcomUpDownFlow(t *testing.T) {
 	homeDir := t.TempDir()
 	projectDir := t.TempDir()
 
-	initOutput := runAgentcomJSON(t, binPath, homeDir, projectDir, "init", "--template", "company")
+	initOutput := runAgentcomJSON(t, binPath, homeDir, projectDir, "init", "--project", "demo-app", "--template", "company")
 	if initOutput["active_template"] != "company" {
 		t.Fatalf("active_template = %v, want company", initOutput["active_template"])
 	}
@@ -103,7 +103,16 @@ func TestAgentcomUpDownFlow(t *testing.T) {
 		t.Fatalf("runtime state missing: %v", err)
 	}
 
-	waitForAgents(t, binPath, homeDir, 2)
+	waitForAgents(t, binPath, homeDir, 3)
+	allAgents := runAgentcomJSONArray(t, binPath, homeDir, projectDir, "list")
+	userAgent := findAgentByName(t, allAgents, "user")
+	userType := userAgent["type"]
+	if userType == nil {
+		userType = userAgent["Type"]
+	}
+	if userType != "human" {
+		t.Fatalf("user agent type = %v, want human", userType)
+	}
 
 	downOutput := runAgentcomJSON(t, binPath, homeDir, projectDir, "down")
 	stoppedRoles, ok := downOutput["stopped_roles"].([]any)
@@ -114,6 +123,101 @@ func TestAgentcomUpDownFlow(t *testing.T) {
 	waitForAgents(t, binPath, homeDir, 0)
 	if _, err := os.Stat(filepath.Join(projectDir, ".agentcom", "run", "up.json")); !os.IsNotExist(err) {
 		t.Fatalf("runtime state should be removed, stat err=%v", err)
+	}
+}
+
+func TestUserEndpointE2E(t *testing.T) {
+	binPath := buildAgentcomBinary(t)
+	homeDir := t.TempDir()
+	projectDir := t.TempDir()
+
+	runAgentcomJSON(t, binPath, homeDir, projectDir, "init", "--project", "demo-app", "--template", "company")
+	runAgentcomJSON(t, binPath, homeDir, projectDir, "up", "--only", "frontend,plan")
+
+	waitForAgents(t, binPath, homeDir, 3)
+	allAgents := runAgentcomJSONArray(t, binPath, homeDir, projectDir, "list")
+	userAgent := findAgentByName(t, allAgents, "user")
+	userAgentID, _ := userAgent["id"].(string)
+	if userAgentID == "" {
+		userAgentID, _ = userAgent["ID"].(string)
+	}
+	if userAgentID == "" {
+		t.Fatalf("user agent id missing: %#v", userAgent)
+	}
+
+	runAgentcomJSON(t, binPath, homeDir, projectDir, "send", "--from", "plan", "user", `{"text":"Should I proceed?"}`)
+	userInbox := runAgentcomJSONArray(t, binPath, homeDir, projectDir, "user", "inbox")
+	if len(userInbox) != 1 {
+		t.Fatalf("len(user inbox) = %d, want 1", len(userInbox))
+	}
+	if userInbox[0]["from_agent_name"] != "plan" {
+		t.Fatalf("from_agent_name = %v, want plan", userInbox[0]["from_agent_name"])
+	}
+
+	runAgentcomJSON(t, binPath, homeDir, projectDir, "user", "reply", "plan", `{"text":"Yes, proceed"}`)
+	planInbox := runAgentcomJSONArray(t, binPath, homeDir, projectDir, "inbox", "--agent", "plan", "--from", userAgentID, "--unread")
+	if len(planInbox) != 1 {
+		t.Fatalf("len(plan inbox) = %d, want 1", len(planInbox))
+	}
+	planInboxType := planInbox[0]["type"]
+	if planInboxType == nil {
+		planInboxType = planInbox[0]["Type"]
+	}
+	if planInboxType != "response" {
+		t.Fatalf("plan inbox type = %v, want response", planInboxType)
+	}
+
+	userPending := runAgentcomJSONArray(t, binPath, homeDir, projectDir, "user", "pending")
+	if len(userPending) != 0 {
+		t.Fatalf("len(user pending) = %d, want 0 after inbox read", len(userPending))
+	}
+
+	runAgentcomJSON(t, binPath, homeDir, projectDir, "down")
+	waitForAgents(t, binPath, homeDir, 0)
+	remaining := runAgentcomJSONArray(t, binPath, homeDir, projectDir, "list")
+	if len(remaining) != 0 {
+		t.Fatalf("remaining agents = %d, want 0", len(remaining))
+	}
+}
+
+func TestTaskPriorityAndReviewPolicyE2E(t *testing.T) {
+	binPath := buildAgentcomBinary(t)
+	homeDir := t.TempDir()
+	projectDir := t.TempDir()
+
+	runAgentcomJSON(t, binPath, homeDir, projectDir, "init", "--project", "demo-app", "--template", "company")
+
+	cmd := exec.Command(binPath, "--json", "task", "create", "bad task", "--priority", "urgent")
+	cmd.Env = append(os.Environ(), "AGENTCOM_HOME="+homeDir)
+	cmd.Dir = projectDir
+	output, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("task create invalid priority succeeded unexpectedly: %s", string(output))
+	}
+	if !bytes.Contains(output, []byte("Task priority is invalid")) {
+		t.Fatalf("invalid priority output = %s", string(output))
+	}
+
+	created := runAgentcomJSON(t, binPath, homeDir, projectDir, "task", "create", "review me", "--priority", "high")
+	taskID, _ := created["id"].(string)
+	if taskID == "" {
+		t.Fatalf("task create output missing id: %#v", created)
+	}
+	if created["reviewer"] != "review" {
+		t.Fatalf("reviewer = %v, want review", created["reviewer"])
+	}
+
+	inProgress := runAgentcomJSON(t, binPath, homeDir, projectDir, "task", "update", taskID, "--status", "in_progress", "--result", "started")
+	if inProgress["status"] != "in_progress" {
+		t.Fatalf("status = %v, want in_progress", inProgress["status"])
+	}
+	blocked := runAgentcomJSON(t, binPath, homeDir, projectDir, "task", "update", taskID, "--status", "completed", "--result", "done")
+	if blocked["status"] != "blocked" {
+		t.Fatalf("status = %v, want blocked", blocked["status"])
+	}
+	approved := runAgentcomJSON(t, binPath, homeDir, projectDir, "task", "approve", taskID, "--result", "approved")
+	if approved["status"] != "completed" {
+		t.Fatalf("status = %v, want completed", approved["status"])
 	}
 }
 
@@ -259,4 +363,15 @@ func intFromMap(t *testing.T, m map[string]any, key string) int {
 	}
 
 	return int(v)
+}
+
+func findAgentByName(t *testing.T, agents []map[string]any, name string) map[string]any {
+	t.Helper()
+	for _, agent := range agents {
+		if agent["name"] == name || agent["Name"] == name {
+			return agent
+		}
+	}
+	t.Fatalf("agent %q not found in %#v", name, agents)
+	return nil
 }

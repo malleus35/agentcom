@@ -4,16 +4,19 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/malleus35/agentcom/internal/task"
 )
 
 func TestSaveAndLoadCustomTemplates(t *testing.T) {
 	projectDir := t.TempDir()
 	definition := templateDefinition{
-		Name:        "custom-team",
-		Description: "Custom delivery template",
-		Reference:   "local",
-		CommonTitle: "Custom Team Common Instructions",
-		CommonBody:  "Coordinate through agentcom.",
+		Name:         "custom-team",
+		Description:  "Custom delivery template",
+		Reference:    "local",
+		CommonTitle:  "Custom Team Common Instructions",
+		CommonBody:   "Coordinate through agentcom.",
+		ReviewPolicy: &task.ReviewPolicy{RequireReviewAbove: task.PriorityHigh, DefaultReviewer: "user"},
 		Roles: []templateRole{{
 			Name:             "planner",
 			Description:      "Planning role",
@@ -54,6 +57,9 @@ func TestSaveAndLoadCustomTemplates(t *testing.T) {
 	}
 	if loaded[0].CommonBody != definition.CommonBody {
 		t.Fatalf("loaded[0].CommonBody = %q, want %q", loaded[0].CommonBody, definition.CommonBody)
+	}
+	if loaded[0].ReviewPolicy == nil || loaded[0].ReviewPolicy.DefaultReviewer != "user" {
+		t.Fatalf("loaded[0].ReviewPolicy = %#v, want default reviewer user", loaded[0].ReviewPolicy)
 	}
 }
 

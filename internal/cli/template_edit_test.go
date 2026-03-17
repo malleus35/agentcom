@@ -86,7 +86,7 @@ func TestTemplateRemoveRole(t *testing.T) {
 	if _, err := saveCustomTemplate(projectDir, definition); err != nil {
 		t.Fatalf("saveCustomTemplate() error = %v", err)
 	}
-	if _, err := writeTemplateScaffold(projectDir, "custom-team", writeModeAppend); err != nil {
+	if _, err := writeTemplateScaffold(projectDir, "custom-team", writeModeAppend, nil); err != nil {
 		t.Fatalf("writeTemplateScaffold() error = %v", err)
 	}
 

@@ -159,6 +159,78 @@ func (d *DB) ListUnreadMessages(ctx context.Context, agentID string) ([]*Message
 	return messages, nil
 }
 
+// ListMessagesFromAgent lists messages sent by a specific agent.
+func (d *DB) ListMessagesFromAgent(ctx context.Context, agentID string) ([]*Message, error) {
+	stmt, err := d.PrepareContext(ctx, `
+		SELECT
+			id, from_agent, to_agent, type, topic, payload, correlation_id, created_at, delivered_at, read_at
+		FROM messages
+		WHERE from_agent = ?
+		ORDER BY created_at DESC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("db.ListMessagesFromAgent: prepare: %w", err)
+	}
+	defer stmt.Close()
+
+	rows, err := stmt.QueryContext(ctx, agentID)
+	if err != nil {
+		return nil, fmt.Errorf("db.ListMessagesFromAgent: query: %w", err)
+	}
+	defer rows.Close()
+
+	messages := make([]*Message, 0)
+	for rows.Next() {
+		msg, err := scanMessage(rows)
+		if err != nil {
+			return nil, fmt.Errorf("db.ListMessagesFromAgent: scan: %w", err)
+		}
+		messages = append(messages, msg)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("db.ListMessagesFromAgent: rows: %w", err)
+	}
+
+	return messages, nil
+}
+
+// ListUnreadRequestsForAgent lists unread request messages addressed to an agent.
+func (d *DB) ListUnreadRequestsForAgent(ctx context.Context, agentID string) ([]*Message, error) {
+	stmt, err := d.PrepareContext(ctx, `
+		SELECT
+			id, from_agent, to_agent, type, topic, payload, correlation_id, created_at, delivered_at, read_at
+		FROM messages
+		WHERE to_agent = ? AND type = 'request' AND read_at IS NULL
+		ORDER BY created_at DESC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("db.ListUnreadRequestsForAgent: prepare: %w", err)
+	}
+	defer stmt.Close()
+
+	rows, err := stmt.QueryContext(ctx, agentID)
+	if err != nil {
+		return nil, fmt.Errorf("db.ListUnreadRequestsForAgent: query: %w", err)
+	}
+	defer rows.Close()
+
+	messages := make([]*Message, 0)
+	for rows.Next() {
+		msg, err := scanMessage(rows)
+		if err != nil {
+			return nil, fmt.Errorf("db.ListUnreadRequestsForAgent: scan: %w", err)
+		}
+		messages = append(messages, msg)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("db.ListUnreadRequestsForAgent: rows: %w", err)
+	}
+
+	return messages, nil
+}
+
 // MarkDelivered marks a message as delivered.
 func (d *DB) MarkDelivered(ctx context.Context, id string) error {
 	stmt, err := d.PrepareContext(ctx, `

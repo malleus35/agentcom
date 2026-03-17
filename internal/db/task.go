@@ -18,6 +18,7 @@ type Task struct {
 	Description string
 	Status      string
 	Priority    string
+	Reviewer    string
 	AssignedTo  string
 	CreatedBy   string
 	BlockedBy   string
@@ -26,18 +27,19 @@ type Task struct {
 	UpdatedAt   string
 }
 
-// InsertTask inserts a new task row and generates a task ID.
 func (d *DB) InsertTask(ctx context.Context, task *Task) error {
-	id, err := gonanoid.New()
-	if err != nil {
-		return fmt.Errorf("db.InsertTask: generate id: %w", err)
+	if task.ID == "" {
+		id, err := gonanoid.New()
+		if err != nil {
+			return fmt.Errorf("db.InsertTask: generate id: %w", err)
+		}
+		task.ID = "tsk_" + id
 	}
-	task.ID = "tsk_" + id
 
 	stmt, err := d.PrepareContext(ctx, `
 		INSERT INTO tasks (
-			id, title, description, status, priority, assigned_to, created_by, blocked_by, result
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+			id, title, description, status, priority, reviewer, assigned_to, created_by, blocked_by, result
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`)
 	if err != nil {
 		return fmt.Errorf("db.InsertTask: prepare: %w", err)
@@ -50,6 +52,7 @@ func (d *DB) InsertTask(ctx context.Context, task *Task) error {
 		nullableString(task.Description),
 		task.Status,
 		task.Priority,
+		nullableString(task.Reviewer),
 		nullableString(task.AssignedTo),
 		nullableString(task.CreatedBy),
 		task.BlockedBy,
@@ -65,7 +68,7 @@ func (d *DB) InsertTask(ctx context.Context, task *Task) error {
 func (d *DB) UpdateTask(ctx context.Context, task *Task) error {
 	stmt, err := d.PrepareContext(ctx, `
 		UPDATE tasks
-		SET title = ?, description = ?, status = ?, priority = ?, assigned_to = ?, created_by = ?, blocked_by = ?, result = ?, updated_at = datetime('now')
+		SET title = ?, description = ?, status = ?, priority = ?, reviewer = ?, assigned_to = ?, created_by = ?, blocked_by = ?, result = ?, updated_at = datetime('now')
 		WHERE id = ?
 	`)
 	if err != nil {
@@ -78,6 +81,7 @@ func (d *DB) UpdateTask(ctx context.Context, task *Task) error {
 		nullableString(task.Description),
 		task.Status,
 		task.Priority,
+		nullableString(task.Reviewer),
 		nullableString(task.AssignedTo),
 		nullableString(task.CreatedBy),
 		task.BlockedBy,
@@ -103,7 +107,7 @@ func (d *DB) UpdateTask(ctx context.Context, task *Task) error {
 func (d *DB) FindTaskByID(ctx context.Context, id string) (*Task, error) {
 	stmt, err := d.PrepareContext(ctx, `
 		SELECT
-			id, title, description, status, priority, assigned_to, created_by, blocked_by, result, created_at, updated_at
+			id, title, description, status, priority, reviewer, assigned_to, created_by, blocked_by, result, created_at, updated_at
 		FROM tasks
 		WHERE id = ?
 	`)
@@ -127,7 +131,7 @@ func (d *DB) FindTaskByID(ctx context.Context, id string) (*Task, error) {
 func (d *DB) ListAllTasks(ctx context.Context) ([]*Task, error) {
 	stmt, err := d.PrepareContext(ctx, `
 		SELECT
-			id, title, description, status, priority, assigned_to, created_by, blocked_by, result, created_at, updated_at
+			id, title, description, status, priority, reviewer, assigned_to, created_by, blocked_by, result, created_at, updated_at
 		FROM tasks
 		ORDER BY created_at ASC
 	`)
@@ -162,7 +166,7 @@ func (d *DB) ListAllTasks(ctx context.Context) ([]*Task, error) {
 func (d *DB) ListTasksByStatus(ctx context.Context, status string) ([]*Task, error) {
 	stmt, err := d.PrepareContext(ctx, `
 		SELECT
-			id, title, description, status, priority, assigned_to, created_by, blocked_by, result, created_at, updated_at
+			id, title, description, status, priority, reviewer, assigned_to, created_by, blocked_by, result, created_at, updated_at
 		FROM tasks
 		WHERE status = ?
 		ORDER BY created_at ASC
@@ -198,7 +202,7 @@ func (d *DB) ListTasksByStatus(ctx context.Context, status string) ([]*Task, err
 func (d *DB) ListTasksByAssignee(ctx context.Context, agentID string) ([]*Task, error) {
 	stmt, err := d.PrepareContext(ctx, `
 		SELECT
-			id, title, description, status, priority, assigned_to, created_by, blocked_by, result, created_at, updated_at
+			id, title, description, status, priority, reviewer, assigned_to, created_by, blocked_by, result, created_at, updated_at
 		FROM tasks
 		WHERE assigned_to = ?
 		ORDER BY created_at ASC
@@ -261,6 +265,7 @@ func (d *DB) UpdateTaskStatus(ctx context.Context, id, status, result string) er
 func scanTask(scanner rowScanner) (*Task, error) {
 	task := &Task{}
 	var description sql.NullString
+	var reviewer sql.NullString
 	var assignedTo sql.NullString
 	var createdBy sql.NullString
 	var result sql.NullString
@@ -271,6 +276,7 @@ func scanTask(scanner rowScanner) (*Task, error) {
 		&description,
 		&task.Status,
 		&task.Priority,
+		&reviewer,
 		&assignedTo,
 		&createdBy,
 		&task.BlockedBy,
@@ -283,6 +289,9 @@ func scanTask(scanner rowScanner) (*Task, error) {
 
 	if description.Valid {
 		task.Description = description.String
+	}
+	if reviewer.Valid {
+		task.Reviewer = reviewer.String
 	}
 	if assignedTo.Valid {
 		task.AssignedTo = assignedTo.String

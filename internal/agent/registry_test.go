@@ -120,6 +120,47 @@ func TestRegistryMarkInactive(t *testing.T) {
 	}
 }
 
+func TestRegistryMarkInactiveSkipsHuman(t *testing.T) {
+	registry, database, _ := setupRegistryTest(t)
+	ctx := context.Background()
+
+	human, err := registry.Register(ctx, "user", "human", nil, "", "project-a")
+	if err != nil {
+		t.Fatalf("Register(user) error = %v", err)
+	}
+	worker, err := registry.Register(ctx, "worker", "worker", nil, "", "project-a")
+	if err != nil {
+		t.Fatalf("Register(worker) error = %v", err)
+	}
+
+	if _, err := database.ExecContext(ctx, `UPDATE agents SET pid = ?, last_heartbeat = datetime('now', '-31 seconds') WHERE id = ?`, 0, human.ID); err != nil {
+		t.Fatalf("ExecContext(human update) error = %v", err)
+	}
+	if _, err := database.ExecContext(ctx, `UPDATE agents SET pid = ?, last_heartbeat = datetime('now', '-31 seconds') WHERE id = ?`, -1, worker.ID); err != nil {
+		t.Fatalf("ExecContext(worker update) error = %v", err)
+	}
+
+	if err := registry.MarkInactive(ctx); err != nil {
+		t.Fatalf("MarkInactive() error = %v", err)
+	}
+
+	humanAgent, err := registry.FindByID(ctx, human.ID)
+	if err != nil {
+		t.Fatalf("FindByID(human) error = %v", err)
+	}
+	if humanAgent.Status != "alive" {
+		t.Fatalf("human agent status = %q, want alive", humanAgent.Status)
+	}
+
+	workerAgent, err := registry.FindByID(ctx, worker.ID)
+	if err != nil {
+		t.Fatalf("FindByID(worker) error = %v", err)
+	}
+	if workerAgent.Status != "dead" {
+		t.Fatalf("worker agent status = %q, want dead", workerAgent.Status)
+	}
+}
+
 func TestHeartbeatStart(t *testing.T) {
 	registry, database, _ := setupRegistryTest(t)
 	ctx := context.Background()

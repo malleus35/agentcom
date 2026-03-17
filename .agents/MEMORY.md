@@ -4,15 +4,18 @@
 
 ## 현재 상태
 
-- **Phase**: PH4 enhanced UX 구현/검증 완료, 커밋/merge 진행 중
-- **마지막 작업**: structured user error, `doctor`, built-in template topology 분화, template export/import, enhanced `status`, `init --dry-run`, `skill validate`, README 갱신, 테스트/수동 QA 완료
-- **현재 브랜치**: `feature/PH4-enhanced-ux`
+- **Phase**: PH10 priority-review-policy 구현 완료
+- **마지막 작업**: PH10 구현/테스트/문서/수동 QA 완료
+- **현재 브랜치**: `feature/PH10-priority-review-policy` (from `feature/P12-user-endpoint`)
 - **현재 버전**: v0.1.7이 최신 공개 릴리스, 다음 릴리스 버전은 아직 미확정
 - **P10 상태**: 구현/문서/테스트 완료, 관련 변경은 현재 브랜치에 포함됨
 - **P11 상태**: 구현 완료, 테스트/수동 QA/README 반영 완료, develop 머지 및 release 대기
-- **계획 문서 상태**: `AGENTCOM_IMPROVEMENT_PROPOSAL.md` 기반 후속 개선안 분석 완료, PH1 구현 완료, PH2~PH4 계획 유지
-- **다음 작업**: PH4 변경 원자 커밋 정리 후 `develop` 머지
-- **워킹트리**: PH4 관련 CLI/README 변경 존재
+- **P12 상태**: 구현/검증/문서 반영 완료 (user endpoint, pseudo-agent, MCP tools)
+- **계획 문서 상태**: PH10 PRD 최종 통합본 완료 (`.agents/plans/PH10-priority-review-policy-PRD.md`), 6 Phase / 18 Tasks / ~62 Subtasks / ~16h
+- **다음 작업**: PH5~PH9 계획 재정렬 또는 다음 우선순위 기능 선정
+- **후속 계획**: `.agents/plans/NEXT-PHASE-PLAN.md` — PH5~PH9 (26 tasks, 56.5h 추정, CLI-first 원칙으로 재검토 필요)
+- **PH10 PRD**: `.agents/plans/PH10-priority-review-policy-PRD.md` — priority enforcement + review policy (18 tasks, ~16h, 아키텍처 결정 8건 포함)
+- **PH10 문서 정리**: 기존 산재 문서 4개(`PH10-priority-review-policy.md`, `PH10-architectural-decisions.md`, `PH10-review-system-analysis.md`, `PH10-user-task-approver-design.md`) → 최종 PRD에 통합 후 삭제 완료
 
 ## 완료된 태스크
 
@@ -28,6 +31,40 @@
 - P10 project column 핵심 구현 완료
 
 ## 이번 세션에서 마무리한 작업
+
+- PH10 priority-review-policy 구현 완료
+  - `internal/task/model.go`, `internal/task/policy.go`, `internal/task/manager.go`: priority enum/검증/비교, reviewer-aware transition, review policy resolve, approve/reject flow 추가
+  - `internal/db/migrations.go`, `internal/db/task.go`: `tasks.reviewer` 마이그레이션, reviewer persistence, InsertTask preset ID 보존으로 double ID 버그 수정
+  - `internal/cli/task.go`: `task create/update/delegate`를 manager 기반으로 전환하고 `--reviewer`, `task approve`, `task reject` 추가
+  - `internal/cli/agents.go`, `internal/cli/template_store.go`, `internal/cli/template_import.go`, `internal/onboard/template_definition.go`: template `review_policy` import/export/store 및 built-in template 기본 policy 반영
+  - `internal/mcp/tools.go`, `internal/mcp/handler.go`, `internal/mcp/server.go`: `create_task` priority/reviewer/policy 적용, `update_task`/`approve_task`/`reject_task` 도구 추가, invalid params를 JSON-RPC 에러로 반환하도록 확장
+  - `internal/task/*_test.go`, `internal/db/*_test.go`, `internal/cli/task_test.go`, `internal/mcp/server_test.go`, `cmd/agentcom/e2e_test.go`: PH10 회귀 테스트 및 E2E 추가
+  - `README.md`, `README.ko.md`, `README.ja.md`, `README.zh.md`, `AGENTS.md`: priority/reviewer/review_policy 및 MCP/CLI 새 명령 문서 반영
+  - 검증 완료: `go test ./... -count=1`, `go build ./...`
+  - 수동 QA 완료: project template에서 invalid priority 거부, policy 기반 reviewer 자동 지정, `task update`의 `blocked` 전환, `task approve` 완료 흐름 확인
+
+- P12 user endpoint 구현 완료
+  - `internal/db/agent.go`, `internal/db/message.go`: user message flow용 query helper(`FindAgentByTypeAndProject`, `ListMessagesFromAgent`, `ListUnreadRequestsForAgent`) 추가
+  - `internal/agent/registry.go`, `internal/message/router.go`, `internal/mcp/handler.go`: `type="human"` heartbeat/broadcast exclusion guard 추가
+  - `internal/cli/up.go`, `internal/cli/up_state.go`: `agentcom up`가 project별 `user` pseudo-agent를 자동 등록하고 runtime state에 기록, 종료 시 정리하도록 확장
+  - `internal/cli/user.go`: `agentcom user inbox|pending|reply` 구현
+  - `internal/mcp/tools.go`, `internal/mcp/handler.go`: `send_to_user`, `get_user_messages` MCP tools 추가
+  - `internal/*/*_test.go`, `cmd/agentcom/e2e_test.go`: DB/guard/CLI/MCP/E2E 테스트 보강
+  - 검증 완료: `go test ./... -count=1`, `go build ./...`, CLI 수동 QA(plan -> user -> plan), MCP 수동 QA(`send_to_user`, `get_user_messages`) 완료
+  - 커밋 완료:
+    - `284394a` `feat(db): P12-05 query helpers for user message flows`
+    - `e904247` `feat(agent): P12-01 heartbeat and router guards for human agents`
+    - `b682c2d` `feat(cli): P12-02 user pseudo-agent lifecycle in up down`
+    - `3d11d86` `feat(cli): P12-03 add user inbox reply commands`
+    - `ef96d91` `feat(mcp): P12-04 add user communication tools`
+    - `54b460c` `docs: P12-06 user endpoint e2e tests and docs`
+
+- selected-agent template scaffold fix 구현 완료
+  - `internal/cli/skill.go`: template skill target resolver를 selected agents 기반 helper로 분리하고, 선택값이 없을 때만 기본 4개 agent fallback 사용
+  - `internal/cli/agents.go`, `internal/cli/init.go`, `internal/cli/init_setup.go`, `internal/cli/template_edit.go`: template scaffold/preview/init 경로에 selected agents 전달 배선 추가
+  - `internal/cli/agents_test.go`, `internal/cli/init_setup_test.go`, `internal/cli/skill_test.go`, `internal/cli/template_edit_test.go`: selected agents만 scaffold/preview 되는 회귀 테스트 추가 및 기존 호출부 시그니처 갱신
+  - 검증 완료: `go test ./internal/cli/... -run 'TestWriteTemplateScaffold|TestTemplateScaffoldReInit|TestWriteTemplateScaffoldSelectedAgents|TestInitSetupExecutorTemplateScaffoldUsesSelectedAgents|TestInitSetupExecutorDryRunTemplatePreviewUsesSelectedAgents|TestResolveTemplateSkillTargetsSelectedAgents|TestSkillValidatePassesAfterPhase3' -count=1`, `go test ./...`, `go build ./...`
+  - 환경 제약: `make lint`는 로컬에 `golangci-lint`가 없어 실행 실패 (`No such file or directory`)
 
 - linux/windows arm64 release matrix 확장 완료
   - `.github/workflows/release.yml`: `linux/arm64`, `windows/arm64` asset 빌드 엔트리 추가
@@ -230,6 +267,13 @@
 | 2026-03-15 | P11 `up`/`down` 계획: 옵션 A(init=플랫폼, up=런타임)를 기본 방향으로, 옵션 B(up이 init 흡수) 요소도 검토 | Oracle 상담 + 업계 CLI 벤치마크 결과. init→up 레이어 분리가 Terraform/Dapr 패턴과 일치하고 기존 코드 변경 최소 |
 | 2026-03-15 | `up`은 .agentcom.json의 template.active를 읽고, template.json에서 역할 목록을 로드하여 subprocess supervisor로 일괄 register | register가 블로킹이므로 supervisor가 자식 프로세스로 각 register를 fork하는 구조가 자연스러움 |
 | 2026-03-15 | 런타임 상태는 .agentcom/run/up.json에 PID/socket/role 매핑으로 기록 | SQLite는 진실의 원천이지만 프로세스 종료는 PID 없이 정확히 못 하므로 별도 런타임 파일 필요 |
+| 2026-03-16 | template scaffold skill 생성 범위는 selected agents가 있으면 그 집합을 우선하고, 없을 때만 core 4-agent fallback을 사용 | wizard/batch에서 사용자가 고른 agent와 실제 생성 산출물을 일치시키면서 기존 `--template` 단독 실행의 기본 동작은 유지하기 위해 |
+| 2026-03-17 | `review_chain` 태스크 레벨 컬럼 거부 | 어떤 프로덕션 시스템도 review_chain을 태스크 테이블 컬럼으로 두지 않음. 워크플로우 그래프/별도 테이블이 올바른 추상화 |
+| 2026-03-17 | MCP를 "CLI-first, MCP는 선택적 어댑터"로 포지셔닝 변경 | MCP 9개 도구 모두 CLI 대응 존재, 고유 기능 0, 토큰 비용 4-32x, 셸 없는 런타임에서만 필요 |
+| 2026-03-17 | `reviewer` 필드는 에이전트 ID + "user" 모두 지원 (자유 문자열) | 추가 비용 0, agentcom "에이전트 유형 자유" 원칙 부합, 멀티에이전트 프레임워크 패턴 지원 |
+| 2026-03-17 | 에이전트 리뷰 자동화 로직(retry, cascading, guardrail)은 agentcom 범위 밖 | agentcom은 통신 인프라이지 실행 엔진이 아님. 리뷰 라우팅과 상태 전환 제어만 담당 |
+| 2026-03-17 | reviewer가 있는 태스크의 `in_progress -> completed`는 direct completion 대신 `blocked`로 전환 | 선택적 review gate를 최소 변경으로 도입하면서 기존 상태 머신과 CLI/MCP surface를 최대한 유지하기 위해 |
+| 2026-03-17 | template `review_policy`는 project scaffold의 `template.json`에서 읽어 CLI/MCP task create에 공통 적용 | built-in/custom template 구분 없이 동일한 런타임 입력을 사용하고 추가 선언 파일 도입을 피하기 위해 |
 
 ## 발견된 이슈
 
@@ -255,7 +299,11 @@
 - `agentcom agents template`는 interactive tty에서 검색어 기반 템플릿 선택을 지원하고, non-interactive/JSON 모드에서는 기존 목록/상세 출력 동작을 유지
 - 템플릿 role skill 생성 경로는 `.claude/skills/agentcom/<template>-<role>/SKILL.md` 등 각 agent 네임스페이스 구조로 변경됐고, shared file은 `.claude/skills/agentcom/SKILL.md` 형태로 생성
 - onboard wizard PRD: `.agents/plans/P8-01-onboard-setup-wizard.md`
-- CEO 중심 라우팅 vs direct-to-user 응답 모델은 아직 계획 단계이며, 현 구현에는 특수 `user` recipient를 추가하지 않음
+- CEO 중심 라우팅 vs direct-to-user 응답 모델: **Option C (하이브리드) 채택 결정됨** → `.agents/plans/user-endpoint-plan.md` (P12 PRD, 690행)
+  - 내부: pseudo-agent 패턴 (type="human", socket_path=nil), 외부: `agentcom user` CLI + MCP `send_to_user`/`get_user_messages`
+  - 스키마 변경 0, 라우팅 변경 0, guard 2개 (heartbeat skip + broadcast exclusion)
+  - Metis(Plan 컨설턴트) + Oracle(GPT-5.4) 독립 교차검증 완료: Metis→Option C, Oracle→Option B, 최종 Option C 채택 (agentcom 설계원칙 "에이전트 유형 자유" 준수)
+  - 6 Phase, 10 Tasks, 32 Subtasks, ultrawork 4-wave 병렬 실행 설계
 - `develop`, `release/v0.1.2`, `main`, `feature/init-template-scaffold` 브랜치와 `v0.1.2` 태그는 원격 반영 완료
 - `release/v0.1.3`, `main`, `develop`, `v0.1.3` 태그는 원격 반영 완료
 - `main`, `develop`, `v0.1.4` 태그와 GitHub release는 원격 반영 완료
@@ -270,4 +318,19 @@
 
 ## 진행 중 작업 체크리스트
 
-- 현재 후속 우선순위: 릴리스 버전 확정 → develop 머지 → 태그/릴리스 → Scoop/Homebrew 반영 검증
+- [x] init template selected skill targets 버그 수정 (feature 브랜치 → develop 머지 완료)
+- [x] supervisor user context 조사 완료 (supervisor는 프로세스 매니저, 메시지 수신자 아님)
+- [x] P12 user-endpoint plan 문서 작성 완료 (Metis + Oracle 교차검증)
+- [x] `feature/P12-user-endpoint` 브랜치 생성 완료
+- [x] **P12 user-endpoint 구현 완료**: TDD 기반 구현, 수동 QA, 문서 반영, 원자 커밋 완료
+- [x] **NEXT-PHASE-PLAN.md 작성 완료**: PH5(MCP 스펙), PH6(안정성), PH7(설정/옵저버빌리티), PH8(MCP 확장), PH9(테스트) — 총 26 태스크, 56.5h 추정
+- [x] **PH10 PRD 최종 통합본 완료**: `.agents/plans/PH10-priority-review-policy-PRD.md` — 6 Phase, 18 Tasks, ~62 Subtasks, ~16h (기존 4개 문서 흡수·삭제)
+- [x] **AGENTS.md line 166 변경 완료**: "MCP 퍼스트" → "CLI-first, MCP는 셸 없는 런타임용 선택적 어댑터"
+- [x] **PH10 구현**: `feature/PH10-priority-review-policy` 브랜치에서 PRD 순서대로 구현
+  - [x] Phase A: Priority Validation (model.go, manager.go, task.go CLI, handler.go MCP)
+  - [x] Phase B: Reviewer Field + State Machine (migrations.go, db/task.go, model.go, manager.go)
+  - [x] Phase C: Review Policy — Template Integration (policy.go new, agents.go, template_store.go, task.go CLI, handler.go MCP)
+  - [x] Phase D: MCP update_task tool (tools.go, handler.go)
+  - [x] Phase E: Test coverage (manager_test.go, model_test.go, db/task_test.go, e2e_test.go)
+  - [x] Phase F: Documentation (README×4, AGENTS.md, MEMORY.md)
+- [ ] **TODO: PH5~PH8 MCP 확장 계획의 범위를 CLI-first 원칙에 맞게 재검토**
