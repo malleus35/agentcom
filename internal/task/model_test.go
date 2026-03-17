@@ -87,7 +87,11 @@ func TestValidateTransition(t *testing.T) {
 		{name: "pending to assigned", from: StatusPending, to: StatusAssigned},
 		{name: "assigned to in_progress", from: StatusAssigned, to: StatusInProgress},
 		{name: "blocked to completed", from: StatusBlocked, to: StatusCompleted},
-		{name: "completed to pending invalid", from: StatusCompleted, to: StatusPending, wantErr: ErrInvalidTransition},
+		{name: "completed to pending", from: StatusCompleted, to: StatusPending},
+		{name: "completed to cancelled", from: StatusCompleted, to: StatusCancelled},
+		{name: "failed to pending", from: StatusFailed, to: StatusPending},
+		{name: "failed to cancelled", from: StatusFailed, to: StatusCancelled},
+		{name: "cancelled to pending", from: StatusCancelled, to: StatusPending},
 		{name: "pending to failed invalid", from: StatusPending, to: StatusFailed, wantErr: ErrInvalidTransition},
 	}
 

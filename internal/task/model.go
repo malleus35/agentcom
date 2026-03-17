@@ -60,6 +60,17 @@ var validTransitions = map[string]map[string]struct{}{
 		StatusCompleted:  {},
 		StatusCancelled:  {},
 	},
+	StatusCompleted: {
+		StatusPending:   {},
+		StatusCancelled: {},
+	},
+	StatusFailed: {
+		StatusPending:   {},
+		StatusCancelled: {},
+	},
+	StatusCancelled: {
+		StatusPending: {},
+	},
 }
 
 func NormalizePriority(priority string) string {
