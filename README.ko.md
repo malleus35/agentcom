@@ -325,10 +325,11 @@ agentcom broadcast --from alpha --topic sync '{"status":"ready"}'
 태스크 생성, 위임, 갱신:
 
 ```bash
-agentcom task create "Implement MCP tests" --creator frontend --assign plan --priority high
+agentcom task create "Implement MCP tests" --creator frontend --assign plan --priority high --reviewer user
 agentcom task list --assignee plan
 agentcom task delegate <task-id> --to plan
 agentcom task update <task-id> --status in_progress --result "started"
+agentcom task approve <task-id> --result "approved"
 ```
 
 inbox와 상태 확인:
@@ -384,12 +385,25 @@ agentcom --json init
 - `--agents-md`를 다시 실행해도 기존 사용자 내용은 유지되고, agentcom이 관리하는 marker 블록만 갱신됩니다. 여러 agent가 같은 경로를 공유하면 agent별 marker 블록을 따로 유지하므로 한 agent 블록만 독립적으로 다시 쓸 수 있습니다.
 - `--template`는 `.agentcom/templates/<template>/COMMON.md`, `.agentcom/templates/<template>/template.json`, 각 지원 agent별 shared `agentcom/SKILL.md`, 그리고 `agentcom/<template>-frontend` 형태의 6개 namespaced role skill을 생성합니다.
 - `--template`를 다시 실행하면 생성된 shared/role `SKILL.md`는 idempotent 하게 갱신되고 `COMMON.md`, `template.json`은 유지됩니다.
+- 템플릿 `template.json`에는 `review_policy`를 넣어 priority 임계값 이상 태스크에 reviewer를 자동 지정할 수 있습니다.
 - `--template`를 지정하면 `.agentcom.json`에 `template.active`도 함께 기록되며, 이후 `agentcom up`이 이를 기본 입력으로 사용합니다.
 - 내장 템플릿은 `company`, `oh-my-opencode`이며, `custom`은 인터랙티브 템플릿 생성 wizard를 엽니다. 기본값은 빠른 2-field wizard이고, 예전 상세 흐름은 `--advanced`로 사용할 수 있습니다.
 - `--from-file <path>`는 YAML 또는 JSON으로 정의한 custom template를 import 해서 `.agentcom/templates/<name>/`에 저장하고, 현재 active template로 scaffold 합니다.
 - `agentcom agents template --list`는 built-in/custom 템플릿을 함께 보여주고, `agentcom agents template --delete <name>`는 확인 후 custom 템플릿을 삭제합니다.
 - `agentcom agents template edit <name> add-role <role>`와 `remove-role <role>`는 기존 custom template를 수정하고 communication graph 및 관련 skill 파일을 다시 생성합니다.
 - `agentcom agents template export <name>`는 현재 템플릿 정의를 YAML로 내보내 공유하거나 `init --from-file`로 다시 가져올 수 있게 합니다.
+- `review_policy` 예시:
+
+```yaml
+review_policy:
+  require_review_above: high
+  default_reviewer: user
+  rules:
+    - priority: critical
+      reviewer: user
+    - priority: high
+      reviewer: review
+```
 - JSON 출력에는 상황에 따라 `path`, `status`, `project`, `project_config_path`, `template`, `active_template`, `instruction_files`, `agents_md`, `memory_files`, `custom_template_path`, `generated_files`가 포함됩니다.
 - `--dry-run --json` 출력에는 `dry_run: true`와 `{action,path}` 형태의 `preview` 배열도 포함됩니다.
 - 현재 구현상 홈 디렉터리를 먼저 준비한 뒤 `init` 상태를 검사하므로, 새 경로에서도 `status`가 `already_initialized`로 보일 수 있습니다.
@@ -574,12 +588,12 @@ agentcom --json inbox --agent beta --unread
 
 ### `agentcom task`
 
-태스크 관리는 네 개의 하위 명령으로 구성됩니다.
+태스크 관리는 여섯 개의 하위 명령으로 구성됩니다.
 
 태스크 생성:
 
 ```bash
-agentcom task create "Implement docs" --desc "Expand README" --creator alpha --assign beta --priority high
+agentcom task create "Implement docs" --desc "Expand README" --creator alpha --assign beta --priority high --reviewer user
 agentcom task create "Ship release" --blocked-by P7-01,P7-02
 agentcom --json task create "Implement docs" --creator alpha
 ```
@@ -607,13 +621,24 @@ agentcom task delegate <task-id> --to beta
 agentcom --json task delegate <task-id> --to agt_xxx
 ```
 
+리뷰 승인/반려:
+
+```bash
+agentcom task approve <task-id> --result "approved"
+agentcom task reject <task-id> --result "changes requested"
+```
+
 중요한 동작:
 
 - `task create`는 새 태스크를 `pending` 상태로 저장합니다.
+- `--priority`는 `low|medium|high|critical`만 허용하며 대소문자는 정규화됩니다.
+- `--reviewer`는 에이전트 이름, ID, 또는 `user`를 받을 수 있습니다.
+- active template에 `review_policy`가 있으면 reviewer가 자동 지정될 수 있습니다.
 - `--assign`, `--creator`는 agent 이름 또는 ID를 받을 수 있습니다.
 - `task list --assignee`는 조회 전에 이름을 ID로 해석하려고 시도합니다.
-- `task update`는 status/result를 직접 기록합니다.
-- `task delegate`는 `assigned_to`를 대상 에이전트로 갱신합니다.
+- `task update`는 task manager를 통해 상태 전이를 검증합니다.
+- reviewer가 있는 태스크는 `in_progress -> completed`가 바로 완료되지 않고 `blocked`로 전환된 뒤 `approve` 또는 `reject`를 거칩니다.
+- `task delegate`는 `assigned_to`를 갱신하고 상태를 `assigned`로 바꿉니다.
 
 ### `agentcom status`
 
@@ -866,6 +891,9 @@ agentcom mcp-server
 - `broadcast`
 - `create_task`
 - `delegate_task`
+- `update_task`
+- `approve_task`
+- `reject_task`
 - `list_tasks`
 - `get_status`
 
@@ -887,6 +915,8 @@ MCP에서는 다음 도구를 사용합니다:
 ```text
 send_to_user(from="plan", text="진행할까요?", topic="approval")
 get_user_messages(agent="plan", unread_only=true)
+update_task(task_id="tsk_123", status="in_progress", result="started")
+approve_task(task_id="tsk_123", result="approved")
 ```
 
 ## 아키텍처

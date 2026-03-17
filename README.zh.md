@@ -284,10 +284,11 @@ agentcom user reply plan '{"text":"可以，继续"}'
 操作任务：
 
 ```bash
-agentcom task create "Implement MCP tests" --creator frontend --assign plan --priority high
+agentcom task create "Implement MCP tests" --creator frontend --assign plan --priority high --reviewer user
 agentcom task list --assignee plan
 agentcom task delegate <task-id> --to plan
 agentcom task update <task-id> --status in_progress --result "started"
+agentcom task approve <task-id> --result "approved"
 ```
 
 查看状态：
@@ -331,11 +332,24 @@ agentcom --json init
 - 重新执行 `--agents-md` 时，会保留已有的用户内容，只更新 agentcom 自己管理的 marker 块。对于共享路径，会为每个 agent 单独保留 marker 块，便于后续只更新其中一个 agent
 - `--template` 会生成 `.agentcom/templates/<template>/COMMON.md`、`.agentcom/templates/<template>/template.json`、每个支持 agent 的 shared `agentcom/SKILL.md`，以及 `agentcom/<template>-frontend` 形式的 6 个 namespaced role skill
 - 重新执行 `--template` 时，已生成的 shared/role `SKILL.md` 会幂等更新，而 `COMMON.md` 和 `template.json` 会保持不变
+- 模板 manifest 可以包含 `review_policy`，在任务 priority 达到阈值时自动指定 reviewer
 - 指定 `--template` 时，也会把 `template.active` 写入 `.agentcom.json`，供后续 `agentcom up` 直接使用
 - 内置模板为 `company` 和 `oh-my-opencode`，`custom` 会在交互模式下启动模板创建 wizard。默认是快速的 2 字段流程，旧的详细流程可通过 `--advanced` 使用
 - `--from-file <path>` 会导入 YAML 或 JSON 格式的 custom template 定义，将其保存到 `.agentcom/templates/<name>/`，并作为当前 active template 进行 scaffold
 - `agentcom agents template --list` 会同时列出 built-in/custom 模板，`agentcom agents template --delete <name>` 会在确认后删除 custom 模板
 - `agentcom agents template edit <name> add-role <role>` 与 `remove-role <role>` 可更新已有 custom template，并重新生成 communication graph 与相关 skill 文件
+- `review_policy` 示例：
+
+```yaml
+review_policy:
+  require_review_above: high
+  default_reviewer: user
+  rules:
+    - priority: critical
+      reviewer: user
+    - priority: high
+      reviewer: review
+```
 - JSON 输出在适用时会包含 `path`、`status`、`project`、`project_config_path`、`template`、`active_template`、`instruction_files`、`agents_md`、`memory_files`、`custom_template_path`、`generated_files`
 - 当前实现会先准备 home 目录再检查状态，因此即使是新路径，`status` 也可能显示为 `already_initialized`
 
@@ -452,18 +466,27 @@ agentcom --json inbox --agent beta --unread
 
 ### `agentcom task`
 
-任务管理分为 4 个子命令。
+任务管理分为 6 个子命令。
 
 ```bash
-agentcom task create "Implement docs" --desc "Expand README" --creator alpha --assign beta --priority high
+agentcom task create "Implement docs" --desc "Expand README" --creator alpha --assign beta --priority high --reviewer user
 agentcom task list --status pending
 agentcom task update <task-id> --status completed --result "done"
 agentcom task delegate <task-id> --to beta
 ```
 
+```bash
+agentcom task approve <task-id> --result "approved"
+agentcom task reject <task-id> --result "changes requested"
+```
+
 - `task create` 会以 `pending` 状态保存新任务
+- `--priority` 只接受 `low|medium|high|critical`，并会在保存前做大小写归一化
+- `--reviewer` 可使用 agent 名称、agent ID，或 `user`
+- 如果 active template 定义了 `review_policy`，reviewer 可以自动分配
 - `--assign`、`--creator` 可接受 agent 名称或 ID
-- `task delegate` 会把 `assigned_to` 更新为目标代理
+- 带 reviewer 的任务不能直接从 `in_progress` 变成 `completed`；它会先转成 `blocked`，然后再通过 `approve` 或 `reject` 收尾
+- `task delegate` 会把 `assigned_to` 更新为目标代理，并把状态改成 `assigned`
 
 ### `agentcom status`
 
@@ -678,6 +701,9 @@ agentcom mcp-server
 - `broadcast`
 - `create_task`
 - `delegate_task`
+- `update_task`
+- `approve_task`
+- `reject_task`
 - `list_tasks`
 - `get_status`
 
@@ -699,6 +725,8 @@ MCP 可使用以下工具：
 ```text
 send_to_user(from="plan", text="要继续吗？", topic="approval")
 get_user_messages(agent="plan", unread_only=true)
+update_task(task_id="tsk_123", status="in_progress", result="started")
+approve_task(task_id="tsk_123", result="approved")
 ```
 
 ## 架构
