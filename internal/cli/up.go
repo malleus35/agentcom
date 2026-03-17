@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/malleus35/agentcom/internal/config"
+	"github.com/malleus35/agentcom/internal/db"
 	"github.com/spf13/cobra"
 )
 
@@ -410,6 +411,10 @@ func runUpSupervisor(ctx context.Context, projectDir, projectName, templateName 
 		SupervisorPID: os.Getpid(),
 		Agents:        make([]upRuntimeStateAgent, 0, len(roles)),
 	}
+	defer func() {
+		_ = removeUpRuntimeState(projectDir)
+		_ = deregisterUserPseudoAgent(context.Background(), app.db, state.UserAgent)
+	}()
 
 	for _, role := range roles {
 		agentState, cmd, err := startRegisteredRole(projectDir, projectName, role)
@@ -420,6 +425,13 @@ func runUpSupervisor(ctx context.Context, projectDir, projectName, templateName 
 		children = append(children, cmd)
 		state.Agents = append(state.Agents, agentState)
 	}
+
+	userAgent, err := registerUserPseudoAgent(ctx, app.db, state.SupervisorPID, projectName)
+	if err != nil {
+		_ = shutdownChildCommands(children, true, 5*time.Second)
+		return fmt.Errorf("cli.runUpSupervisor: register user agent: %w", err)
+	}
+	state.UserAgent = userAgent
 
 	if err := writeUpRuntimeState(projectDir, state); err != nil {
 		_ = shutdownChildCommands(children, true, 5*time.Second)
@@ -448,13 +460,11 @@ func runUpSupervisor(ctx context.Context, projectDir, projectName, templateName 
 			if err := shutdownChildCommands(children, false, 5*time.Second); err != nil {
 				return fmt.Errorf("cli.runUpSupervisor: shutdown children: %w", err)
 			}
-			_ = removeUpRuntimeState(projectDir)
 			return nil
 		case exited := <-exitCh:
 			delete(active, exited.pid)
 			state.Agents = flattenActiveAgents(active)
 			if len(state.Agents) == 0 {
-				_ = removeUpRuntimeState(projectDir)
 				return nil
 			}
 			if err := writeUpRuntimeState(projectDir, state); err != nil {
@@ -463,7 +473,47 @@ func runUpSupervisor(ctx context.Context, projectDir, projectName, templateName 
 		}
 	}
 
-	_ = removeUpRuntimeState(projectDir)
+	return nil
+}
+
+func registerUserPseudoAgent(ctx context.Context, database *db.DB, supervisorPID int, projectName string) (*upRuntimeStateAgent, error) {
+	staleUser, err := database.FindAgentByNameAndProject(ctx, "user", projectName)
+	if err == nil {
+		if err := database.DeleteAgent(ctx, staleUser.ID); err != nil {
+			return nil, fmt.Errorf("cli.registerUserPseudoAgent: delete stale user: %w", err)
+		}
+	} else if !errors.Is(err, db.ErrAgentNotFound) {
+		return nil, fmt.Errorf("cli.registerUserPseudoAgent: find stale user: %w", err)
+	}
+
+	userAgent := &db.Agent{
+		Name:    "user",
+		Type:    "human",
+		PID:     supervisorPID,
+		Project: projectName,
+		Status:  "alive",
+	}
+	if err := database.InsertAgent(ctx, userAgent); err != nil {
+		return nil, fmt.Errorf("cli.registerUserPseudoAgent: insert: %w", err)
+	}
+
+	return &upRuntimeStateAgent{
+		Role:    "user",
+		Name:    userAgent.Name,
+		Type:    userAgent.Type,
+		PID:     userAgent.PID,
+		AgentID: userAgent.ID,
+		Project: userAgent.Project,
+	}, nil
+}
+
+func deregisterUserPseudoAgent(ctx context.Context, database *db.DB, userAgent *upRuntimeStateAgent) error {
+	if database == nil || userAgent == nil || userAgent.AgentID == "" {
+		return nil
+	}
+	if err := database.DeleteAgent(ctx, userAgent.AgentID); err != nil && !errors.Is(err, db.ErrAgentNotFound) {
+		return fmt.Errorf("cli.deregisterUserPseudoAgent: %w", err)
+	}
 	return nil
 }
 
@@ -562,12 +612,18 @@ func stopRuntimeState(projectDir string, state upRuntimeState, onlyRoles []strin
 			return nil, nil, fmt.Errorf("signal supervisor: %w", err)
 		}
 		if force {
+			if err := deregisterUserPseudoAgent(context.Background(), app.db, state.UserAgent); err != nil {
+				return nil, nil, err
+			}
 			if err := removeUpRuntimeState(projectDir); err != nil {
 				return nil, nil, err
 			}
 			return stopped, nil, nil
 		}
 		if err := waitForRuntimeStateRemoval(projectDir, timeout); err != nil {
+			return nil, nil, err
+		}
+		if err := deregisterUserPseudoAgent(context.Background(), app.db, state.UserAgent); err != nil {
 			return nil, nil, err
 		}
 		return stopped, nil, nil
