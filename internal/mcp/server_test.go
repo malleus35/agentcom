@@ -12,6 +12,7 @@ import (
 
 	"github.com/malleus35/agentcom/internal/config"
 	"github.com/malleus35/agentcom/internal/db"
+	"github.com/malleus35/agentcom/internal/message"
 )
 
 func setupMCPTestServer(t *testing.T) (*Server, *db.DB) {
@@ -126,6 +127,12 @@ func TestServerRunJSONRPCRoundTrip(t *testing.T) {
 	hasUpdateTask := false
 	hasApproveTask := false
 	hasRejectTask := false
+	hasInbox := false
+	hasHealth := false
+	hasDeregister := false
+	hasDoctor := false
+	hasVersion := false
+	hasUserReply := false
 	for _, tool := range tools {
 		toolMap, ok := tool.(map[string]interface{})
 		if !ok {
@@ -142,10 +149,22 @@ func TestServerRunJSONRPCRoundTrip(t *testing.T) {
 			hasApproveTask = true
 		case "reject_task":
 			hasRejectTask = true
+		case "inbox":
+			hasInbox = true
+		case "health":
+			hasHealth = true
+		case "deregister":
+			hasDeregister = true
+		case "doctor":
+			hasDoctor = true
+		case "version":
+			hasVersion = true
+		case "user_reply":
+			hasUserReply = true
 		}
 	}
-	if !hasSendToUser || !hasGetUserMessages || !hasUpdateTask || !hasApproveTask || !hasRejectTask {
-		t.Fatalf("tools/list missing expected tools: send_to_user=%v get_user_messages=%v update_task=%v approve_task=%v reject_task=%v", hasSendToUser, hasGetUserMessages, hasUpdateTask, hasApproveTask, hasRejectTask)
+	if !hasSendToUser || !hasGetUserMessages || !hasUpdateTask || !hasApproveTask || !hasRejectTask || !hasInbox || !hasHealth || !hasDeregister || !hasDoctor || !hasVersion || !hasUserReply {
+		t.Fatalf("tools/list missing expected tools: send_to_user=%v get_user_messages=%v update_task=%v approve_task=%v reject_task=%v inbox=%v health=%v deregister=%v doctor=%v version=%v user_reply=%v", hasSendToUser, hasGetUserMessages, hasUpdateTask, hasApproveTask, hasRejectTask, hasInbox, hasHealth, hasDeregister, hasDoctor, hasVersion, hasUserReply)
 	}
 
 	if err := enc.Encode(Request{
@@ -576,6 +595,52 @@ func TestGetUserMessages(t *testing.T) {
 	}
 }
 
+func TestInboxAndUserReplyTools(t *testing.T) {
+	server, database := setupMCPTestServer(t)
+	ctx := context.Background()
+
+	plan := &db.Agent{Name: "plan", Type: "worker", Project: "project-a", Status: "alive"}
+	user := &db.Agent{Name: "user", Type: "human", Project: "project-a", Status: "alive"}
+	review := &db.Agent{Name: "review", Type: "worker", Project: "project-a", Status: "alive"}
+	for _, agent := range []*db.Agent{plan, user, review} {
+		if err := database.InsertAgent(ctx, agent); err != nil {
+			t.Fatalf("InsertAgent(%s) error = %v", agent.Name, err)
+		}
+	}
+	seed := &db.Message{FromAgent: plan.ID, ToAgent: review.ID, Type: "notification", Topic: "hello", Payload: `{"ok":true}`}
+	if err := database.InsertMessage(ctx, seed); err != nil {
+		t.Fatalf("InsertMessage(seed) error = %v", err)
+	}
+
+	inboxResult, err := server.handleInbox(ctx, json.RawMessage(`{"agent":"review","unread":true,"from":"plan"}`))
+	if err != nil {
+		t.Fatalf("handleInbox() error = %v", err)
+	}
+	inboxMap := inboxResult.(map[string]interface{})
+	if inboxMap["count"] != 1 {
+		t.Fatalf("count = %v, want 1", inboxMap["count"])
+	}
+
+	replyResult, err := server.handleUserReply(ctx, json.RawMessage(`{"to":"plan","text":"Looks good"}`))
+	if err != nil {
+		t.Fatalf("handleUserReply() error = %v", err)
+	}
+	env, ok := replyResult.(*message.Envelope)
+	if !ok {
+		t.Fatalf("handleUserReply() result type = %T, want *message.Envelope", replyResult)
+	}
+	if env.Type != "response" || env.To != plan.ID {
+		t.Fatalf("reply envelope = %+v", env)
+	}
+	planMessages, err := database.ListMessagesForAgent(ctx, plan.ID)
+	if err != nil {
+		t.Fatalf("ListMessagesForAgent(plan) error = %v", err)
+	}
+	if len(planMessages) == 0 {
+		t.Fatal("plan inbox is empty after user reply")
+	}
+}
+
 func TestSendToUserFailsWithoutUserAgent(t *testing.T) {
 	server, database := setupMCPTestServer(t)
 	ctx := context.Background()
@@ -591,6 +656,62 @@ func TestSendToUserFailsWithoutUserAgent(t *testing.T) {
 	}
 	if err.Error() != "mcp.handleSendToUser: no user agent registered; start a session with `agentcom up` first" {
 		t.Fatalf("error = %q", err.Error())
+	}
+}
+
+func TestHealthVersionDoctorAndDeregisterTools(t *testing.T) {
+	server, database := setupMCPTestServer(t)
+	ctx := context.Background()
+
+	if err := os.MkdirAll(server.cfg.SocketsPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll(sockets) error = %v", err)
+	}
+	socketPath := filepath.Join(server.cfg.SocketsPath, "alpha.sock")
+	if err := os.WriteFile(socketPath, []byte("socket"), 0o644); err != nil {
+		t.Fatalf("WriteFile(socket) error = %v", err)
+	}
+	agt := &db.Agent{Name: "alpha", Type: "worker", Project: "project-a", Status: "alive", PID: os.Getpid(), SocketPath: socketPath}
+	if err := database.InsertAgent(ctx, agt); err != nil {
+		t.Fatalf("InsertAgent(alpha) error = %v", err)
+	}
+
+	healthResult, err := server.handleHealth(ctx, json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("handleHealth() error = %v", err)
+	}
+	healthMap := healthResult.(map[string]interface{})
+	if healthMap["count"] != 1 {
+		t.Fatalf("health count = %v, want 1", healthMap["count"])
+	}
+
+	versionResult, err := server.handleVersion(ctx, json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("handleVersion() error = %v", err)
+	}
+	versionMap := versionResult.(map[string]interface{})
+	if versionMap["os"] == "" || versionMap["arch"] == "" {
+		t.Fatalf("version result = %#v", versionMap)
+	}
+
+	doctorResult, err := server.handleDoctor(ctx, json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("handleDoctor() error = %v", err)
+	}
+	doctorMap := doctorResult.(map[string]interface{})
+	if doctorMap["count"] == 0 {
+		t.Fatalf("doctor result = %#v, want checks", doctorMap)
+	}
+
+	deregisterResult, err := server.handleDeregister(ctx, json.RawMessage(`{"name_or_id":"alpha"}`))
+	if err != nil {
+		t.Fatalf("handleDeregister() error = %v", err)
+	}
+	resultMap := deregisterResult.(map[string]interface{})
+	if resultMap["status"] != "deregistered" {
+		t.Fatalf("status = %v, want deregistered", resultMap["status"])
+	}
+	if _, err := database.FindAgentByID(ctx, agt.ID); !errors.Is(err, db.ErrAgentNotFound) {
+		t.Fatalf("FindAgentByID() error = %v, want %v", err, db.ErrAgentNotFound)
 	}
 }
 

@@ -247,38 +247,44 @@
 | 기존 PH8-02 `update_task` | done | 이미 구현됨 |
 | 기존 계획 외 `approve_task` / `reject_task` | done | 이미 구현됨 |
 | 기존 계획 외 `send_to_user` / `get_user_messages` | done | 이미 구현됨 |
-| inbox / health / deregister / doctor / version / user_reply | open | 남은 parity gap |
+| inbox / health / deregister / doctor / version / user_reply | done | 6개 parity tool 추가 및 MCP roundtrip/manual QA 반영 |
 
 ### PH8-01: `inbox` MCP 도구 추가
-- CLI 대응: `agentcom inbox`
-- **예상 공수**: 2h
+- **완료 상태**: `agentcom inbox` parity MCP tool 추가
+- **검증**: `TestServerRunJSONRPCRoundTrip`, `TestInboxAndUserReplyTools`, PH8 manual QA
+- **실소요 공수**: 약 1h
 
 ### PH8-02: `health` MCP 도구 추가
-- CLI 대응: `agentcom health`
-- **예상 공수**: 1h
+- **완료 상태**: `agentcom health` parity MCP tool 추가
+- **검증**: `TestHealthVersionDoctorAndDeregisterTools`, PH8 manual QA
+- **실소요 공수**: 약 45min
 
 ### PH8-03: `deregister` MCP 도구 추가
-- CLI 대응: `agentcom deregister`
-- **예상 공수**: 1h
+- **완료 상태**: `agentcom deregister` parity MCP tool 추가
+- **검증**: `TestHealthVersionDoctorAndDeregisterTools`, PH8 manual QA
+- **실소요 공수**: 약 45min
 
 ### PH8-04: `doctor` MCP 도구 추가
-- CLI 대응: `agentcom doctor`
-- **예상 공수**: 1.5h
+- **완료 상태**: `agentcom doctor` parity MCP tool 추가
+- **검증**: `TestHealthVersionDoctorAndDeregisterTools`, PH8 manual QA
+- **실소요 공수**: 약 1h
 
 ### PH8-05: `version` MCP 도구 추가
-- CLI 대응: `agentcom version`
-- **예상 공수**: 30min
+- **완료 상태**: `agentcom version` parity MCP tool 추가
+- **검증**: `TestHealthVersionDoctorAndDeregisterTools`, PH8 manual QA
+- **실소요 공수**: 약 15min
 
 ### PH8-06: `user_reply` MCP 도구 추가
-- CLI 대응: `agentcom user reply`
-- **예상 공수**: 1.5h
+- **완료 상태**: `agentcom user reply` parity MCP tool 추가
+- **검증**: `TestInboxAndUserReplyTools`, PH8 manual QA
+- **실소요 공수**: 약 45min
 
 ### PH8 범위 규칙
 
 - 새 MCP 도구는 CLI에 이미 존재하고 셸 없는 런타임에서 실제 가치가 있는 것만 추가한다.
 - `list_tasks`, `get_status`, `update_task`, `approve_task`, `reject_task`, `send_to_user`, `get_user_messages`는 완료 항목으로 취급한다.
 
-**PH8 예상 잔여 공수: 7.5h**
+**PH8 예상 잔여 공수: 0h**
 
 ---
 
@@ -391,9 +397,9 @@ Worktree E: PH8 / PH9 (PH5 완료 후)
 | PH5 | 0 | 0h |
 | PH6 | 0 | 0h |
 | PH7 | 0 | 0h |
-| PH8 | 6 | 7.5h |
+| PH8 | 0 | 0h |
 | PH9 | 4 | 9h |
-| **총계** | **10** | **약 16.5h** |
+| **총계** | **4** | **약 9h** |
 
 차이 설명:
 
@@ -408,7 +414,7 @@ Worktree E: PH8 / PH9 (PH5 완료 후)
 - [x] PH5 완료: MCP error path가 모두 JSON-RPC `error`를 사용하고, terminal state reopen/retry가 가능하다.
 - [x] PH6 완료: `up/down`, UDS, runtime cleanup 경로에 운영상 치명적인 무기한 블로킹/누수 경로가 없다.
 - [x] PH7 완료: timeout/retry/interval 값이 외부화되고 운영 로그/에러 UX가 일관적이다.
-- [ ] PH8 완료: 남은 필수 CLI parity MCP 도구가 추가된다.
+- [x] PH8 완료: 남은 필수 CLI parity MCP 도구가 추가된다.
 - [ ] PH9 완료: onboard/query/transport lifecycle/MCP error matrix 테스트가 보강된다.
 - [ ] `go test ./...` 통과
 - [ ] `go build ./...` 통과
