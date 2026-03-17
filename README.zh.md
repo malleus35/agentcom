@@ -618,7 +618,7 @@ agentcom mcp-server --register mcp-agent --type mcp
 ```
 
 - 调用 `tools/list`、`tools/call` 之前必须先 `initialize`
-- tool-call 失败会通过 JSON-RPC `error` 返回：unknown tool=`-32601`、invalid params=`-32602`、runtime tool error=`-32000`
+- tool-call 失败会通过 JSON-RPC `error` 返回：unknown tool=`-32601`，参数 JSON 格式错误、必填字段缺失、无效的 task status 过滤器、以及可明确归因于调用方输入的 agent reference 错误会返回 `-32602`，像会话状态缺失这类 runtime tool error 仍返回 `-32000`
 - 提供的工具包括代理列表、消息发送、广播、任务创建/委派、任务列表、状态查询
 
 ## JSON 输出示例

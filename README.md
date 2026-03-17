@@ -807,7 +807,7 @@ Flags:
 Notes:
 
 - `initialize` must happen before `tools/list` or `tools/call`.
-- Tool-call failures follow JSON-RPC `error` responses: `-32601` for unknown tools, `-32602` for invalid params, and `-32000` for runtime tool execution failures.
+- Tool-call failures follow JSON-RPC `error` responses: `-32601` for unknown tools, `-32602` for malformed arguments, missing required fields, invalid task-status filters, and bad agent references attributable to caller input, and `-32000` for runtime tool execution failures such as missing session state.
 - The server exposes tools for listing agents, sending messages, broadcasting, creating/delegating tasks, listing tasks, and reading status.
 
 ## JSON output examples
