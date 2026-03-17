@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -13,6 +14,8 @@ import (
 func (s *Server) registerTools() {
 	s.tools["list_agents"] = s.handleListAgents
 	s.tools["send_message"] = s.handleSendMessage
+	s.tools["send_to_user"] = s.handleSendToUser
+	s.tools["get_user_messages"] = s.handleGetUserMessages
 	s.tools["broadcast"] = s.handleBroadcast
 	s.tools["create_task"] = s.handleCreateTask
 	s.tools["delegate_task"] = s.handleDelegateTask
@@ -146,6 +149,9 @@ func (s *Server) handleBroadcast(ctx context.Context, params json.RawMessage) (i
 		if a.ID == senderAgent.ID {
 			continue
 		}
+		if a.Type == "human" {
+			continue
+		}
 
 		msg := &db.Message{
 			FromAgent: senderAgent.ID,
@@ -165,6 +171,123 @@ func (s *Server) handleBroadcast(ctx context.Context, params json.RawMessage) (i
 	return map[string]interface{}{
 		"recipients":  recipients,
 		"message_ids": messageIDs,
+	}, nil
+}
+
+func (s *Server) handleSendToUser(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	type sendToUserParams struct {
+		From     string `json:"from"`
+		Text     string `json:"text"`
+		Topic    string `json:"topic"`
+		Priority string `json:"priority"`
+		Project  string `json:"project"`
+	}
+
+	var p sendToUserParams
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, fmt.Errorf("mcp.handleSendToUser: %w", err)
+	}
+	if strings.TrimSpace(p.From) == "" || strings.TrimSpace(p.Text) == "" {
+		return nil, fmt.Errorf("mcp.handleSendToUser: from and text are required")
+	}
+
+	project := s.requestedProject(p.Project)
+	senderAgent, err := s.resolveAgentByNameOrID(ctx, p.From, project)
+	if err != nil {
+		return nil, fmt.Errorf("mcp.handleSendToUser: %w", err)
+	}
+	userAgent, err := s.resolveUserAgent(ctx, project)
+	if err != nil {
+		return nil, fmt.Errorf("mcp.handleSendToUser: %w", err)
+	}
+
+	payload, err := json.Marshal(map[string]string{
+		"text":     p.Text,
+		"priority": strings.TrimSpace(p.Priority),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("mcp.handleSendToUser: marshal payload: %w", err)
+	}
+
+	msg := &db.Message{
+		FromAgent: senderAgent.ID,
+		ToAgent:   userAgent.ID,
+		Type:      "request",
+		Topic:     p.Topic,
+		Payload:   string(payload),
+	}
+	if err := s.db.InsertMessage(ctx, msg); err != nil {
+		return nil, fmt.Errorf("mcp.handleSendToUser: %w", err)
+	}
+
+	return map[string]interface{}{
+		"message_id": msg.ID,
+		"status":     "delivered_to_inbox",
+		"to":         userAgent.ID,
+	}, nil
+}
+
+func (s *Server) handleGetUserMessages(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	type getUserMessagesParams struct {
+		Agent      string `json:"agent"`
+		UnreadOnly *bool  `json:"unread_only"`
+		Project    string `json:"project"`
+	}
+
+	var p getUserMessagesParams
+	if len(params) > 0 {
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, fmt.Errorf("mcp.handleGetUserMessages: %w", err)
+		}
+	}
+
+	project := s.requestedProject(p.Project)
+	userAgent, err := s.resolveUserAgent(ctx, project)
+	if err != nil {
+		return nil, fmt.Errorf("mcp.handleGetUserMessages: %w", err)
+	}
+
+	messages, err := s.db.ListMessagesFromAgent(ctx, userAgent.ID)
+	if err != nil {
+		return nil, fmt.Errorf("mcp.handleGetUserMessages: %w", err)
+	}
+
+	targetAgentID := ""
+	if strings.TrimSpace(p.Agent) != "" {
+		agentRecord, err := s.resolveAgentByNameOrID(ctx, p.Agent, project)
+		if err != nil {
+			return nil, fmt.Errorf("mcp.handleGetUserMessages: %w", err)
+		}
+		targetAgentID = agentRecord.ID
+	}
+
+	unreadOnly := true
+	if p.UnreadOnly != nil {
+		unreadOnly = *p.UnreadOnly
+	}
+
+	filtered := make([]*db.Message, 0, len(messages))
+	for _, msg := range messages {
+		if targetAgentID != "" && msg.ToAgent != targetAgentID {
+			continue
+		}
+		if unreadOnly && msg.ReadAt != "" {
+			continue
+		}
+		filtered = append(filtered, msg)
+	}
+	for _, msg := range filtered {
+		if msg.ReadAt != "" {
+			continue
+		}
+		if err := s.db.MarkRead(ctx, msg.ID); err != nil {
+			return nil, fmt.Errorf("mcp.handleGetUserMessages: mark read: %w", err)
+		}
+	}
+
+	return map[string]interface{}{
+		"messages": filtered,
+		"count":    len(filtered),
 	}, nil
 }
 
@@ -409,6 +532,25 @@ func (s *Server) resolveAgentByNameOrID(ctx context.Context, nameOrID string, pr
 	}
 
 	return agentRecord, nil
+}
+
+func (s *Server) resolveUserAgent(ctx context.Context, project string) (*db.Agent, error) {
+	userAgent, err := s.db.FindAgentByNameAndProject(ctx, "user", project)
+	if err == nil {
+		return userAgent, nil
+	}
+	if !errors.Is(err, db.ErrAgentNotFound) {
+		return nil, fmt.Errorf("mcp.resolveUserAgent: %w", err)
+	}
+
+	userAgent, err = s.db.FindAgentByTypeAndProject(ctx, "human", project)
+	if err == nil {
+		return userAgent, nil
+	}
+	if errors.Is(err, db.ErrAgentNotFound) {
+		return nil, fmt.Errorf("no user agent registered; start a session with `agentcom up` first")
+	}
+	return nil, fmt.Errorf("mcp.resolveUserAgent: %w", err)
 }
 
 func (s *Server) resolveAssigneeID(ctx context.Context, assignee string, project string) (string, error) {

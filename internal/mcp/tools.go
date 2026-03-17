@@ -24,7 +24,7 @@ func AllTools() []ToolDef {
 		},
 		{
 			Name:        "send_message",
-			Description: "Send a message to a target agent and persist it.",
+			Description: "Send a message to a target agent and persist it. Use send_to_user when communicating with the human operator.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -36,6 +36,35 @@ func AllTools() []ToolDef {
 					"payload": map[string]interface{}{"type": "object"},
 				},
 				"required":             []string{"from", "to"},
+				"additionalProperties": false,
+			},
+		},
+		{
+			Name:        "send_to_user",
+			Description: "Send a message to the human operator and store it in their inbox.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"from":     map[string]interface{}{"type": "string"},
+					"text":     map[string]interface{}{"type": "string"},
+					"topic":    map[string]interface{}{"type": "string"},
+					"priority": map[string]interface{}{"type": "string"},
+					"project":  map[string]interface{}{"type": "string"},
+				},
+				"required":             []string{"from", "text"},
+				"additionalProperties": false,
+			},
+		},
+		{
+			Name:        "get_user_messages",
+			Description: "Read messages from the human operator (responses to agent requests).",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"agent":       map[string]interface{}{"type": "string"},
+					"unread_only": map[string]interface{}{"type": "boolean"},
+					"project":     map[string]interface{}{"type": "string"},
+				},
 				"additionalProperties": false,
 			},
 		},
