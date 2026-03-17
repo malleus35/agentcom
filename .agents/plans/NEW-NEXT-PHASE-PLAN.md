@@ -74,7 +74,7 @@
 |-------|------|------|
 | PH5-01 MCP 에러 응답 JSON-RPC 정렬 | done | unknown tool=`-32601`, runtime tool error=`-32000`, error path에서 `result` 제거 + roundtrip 테스트 반영 |
 | PH5-02 MCP 파라미터 검증 강화 | done | handler-level JSON/type/required/status/reference validation을 `invalidParamsError`로 정렬하고 regression matrix + manual QA 반영 |
-| PH5-03 terminal state reopen/retry | open | `completed/failed/cancelled` 재전이 없음 |
+| PH5-03 terminal state reopen/retry | done | `completed -> pending|cancelled`, `failed -> pending|cancelled`, `cancelled -> pending` 지원 + reviewer 회귀 테스트/CLI manual QA 반영 |
 
 ### PH5-01: MCP 에러 응답을 전 경로에서 JSON-RPC `error`로 통일
 - **대상**: `internal/mcp/server.go`
@@ -106,19 +106,20 @@
 
 ### PH5-03: terminal 상태 재전이(reopen/retry/resurrect) 지원
 - **대상**: `internal/task/model.go`, `internal/task/model_test.go`, 필요 시 `internal/task/manager_test.go`
-- **현재 상태**:
-  - `StatusCompleted`, `StatusFailed`, `StatusCancelled`에 outgoing transition 없음
-  - 테스트도 `completed -> pending`을 invalid로 기대 중
-- **수정**:
+- **완료 상태**:
   - `completed -> pending|cancelled`
   - `failed -> pending|cancelled`
   - `cancelled -> pending`
-  - reviewer-aware transition과 충돌 없는지 확인
+  - `IsTerminal()` semantics 유지, reviewer-aware `in_progress -> completed -> blocked` 동작 유지
 - **검증**:
-  - reopen / retry / resurrect 시나리오 테스트 추가
-- **예상 공수**: 1h
+  - `internal/task/model_test.go`, `internal/task/manager_test.go` reopen/retry/resurrect + reviewer regression 추가
+  - `go test ./internal/task/... -count=1`
+  - `go test ./... -count=1`
+  - `go build ./...`
+  - manual QA: CLI에서 real task를 `completed -> pending`으로 재오픈해 JSON 출력 확인
+- **실소요 공수**: 약 1h
 
-**PH5 예상 잔여 공수: 1h**
+**PH5 예상 잔여 공수: 0h**
 
 ---
 
@@ -452,12 +453,12 @@ Worktree E: PH8 / PH9 (PH5 완료 후)
 
 | Phase | 남은 태스크 수 | 예상 잔여 공수 |
 |-------|----------------|----------------|
-| PH5 | 1 | 1h |
+| PH5 | 0 | 0h |
 | PH6 | 8 | 18.5h |
 | PH7 | 4 | 13h |
 | PH8 | 6 | 7.5h |
 | PH9 | 4 | 9h |
-| **총계** | **23** | **약 49h** |
+| **총계** | **22** | **약 48h** |
 
 차이 설명:
 
