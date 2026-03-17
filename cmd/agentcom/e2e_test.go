@@ -180,6 +180,47 @@ func TestUserEndpointE2E(t *testing.T) {
 	}
 }
 
+func TestTaskPriorityAndReviewPolicyE2E(t *testing.T) {
+	binPath := buildAgentcomBinary(t)
+	homeDir := t.TempDir()
+	projectDir := t.TempDir()
+
+	runAgentcomJSON(t, binPath, homeDir, projectDir, "init", "--project", "demo-app", "--template", "company")
+
+	cmd := exec.Command(binPath, "--json", "task", "create", "bad task", "--priority", "urgent")
+	cmd.Env = append(os.Environ(), "AGENTCOM_HOME="+homeDir)
+	cmd.Dir = projectDir
+	output, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("task create invalid priority succeeded unexpectedly: %s", string(output))
+	}
+	if !bytes.Contains(output, []byte("Task priority is invalid")) {
+		t.Fatalf("invalid priority output = %s", string(output))
+	}
+
+	created := runAgentcomJSON(t, binPath, homeDir, projectDir, "task", "create", "review me", "--priority", "high")
+	taskID, _ := created["id"].(string)
+	if taskID == "" {
+		t.Fatalf("task create output missing id: %#v", created)
+	}
+	if created["reviewer"] != "review" {
+		t.Fatalf("reviewer = %v, want review", created["reviewer"])
+	}
+
+	inProgress := runAgentcomJSON(t, binPath, homeDir, projectDir, "task", "update", taskID, "--status", "in_progress", "--result", "started")
+	if inProgress["status"] != "in_progress" {
+		t.Fatalf("status = %v, want in_progress", inProgress["status"])
+	}
+	blocked := runAgentcomJSON(t, binPath, homeDir, projectDir, "task", "update", taskID, "--status", "completed", "--result", "done")
+	if blocked["status"] != "blocked" {
+		t.Fatalf("status = %v, want blocked", blocked["status"])
+	}
+	approved := runAgentcomJSON(t, binPath, homeDir, projectDir, "task", "approve", taskID, "--result", "approved")
+	if approved["status"] != "completed" {
+		t.Fatalf("status = %v, want completed", approved["status"])
+	}
+}
+
 func buildAgentcomBinary(t *testing.T) string {
 	t.Helper()
 
