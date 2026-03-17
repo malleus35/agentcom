@@ -56,7 +56,7 @@ jobs:
             cc: ''
             cxx: ''
             cgo_cflags: ''
-          - runner: macos-latest-xlarge
+          - runner: macos-14
             goos: darwin
             goarch: arm64
             archive: tar.gz
@@ -170,3 +170,102 @@ jobs:
         run: |
           asset="agentcom_${GITHUB_REF_NAME#v}_${{ matrix.goos }}_${{ matrix.goarch }}.${{ matrix.archive }}"
           gh release upload "${GITHUB_REF_NAME}" "$asset" "$asset.sha256" --repo "${GITHUB_REPOSITORY}" --clobber
+
+  update-homebrew-tap:
+    needs: build-assets
+    if: ${{ secrets.HOMEBREW_TAP_TOKEN != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update Homebrew tap formula
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          SOURCE_REPO: ${{ github.repository }}
+          TAP_REPO: malleus35/homebrew-tap
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import base64
+          import json
+          import os
+          import subprocess
+          import textwrap
+
+          release_tag = os.environ["RELEASE_TAG"]
+          source_repo = os.environ["SOURCE_REPO"]
+          tap_repo = os.environ["TAP_REPO"]
+          version = release_tag.removeprefix("v")
+
+          release = json.loads(subprocess.check_output([
+              "gh", "release", "view", release_tag,
+              "--repo", source_repo,
+              "--json", "assets",
+          ], text=True))
+
+          digests = {asset["name"]: asset["digest"].removeprefix("sha256:") for asset in release["assets"]}
+          required = {
+              "darwin_arm64": f"agentcom_{version}_darwin_arm64.tar.gz",
+              "darwin_amd64": f"agentcom_{version}_darwin_amd64.tar.gz",
+              "linux_arm64": f"agentcom_{version}_linux_arm64.tar.gz",
+              "linux_amd64": f"agentcom_{version}_linux_amd64.tar.gz",
+          }
+          missing = [name for name in required.values() if name not in digests]
+          if missing:
+              raise SystemExit(f"missing release assets for Homebrew formula: {missing}")
+
+          formula = textwrap.dedent(f'''\
+          class Agentcom < Formula
+            desc "Real-time communication CLI for parallel AI coding agents"
+            homepage "https://github.com/{source_repo}"
+            version "{version}"
+
+            on_macos do
+              on_arm do
+                url "https://github.com/{source_repo}/releases/download/{release_tag}/{required['darwin_arm64']}"
+                sha256 "{digests[required['darwin_arm64']]}"
+              end
+              on_intel do
+                url "https://github.com/{source_repo}/releases/download/{release_tag}/{required['darwin_amd64']}"
+                sha256 "{digests[required['darwin_amd64']]}"
+              end
+            end
+
+            on_linux do
+              on_arm do
+                url "https://github.com/{source_repo}/releases/download/{release_tag}/{required['linux_arm64']}"
+                sha256 "{digests[required['linux_arm64']]}"
+              end
+              on_intel do
+                url "https://github.com/{source_repo}/releases/download/{release_tag}/{required['linux_amd64']}"
+                sha256 "{digests[required['linux_amd64']]}"
+              end
+            end
+
+            def install
+              bin.install "agentcom"
+            end
+
+            test do
+              assert_match "agentcom", shell_output("#{bin}/agentcom version")
+            end
+          end
+          ''')
+
+          current = json.loads(subprocess.check_output([
+              "gh", "api", f"repos/{tap_repo}/contents/Formula/agentcom.rb?ref=main"
+          ], text=True))
+
+          payload = json.dumps({
+              "message": f"chore: update agentcom formula for {release_tag}",
+              "content": base64.b64encode(formula.encode()).decode(),
+              "sha": current["sha"],
+              "branch": "main",
+          })
+
+          subprocess.check_call([
+              "gh", "api",
+              "--method", "PUT",
+              f"repos/{tap_repo}/contents/Formula/agentcom.rb",
+              "--input", "-",
+          ], input=payload, text=True)
+          PY
