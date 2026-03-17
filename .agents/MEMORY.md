@@ -5,9 +5,9 @@
 ## 현재 상태
 
 - **Phase**: PH10 priority-review-policy 구현 완료
-- **마지막 작업**: PH10 구현/테스트/문서/수동 QA 완료
-- **현재 브랜치**: `feature/PH10-priority-review-policy` (from `feature/P12-user-endpoint`)
-- **현재 버전**: v0.1.7이 최신 공개 릴리스, 다음 릴리스 버전은 아직 미확정
+- **마지막 작업**: v0.2.3 릴리즈 및 Homebrew 배포 복구 완료
+- **현재 브랜치**: `develop`
+- **현재 버전**: `v0.2.3` 공개 릴리즈 완료
 - **P10 상태**: 구현/문서/테스트 완료, 관련 변경은 현재 브랜치에 포함됨
 - **P11 상태**: 구현 완료, 테스트/수동 QA/README 반영 완료, develop 머지 및 release 대기
 - **P12 상태**: 구현/검증/문서 반영 완료 (user endpoint, pseudo-agent, MCP tools)
@@ -31,6 +31,15 @@
 - P10 project column 핵심 구현 완료
 
 ## 이번 세션에서 마무리한 작업
+
+- v0.2.3 릴리즈 및 Homebrew 복구 완료
+  - `feature/PH10-priority-review-policy`를 `develop`에 병합하고, 이어서 `develop`을 `main`에 릴리즈 머지
+  - `6cda47f` `chore(release): prepare v0.2.3 install defaults`, `d0b1478` `chore(release): update scoop manifest for v0.2.3`, `c848a33` `Merge branch 'main' into develop` 반영 완료
+  - GitHub release/tag `v0.2.3` 발행 및 release asset 업로드 확인
+  - 누락됐던 `agentcom_0.2.3_darwin_arm64.tar.gz` asset을 수동 빌드/업로드해 Apple Silicon Homebrew 설치 경로 복구
+  - `malleus35/homebrew-tap`의 `Formula/agentcom.rb`를 `0.2.3`으로 직접 갱신 (`d95ad97`)
+  - `.github/workflows/release.yml`에 Homebrew tap 자동 갱신 단계 추가 및 darwin arm64 runner를 `macos-14`로 조정 (`0e72c4a` on develop, `ae78ad1` on main)
+  - 수동 QA 완료: `brew info malleus35/tap/agentcom`에서 `stable 0.2.3` 확인, `brew upgrade agentcom` 후 `agentcom version`이 `0.2.3` 출력 확인
 
 - PH10 priority-review-policy 구현 완료
   - `internal/task/model.go`, `internal/task/policy.go`, `internal/task/manager.go`: priority enum/검증/비교, reviewer-aware transition, review policy resolve, approve/reject flow 추가
