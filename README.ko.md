@@ -637,6 +637,7 @@ agentcom task reject <task-id> --result "changes requested"
 - `--assign`, `--creator`는 agent 이름 또는 ID를 받을 수 있습니다.
 - `task list --assignee`는 조회 전에 이름을 ID로 해석하려고 시도합니다.
 - `task update`는 task manager를 통해 상태 전이를 검증합니다.
+- terminal 상태도 `task update`로 명시적으로 다시 열 수 있습니다: `completed -> pending|cancelled`, `failed -> pending|cancelled`, `cancelled -> pending`.
 - reviewer가 있는 태스크는 `in_progress -> completed`가 바로 완료되지 않고 `blocked`로 전환된 뒤 `approve` 또는 `reject`를 거칩니다.
 - `task delegate`는 `assigned_to`를 갱신하고 상태를 `assigned`로 바꿉니다.
 
