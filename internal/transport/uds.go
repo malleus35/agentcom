@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math/rand"
 	"net"
 	"os"
 	"sync"
@@ -14,10 +15,14 @@ import (
 	"time"
 )
 
-const (
-	clientDialTimeout  = 5 * time.Second
-	clientWriteTimeout = 5 * time.Second
-	staleDialTimeout   = 1 * time.Second
+var (
+	clientDialTimeout    = 5 * time.Second
+	clientWriteTimeout   = 5 * time.Second
+	staleDialTimeout     = 1 * time.Second
+	serverAcceptTimeout  = 1 * time.Second
+	serverReadTimeout    = 30 * time.Second
+	clientRetryBackoffs  = []time.Duration{100 * time.Millisecond, 200 * time.Millisecond, 400 * time.Millisecond}
+	clientRetryJitterMax = 25 * time.Millisecond
 )
 
 // MessageHandler handles one decoded JSON payload from a UDS connection.
@@ -124,11 +129,18 @@ func (s *Server) acceptLoop(ctx context.Context) {
 		if listener == nil {
 			return
 		}
+		if err := setAcceptDeadline(listener, time.Now().Add(serverAcceptTimeout)); err != nil {
+			slog.Error("failed to set accept deadline", "socket_path", s.socketPath, "error", err)
+			return
+		}
 
 		conn, err := listener.Accept()
 		if err != nil {
 			if errors.Is(err, net.ErrClosed) || ctx.Err() != nil {
 				return
+			}
+			if isTimeoutError(err) {
+				continue
 			}
 			slog.Error("failed to accept UDS connection", "socket_path", s.socketPath, "error", err)
 			continue
@@ -152,10 +164,17 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 		if ctx.Err() != nil {
 			return
 		}
+		if err := conn.SetReadDeadline(time.Now().Add(serverReadTimeout)); err != nil {
+			slog.Error("failed to set read deadline", "socket_path", s.socketPath, "error", err)
+			return
+		}
 
 		var payload json.RawMessage
 		if err := decoder.Decode(&payload); err != nil {
 			if errors.Is(err, io.EOF) {
+				return
+			}
+			if isTimeoutError(err) {
 				return
 			}
 			slog.Error("failed to decode UDS payload", "socket_path", s.socketPath, "error", err)
@@ -176,27 +195,34 @@ func NewClient() *Client {
 	return &Client{}
 }
 
-// Send sends one payload to a target socket with one retry on failure.
 func (c *Client) Send(ctx context.Context, socketPath string, data []byte) error {
-	var lastErr error
-	for attempt := 1; attempt <= 2; attempt++ {
-		if ctx.Err() != nil {
-			return fmt.Errorf("transport.Client.Send: %w", ctx.Err())
-		}
-
-		if err := c.sendOnce(ctx, socketPath, data); err != nil {
-			lastErr = err
-			if attempt == 1 {
-				slog.Debug("retrying UDS send", "socket_path", socketPath, "error", err)
+	if err := c.sendOnce(ctx, socketPath, data); err == nil {
+		return nil
+	} else {
+		lastErr := err
+		for attempt, backoff := range clientRetryBackoffs {
+			if ctx.Err() != nil {
+				return fmt.Errorf("transport.Client.Send: %w", ctx.Err())
+			}
+			delay := backoff + retryJitter()
+			timer := time.NewTimer(delay)
+			select {
+			case <-ctx.Done():
+				if !timer.Stop() {
+					<-timer.C
+				}
+				return fmt.Errorf("transport.Client.Send: %w", ctx.Err())
+			case <-timer.C:
+			}
+			if err := c.sendOnce(ctx, socketPath, data); err != nil {
+				lastErr = err
+				slog.Debug("retrying UDS send", "socket_path", socketPath, "attempt", attempt+2, "error", err)
 				continue
 			}
-			continue
+			return nil
 		}
-
-		return nil
+		return fmt.Errorf("transport.Client.Send: %w", lastErr)
 	}
-
-	return fmt.Errorf("transport.Client.Send: %w", lastErr)
 }
 
 func (c *Client) sendOnce(ctx context.Context, socketPath string, data []byte) error {
@@ -221,4 +247,24 @@ func (c *Client) sendOnce(ctx context.Context, socketPath string, data []byte) e
 	}
 
 	return nil
+}
+
+func setAcceptDeadline(listener net.Listener, deadline time.Time) error {
+	deadlineSetter, ok := listener.(interface{ SetDeadline(time.Time) error })
+	if !ok {
+		return nil
+	}
+	return deadlineSetter.SetDeadline(deadline)
+}
+
+func isTimeoutError(err error) bool {
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
+}
+
+func retryJitter() time.Duration {
+	if clientRetryJitterMax <= 0 {
+		return 0
+	}
+	return time.Duration(rand.Int63n(int64(clientRetryJitterMax)))
 }
