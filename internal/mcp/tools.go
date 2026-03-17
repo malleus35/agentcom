@@ -69,6 +69,21 @@ func AllTools() []ToolDef {
 			},
 		},
 		{
+			Name:        "inbox",
+			Description: "View messages for an agent inbox.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"agent":   map[string]interface{}{"type": "string"},
+					"unread":  map[string]interface{}{"type": "boolean"},
+					"from":    map[string]interface{}{"type": "string"},
+					"project": map[string]interface{}{"type": "string"},
+				},
+				"required":             []string{"agent"},
+				"additionalProperties": false,
+			},
+		},
+		{
 			Name:        "broadcast",
 			Description: "Broadcast a message to all alive agents.",
 			InputSchema: map[string]interface{}{
@@ -80,6 +95,21 @@ func AllTools() []ToolDef {
 					"payload": map[string]interface{}{"type": "object"},
 				},
 				"required":             []string{"from"},
+				"additionalProperties": false,
+			},
+		},
+		{
+			Name:        "user_reply",
+			Description: "Send a response from the user agent to another agent.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"to":      map[string]interface{}{"type": "string"},
+					"text":    map[string]interface{}{"type": "string"},
+					"payload": map[string]interface{}{"type": "object"},
+					"project": map[string]interface{}{"type": "string"},
+				},
+				"required":             []string{"to"},
 				"additionalProperties": false,
 			},
 		},
@@ -102,6 +132,19 @@ func AllTools() []ToolDef {
 					},
 				},
 				"required":             []string{"title"},
+				"additionalProperties": false,
+			},
+		},
+		{
+			Name:        "deregister",
+			Description: "Deregister an agent by name or id.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"name_or_id": map[string]interface{}{"type": "string"},
+					"project":    map[string]interface{}{"type": "string"},
+				},
+				"required":             []string{"name_or_id"},
 				"additionalProperties": false,
 			},
 		},
@@ -183,6 +226,37 @@ func AllTools() []ToolDef {
 				"properties": map[string]interface{}{
 					"project": map[string]interface{}{"type": "string"},
 				},
+				"additionalProperties": false,
+			},
+		},
+		{
+			Name:        "health",
+			Description: "Check health of all registered agents.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"project": map[string]interface{}{"type": "string"},
+				},
+				"additionalProperties": false,
+			},
+		},
+		{
+			Name:        "doctor",
+			Description: "Diagnose project setup and runtime configuration.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"project": map[string]interface{}{"type": "string"},
+				},
+				"additionalProperties": false,
+			},
+		},
+		{
+			Name:        "version",
+			Description: "Return version information.",
+			InputSchema: map[string]interface{}{
+				"type":                 "object",
+				"properties":           map[string]interface{}{},
 				"additionalProperties": false,
 			},
 		},
