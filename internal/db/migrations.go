@@ -81,6 +81,7 @@ var migrations = []string{
 	SELECT DISTINCT project
 	FROM agents
 	WHERE project IS NOT NULL AND project <> '';`,
+	`ALTER TABLE tasks ADD COLUMN reviewer TEXT DEFAULT ''`,
 }
 
 // Migrate applies all pending schema migrations.
