@@ -4,16 +4,16 @@
 
 ## 현재 상태
 
-- **Phase**: PH6 runtime reliability 완료
-- **마지막 작업**: PH6 runtime reliability 구현 및 `develop` 머지 준비 완료
-- **현재 브랜치**: `feature/PH6-runtime-reliability`
+- **Phase**: PH7 runtime config and observability 완료
+- **마지막 작업**: PH7 runtime config and observability 구현 및 `develop` 머지 준비 완료
+- **현재 브랜치**: `feature/PH7-runtime-config-observability`
 - **현재 버전**: `v0.2.3` 공개 릴리즈 완료
 - **P10 상태**: 구현/문서/테스트 완료, 관련 변경은 현재 브랜치에 포함됨
 - **P11 상태**: 구현 완료, 테스트/수동 QA/README 반영 완료, develop 머지 및 release 대기
 - **P12 상태**: 구현/검증/문서 반영 완료 (user endpoint, pseudo-agent, MCP tools)
 - **계획 문서 상태**: PH10 PRD 최종 통합본 완료 (`.agents/plans/PH10-priority-review-policy-PRD.md`), 6 Phase / 18 Tasks / ~62 Subtasks / ~16h
-- **다음 작업**: PH7 runtime config and observability
-- **후속 계획**: `.agents/plans/NEW-NEXT-PHASE-PLAN.md` — PH5~PH6 완료, PH7~PH9 (14 tasks, 약 29.5h 추정)
+- **다음 작업**: PH8 MCP surface rebaseline
+- **후속 계획**: `.agents/plans/NEW-NEXT-PHASE-PLAN.md` — PH5~PH7 완료, PH8~PH9 (10 tasks, 약 16.5h 추정)
 - **PH10 PRD**: `.agents/plans/PH10-priority-review-policy-PRD.md` — priority enforcement + review policy (18 tasks, ~16h, 아키텍처 결정 8건 포함)
 - **PH10 문서 정리**: 기존 산재 문서 4개(`PH10-priority-review-policy.md`, `PH10-architectural-decisions.md`, `PH10-review-system-analysis.md`, `PH10-user-task-approver-design.md`) → 최종 PRD에 통합 후 삭제 완료
 
@@ -31,6 +31,18 @@
 - P10 project column 핵심 구현 완료
 
 ## 이번 세션에서 마무리한 작업
+
+- PH7 runtime config and observability 구현 완료
+  - `internal/config/runtime.go`, `internal/config/runtime_test.go`, `internal/config/config.go`: runtime config surface와 env override contract 추가, `Config`에 runtime 값 연결
+  - `internal/transport/uds.go`, `internal/transport/fallback.go`, `internal/agent/heartbeat.go`, `internal/agent/registry.go`, `internal/cli/root.go`, `internal/cli/up.go`: PH6에서 확정된 timeout/retry/interval 값을 실제 runtime wiring에 연결
+  - `internal/cli/task.go`, `internal/cli/task_test.go`, `internal/cli/register.go`, `internal/cli/register_test.go`: unknown assignee / invalid register name의 structured user-facing error 적용
+  - `internal/message/router.go`, `cmd/agentcom/e2e_test.go`: fallback/failure log level 재조정과 combined output JSON extraction 보강
+  - `internal/cli/up.go`, `internal/cli/up_test.go`: supervisor signal action(`SIGUSR1` state dump, `SIGHUP` no-op) 추가 및 테스트 보강
+  - 검증 완료: `go test ./internal/config/... -count=1`, `go test ./internal/cli/... -count=1`, `go test ./... -count=1`, `go build ./...`
+  - 수동 QA 완료:
+    - `AGENTCOM_CLIENT_DIAL_TIMEOUT=bad agentcom --json status` -> `config.LoadRuntime` parse failure 확인
+    - `/tmp/agentcom-ph7-qa-project`에서 `agentcom task create "needs assignee" --assign missing-agent` -> structured `Error/Reason/Hint` 출력 확인
+    - `/tmp/agentcom-ph7-signal-project`에서 `agentcom --json up --only plan` 후 `kill -USR1 <supervisor_pid>` 실행, `.agentcom/run/up.json` mtime `1773742133 -> 1773742135` 증가 확인
 
 - PH6 runtime reliability 구현 완료
   - `internal/cli/up.go`, `internal/cli/up_test.go`: shutdown cleanup에 timeout helper 도입, stale runtime state 자동 정리, stale child heartbeat 탐지 helper와 supervisor health ticker 추가

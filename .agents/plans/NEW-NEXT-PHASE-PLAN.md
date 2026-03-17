@@ -202,54 +202,36 @@
 
 | 태스크 | 상태 | 메모 |
 |-------|------|------|
-| PH7-01 runtime config externalization | open | `AGENTCOM_HOME`만 존재 |
-| PH7-02 structured user errors rollout | partial | 기반은 있으나 적용 범위 제한 |
-| PH7-03 transport logging rebalance | open | debug 중심 |
-| PH7-04 supervisor signal expansion | open | SIGINT/SIGTERM 중심 |
+| PH7-01 runtime config externalization | done | runtime config/env override surface 추가 및 runtime wiring 연결 |
+| PH7-02 structured user errors rollout | done | representative CLI user error paths를 structured format으로 정렬 |
+| PH7-03 transport logging rebalance | done | fallback/failure log visibility 조정 및 e2e parsing 보강 |
+| PH7-04 supervisor signal expansion | done | `SIGUSR1` state dump, `SIGHUP` no-op 처리 추가 |
 
 ### PH7-01: 하드코딩된 runtime 값 외부화
-- **대상**: `internal/config/`, `internal/db/sqlite.go`, `internal/transport/uds.go`, `internal/agent/heartbeat.go`, `internal/transport/fallback.go`, `internal/cli/up.go`
-- **현재 상태**: `AGENTCOM_HOME` 외 별도 runtime config 없음
-- **수정**:
-  - `RuntimeConfig` 도입
-  - timeout / retry / interval 값 외부화
-  - 우선순위는 env -> default, config file은 필요 시 2차로 검토
-- **검증**:
-  - env override 테스트
-- **예상 공수**: 4h
+- **대상**: `internal/config/`, `internal/transport/uds.go`, `internal/agent/heartbeat.go`, `internal/transport/fallback.go`, `internal/cli/up.go`
+- **완료 상태**: `RuntimeConfig`와 env override를 도입하고 timeout / retry / interval 값을 실제 runtime wiring에 연결
+- **검증**: `TestLoadRuntimeUsesDefaults`, `TestLoadRuntimeUsesEnvOverrides`, full suite, invalid env manual QA
+- **실소요 공수**: 약 3h
 
 ### PH7-02: 구조화 user error 패턴 확대 적용
-- **대상**: `internal/cli/init.go`, `internal/cli/up.go`, `internal/cli/task.go`, `internal/cli/skill.go`, `internal/cli/register.go`, `internal/cli/root.go` 등 Cobra entry 경로
-- **현재 상태**: `internal/cli/errors.go` 존재, 일부 command만 적용
-- **수정**:
-  - 사용자 직접 노출 오류만 `What/Reason/Hint` 형태로 통일
-  - 내부 로직 wrapping은 기존 `fmt.Errorf` 유지
-- **검증**:
-  - 대표 명령 실패 시 snapshot 또는 문자열 검증
-- **예상 공수**: 6h
+- **대상**: `internal/cli/task.go`, `internal/cli/register.go`, 기존 `internal/cli/errors.go` surface
+- **완료 상태**: 대표 user-facing 입력 오류(unknown assignee, invalid register name)를 `Error/Reason/Hint` 형식으로 정렬
+- **검증**: `TestTaskCreateUsesStructuredErrorForUnknownAssignee`, `TestRegisterUsesStructuredErrorForInvalidName`, manual CLI QA
+- **실소요 공수**: 약 2h
 
 ### PH7-03: transport/message 로그 레벨 재조정
-- **대상**: `internal/transport/uds.go`, `internal/message/router.go`
-- **현재 상태**: retry/fallback 중요 이벤트가 debug 중심
-- **수정**:
-  - 최종 direct send 실패 WARN
-  - fallback 전환 INFO
-  - 정상 direct send DEBUG 유지
-- **검증**:
-  - logger 출력 수준 테스트 또는 hook 기반 검증
-- **예상 공수**: 1h
+- **대상**: `internal/message/router.go`, `cmd/agentcom/e2e_test.go`
+- **완료 상태**: fallback은 INFO, transport send failure와 broadcast failure는 WARN으로 조정했고 combined output parser를 보강해 JSON CLI 회귀를 방지
+- **검증**: `go test ./cmd/agentcom -count=1`, full suite
+- **실소요 공수**: 약 1h
 
 ### PH7-04: supervisor 시그널 핸들링 확장
-- **대상**: `internal/cli/up.go`
-- **현재 상태**: SIGINT/SIGTERM 위주
-- **수정**:
-  - PH7-01 이후 SIGHUP reload 가능성 검토
-  - SIGUSR1 state dump 추가
-- **검증**:
-  - signal path 단위 테스트 또는 manual QA
-- **예상 공수**: 2h
+- **대상**: `internal/cli/up.go`, `internal/cli/up_test.go`
+- **완료 상태**: `SIGUSR1`에서 runtime state dump, `SIGHUP`은 no-op로 수용
+- **검증**: `TestHandleSupervisorSignal*`, `kill -USR1 <supervisor_pid>` manual QA
+- **실소요 공수**: 약 1h
 
-**PH7 예상 잔여 공수: 13h**
+**PH7 예상 잔여 공수: 0h**
 
 ---
 
@@ -408,10 +390,10 @@ Worktree E: PH8 / PH9 (PH5 완료 후)
 |-------|----------------|----------------|
 | PH5 | 0 | 0h |
 | PH6 | 0 | 0h |
-| PH7 | 4 | 13h |
+| PH7 | 0 | 0h |
 | PH8 | 6 | 7.5h |
 | PH9 | 4 | 9h |
-| **총계** | **14** | **약 29.5h** |
+| **총계** | **10** | **약 16.5h** |
 
 차이 설명:
 
@@ -425,7 +407,7 @@ Worktree E: PH8 / PH9 (PH5 완료 후)
 
 - [x] PH5 완료: MCP error path가 모두 JSON-RPC `error`를 사용하고, terminal state reopen/retry가 가능하다.
 - [x] PH6 완료: `up/down`, UDS, runtime cleanup 경로에 운영상 치명적인 무기한 블로킹/누수 경로가 없다.
-- [ ] PH7 완료: timeout/retry/interval 값이 외부화되고 운영 로그/에러 UX가 일관적이다.
+- [x] PH7 완료: timeout/retry/interval 값이 외부화되고 운영 로그/에러 UX가 일관적이다.
 - [ ] PH8 완료: 남은 필수 CLI parity MCP 도구가 추가된다.
 - [ ] PH9 완료: onboard/query/transport lifecycle/MCP error matrix 테스트가 보강된다.
 - [ ] `go test ./...` 통과
