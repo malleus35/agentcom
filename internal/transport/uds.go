@@ -13,6 +13,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/malleus35/agentcom/internal/config"
 )
 
 var (
@@ -267,4 +269,13 @@ func retryJitter() time.Duration {
 		return 0
 	}
 	return time.Duration(rand.Int63n(int64(clientRetryJitterMax)))
+}
+
+func ApplyRuntimeConfig(runtime config.RuntimeConfig) {
+	clientDialTimeout = runtime.ClientDialTimeout
+	clientWriteTimeout = runtime.ClientWriteTimeout
+	serverAcceptTimeout = runtime.ServerAcceptTimeout
+	serverReadTimeout = runtime.ServerReadTimeout
+	clientRetryBackoffs = append([]time.Duration(nil), runtime.ClientRetryBackoffs...)
+	clientRetryJitterMax = runtime.ClientRetryJitterMax
 }

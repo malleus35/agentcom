@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -40,6 +41,13 @@ func newRegisterCmd() *cobra.Command {
 			registry := agent.NewRegistry(app.db, app.cfg)
 			agt, err := registry.Register(ctx, name, agentType, caps, workdir, app.project)
 			if err != nil {
+				if errors.Is(err, agent.ErrInvalidAgentName) {
+					return newUserError(
+						fmt.Sprintf("Agent name %q is invalid", name),
+						"Agent names must start with a letter or number, may contain only letters, numbers, underscores, or hyphens, and cannot use the reserved name `user`.",
+						"Retry with a name like `plan`, `frontend-1`, or `worker_alpha`.",
+					)
+				}
 				return fmt.Errorf("cli.newRegisterCmd: register: %w", err)
 			}
 

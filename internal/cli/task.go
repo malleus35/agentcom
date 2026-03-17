@@ -3,6 +3,7 @@ package cli
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/malleus35/agentcom/internal/agent"
 	"github.com/malleus35/agentcom/internal/config"
+	"github.com/malleus35/agentcom/internal/db"
 	"github.com/malleus35/agentcom/internal/task"
 	"github.com/spf13/cobra"
 )
@@ -62,7 +64,7 @@ func newTaskCreateCmd() *cobra.Command {
 			if assign != "" {
 				resolved, err := resolveAgentID(cmd, registry, assign, currentProjectFilter())
 				if err != nil {
-					return fmt.Errorf("cli.newTaskCreateCmd: resolve assignee: %w", err)
+					return presentAgentResolutionError(assign, err)
 				}
 				assignedID = resolved
 			}
@@ -71,7 +73,7 @@ func newTaskCreateCmd() *cobra.Command {
 			if creator != "" {
 				resolved, err := resolveAgentID(cmd, registry, creator, currentProjectFilter())
 				if err != nil {
-					return fmt.Errorf("cli.newTaskCreateCmd: resolve creator: %w", err)
+					return presentAgentResolutionError(creator, err)
 				}
 				creatorID = resolved
 			}
@@ -149,6 +151,8 @@ func newTaskListCmd() *cobra.Command {
 				registry := agent.NewRegistry(app.db, app.cfg)
 				if resolved, err := resolveAgentID(cmd, registry, assignee, currentProjectFilter()); err == nil {
 					assigneeID = resolved
+				} else if !errors.Is(err, agent.ErrAgentNotFound) {
+					return err
 				}
 			}
 
@@ -278,7 +282,7 @@ func newTaskDelegateCmd() *cobra.Command {
 			registry := agent.NewRegistry(app.db, app.cfg)
 			assigneeID, err := resolveAgentID(cmd, registry, to, currentProjectFilter())
 			if err != nil {
-				return fmt.Errorf("cli.newTaskDelegateCmd: resolve target: %w", err)
+				return presentAgentResolutionError(to, err)
 			}
 
 			manager := task.NewManager(app.db)
@@ -392,6 +396,17 @@ func resolveAgentID(cmd *cobra.Command, registry *agent.Registry, nameOrID strin
 	}
 
 	return agt.ID, nil
+}
+
+func presentAgentResolutionError(nameOrID string, err error) error {
+	if errors.Is(err, agent.ErrAgentNotFound) || errors.Is(err, db.ErrAgentNotFound) {
+		return newUserError(
+			fmt.Sprintf("Agent %q could not be resolved", nameOrID),
+			"The provided agent name or ID does not exist in the current project context.",
+			"Check `agentcom list` or `agentcom status` for available agents, then retry with a valid name or ID.",
+		)
+	}
+	return fmt.Errorf("cli.presentAgentResolutionError: %w", err)
 }
 
 func splitCSV(raw string) []string {

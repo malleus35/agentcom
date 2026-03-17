@@ -22,7 +22,12 @@ import (
 
 const upSupervisorCommandName = "__up-supervisor"
 
-const upSupervisorHealthCheckInterval = 5 * time.Second
+var upSupervisorHealthCheckInterval = 5 * time.Second
+
+const (
+	supervisorSignalDumpState = "dump-state"
+	supervisorSignalReload    = "reload"
+)
 
 type templateManifest struct {
 	Name        string                 `json:"name"`
@@ -465,6 +470,9 @@ func runUpSupervisor(ctx context.Context, projectDir, projectName, templateName 
 	}
 	healthTicker := time.NewTicker(upSupervisorHealthCheckInterval)
 	defer healthTicker.Stop()
+	signalCh := make(chan os.Signal, 1)
+	signal.Notify(signalCh, syscall.SIGUSR1, syscall.SIGHUP)
+	defer signal.Stop(signalCh)
 
 	for len(active) > 0 {
 		select {
@@ -481,6 +489,14 @@ func runUpSupervisor(ctx context.Context, projectDir, projectName, templateName 
 			if len(staleAgents) > 0 {
 				_ = shutdownChildCommands(children, true, 5*time.Second)
 				return fmt.Errorf("cli.runUpSupervisor: stale child agents detected: %d", len(staleAgents))
+			}
+		case sig := <-signalCh:
+			action := supervisorSignalReload
+			if sig == syscall.SIGUSR1 {
+				action = supervisorSignalDumpState
+			}
+			if err := handleSupervisorSignal(projectDir, state, action); err != nil {
+				return fmt.Errorf("cli.runUpSupervisor: handle supervisor signal: %w", err)
 			}
 		case exited := <-exitCh:
 			delete(active, exited.pid)
@@ -735,6 +751,13 @@ func cleanupStaleRuntimeState(projectDir string, state upRuntimeState) error {
 	}
 	if err := removeUpRuntimeState(projectDir); err != nil {
 		return err
+	}
+	return nil
+}
+
+func handleSupervisorSignal(projectDir string, state upRuntimeState, action string) error {
+	if action == supervisorSignalDumpState {
+		return writeUpRuntimeState(projectDir, state)
 	}
 	return nil
 }

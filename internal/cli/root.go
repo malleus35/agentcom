@@ -7,8 +7,10 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/malleus35/agentcom/internal/agent"
 	"github.com/malleus35/agentcom/internal/config"
 	"github.com/malleus35/agentcom/internal/db"
+	"github.com/malleus35/agentcom/internal/transport"
 	"github.com/spf13/cobra"
 )
 
@@ -130,6 +132,11 @@ func initApp(ctx context.Context) error {
 	if err := cfg.EnsureDirs(); err != nil {
 		return fmt.Errorf("cli.initApp: %w", err)
 	}
+	transport.ApplyRuntimeConfig(cfg.Runtime)
+	transport.ApplyPollerRuntimeConfig(cfg.Runtime)
+	agent.ApplyHeartbeatRuntimeConfig(cfg.Runtime)
+	agent.ApplyRegistryRuntimeConfig(cfg.Runtime)
+	applyCLIRuntimeConfig(cfg.Runtime)
 
 	database, err := db.Open(cfg.DBPath)
 	if err != nil {
@@ -150,6 +157,10 @@ func initApp(ctx context.Context) error {
 
 	slog.Debug("agentcom initialized", "db", cfg.DBPath, "sockets", cfg.SocketsPath)
 	return nil
+}
+
+func applyCLIRuntimeConfig(runtime config.RuntimeConfig) {
+	upSupervisorHealthCheckInterval = runtime.SupervisorHealthCheckInterval
 }
 
 func currentProjectFilter() string {

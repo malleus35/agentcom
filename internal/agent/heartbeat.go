@@ -5,10 +5,11 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/malleus35/agentcom/internal/config"
 	"github.com/malleus35/agentcom/internal/db"
 )
 
-const defaultHeartbeatInterval = 10 * time.Second
+var defaultHeartbeatInterval = 10 * time.Second
 
 // Heartbeat runs a background goroutine that updates the agent heartbeat.
 type Heartbeat struct {
@@ -43,4 +44,8 @@ func (h *Heartbeat) Start(ctx context.Context) {
 			}
 		}
 	}()
+}
+
+func ApplyHeartbeatRuntimeConfig(runtime config.RuntimeConfig) {
+	defaultHeartbeatInterval = runtime.HeartbeatInterval
 }
