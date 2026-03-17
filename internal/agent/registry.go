@@ -18,12 +18,11 @@ import (
 	"github.com/malleus35/agentcom/internal/db"
 )
 
-const heartbeatStaleThreshold = 30 * time.Second
-
 var (
 	// ErrAgentNotFound indicates the target agent cannot be found.
-	ErrAgentNotFound    = errors.New("agent not found")
-	ErrInvalidAgentName = errors.New("invalid agent name")
+	ErrAgentNotFound        = errors.New("agent not found")
+	ErrInvalidAgentName     = errors.New("invalid agent name")
+	heartbeatStaleThreshold = 30 * time.Second
 )
 
 var agentNamePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$`)
@@ -186,4 +185,8 @@ func (r *Registry) MarkInactive(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func ApplyRegistryRuntimeConfig(runtime config.RuntimeConfig) {
+	heartbeatStaleThreshold = runtime.HeartbeatStaleThreshold
 }
