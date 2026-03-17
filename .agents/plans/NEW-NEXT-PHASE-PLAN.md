@@ -297,35 +297,32 @@
 
 | 태스크 | 상태 | 메모 |
 |-------|------|------|
-| onboard package tests | partial | wizard/result는 있으나 huh/prompter/template_definition 전용 테스트 부족 |
-| task/query tests | open | `internal/task/query.go` 전용 테스트 없음 |
-| transport lifecycle tests | open | roundtrip/stale socket/poller는 있으나 lifecycle 부족 |
-| MCP error tests | partial | 일부 invalid params만 있으나 full matrix 부족 |
+| onboard package tests | done | `huh_prompter`, `prompter`, `template_definition` 전용 테스트 추가 |
+| task/query tests | done | `internal/task/query_test.go` direct coverage 추가 |
+| transport lifecycle tests | done | transport stop / heartbeat cancellation lifecycle 테스트 추가 |
+| MCP error tests | done | empty params / malformed request matrix 보강 |
 
 ### PH9-01: onboard 보강 테스트
-- **대상**: `internal/onboard/huh_prompter.go`, `internal/onboard/prompter.go`, `internal/onboard/template_definition.go`
-- **현재 상태**: `wizard_test.go`, `result_test.go`만 존재
-- **예상 공수**: 2h
+- **완료 상태**: `huh_prompter`, `prompter`, `template_definition` 전용 테스트 추가
+- **검증**: `go test ./internal/onboard/... -count=1`
+- **실소요 공수**: 약 1h
 
 ### PH9-02: `internal/task/query.go` 전용 테스트 추가
-- **대상**: `ListAll`, `ListByStatus`, `ListByAssignee`, `FindByID`, `NewQuery`
-- **현재 상태**: manager 테스트를 통한 간접 커버만 존재
-- **예상 공수**: 2h
+- **완료 상태**: `NewQuery`, `ListAll`, `ListByStatus`, `ListByAssignee`, `FindByID` direct coverage 추가
+- **검증**: `go test ./internal/task/... -count=1`
+- **실소요 공수**: 약 1h
 
 ### PH9-03: transport / heartbeat lifecycle 테스트 추가
-- **대상**: `internal/transport/uds.go`, `internal/transport/fallback.go`, `internal/agent/heartbeat.go`
-- **현재 상태**: roundtrip / stale socket / poller delivery까지만 존재
-- **예상 공수**: 3h
+- **완료 상태**: server stop socket cleanup, heartbeat cancellation lifecycle 테스트 추가
+- **검증**: `go test ./internal/transport/... -count=1`, `go test ./internal/agent/... -count=1`
+- **실소요 공수**: 약 1h
 
 ### PH9-04: MCP 에러 응답 테스트 매트릭스 강화
-- **대상**: `internal/mcp/server_test.go`
-- **현재 상태**:
-  - invalid priority 일부 테스트 존재
-  - unknown tool / runtime tool error / empty params / malformed request matrix 부족
-- **의존성**: PH5
-- **예상 공수**: 2h
+- **완료 상태**: empty params / malformed request / existing unknown/runtime matrix 보강
+- **검증**: `go test ./internal/mcp/... -count=1`
+- **실소요 공수**: 약 1h
 
-**PH9 예상 잔여 공수: 9h**
+**PH9 예상 잔여 공수: 0h**
 
 ---
 
@@ -398,8 +395,8 @@ Worktree E: PH8 / PH9 (PH5 완료 후)
 | PH6 | 0 | 0h |
 | PH7 | 0 | 0h |
 | PH8 | 0 | 0h |
-| PH9 | 4 | 9h |
-| **총계** | **4** | **약 9h** |
+| PH9 | 0 | 0h |
+| **총계** | **0** | **0h** |
 
 차이 설명:
 
@@ -415,7 +412,7 @@ Worktree E: PH8 / PH9 (PH5 완료 후)
 - [x] PH6 완료: `up/down`, UDS, runtime cleanup 경로에 운영상 치명적인 무기한 블로킹/누수 경로가 없다.
 - [x] PH7 완료: timeout/retry/interval 값이 외부화되고 운영 로그/에러 UX가 일관적이다.
 - [x] PH8 완료: 남은 필수 CLI parity MCP 도구가 추가된다.
-- [ ] PH9 완료: onboard/query/transport lifecycle/MCP error matrix 테스트가 보강된다.
+- [x] PH9 완료: onboard/query/transport lifecycle/MCP error matrix 테스트가 보강된다.
 - [ ] `go test ./...` 통과
 - [ ] `go build ./...` 통과
 - [ ] 수동 QA: `agentcom up` -> direct send/broadcast -> user flow -> `agentcom down` -> stale recovery 시나리오 확인

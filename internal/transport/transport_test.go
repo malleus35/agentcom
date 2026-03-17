@@ -207,3 +207,23 @@ func TestClientSendRetriesWithBackoff(t *testing.T) {
 		t.Fatalf("Client.Send() elapsed = %v, want at least 60ms of backoff", elapsed)
 	}
 }
+
+func TestServerStopRemovesSocketPath(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	socketPath := setupSocketPath(t, "stop.sock")
+	server := NewServer(socketPath, nil)
+	if err := server.Start(ctx); err != nil {
+		t.Fatalf("Server.Start() error = %v", err)
+	}
+	if _, err := os.Stat(socketPath); err != nil {
+		t.Fatalf("Stat(socketPath) error = %v", err)
+	}
+	if err := server.Stop(); err != nil {
+		t.Fatalf("Server.Stop() error = %v", err)
+	}
+	if _, err := os.Stat(socketPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("socket stat error = %v, want not exist", err)
+	}
+}

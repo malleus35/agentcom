@@ -449,6 +449,42 @@ func TestToolRuntimeErrorReturnsJSONRPCError(t *testing.T) {
 	}
 }
 
+func TestEmptyToolParamsReturnInvalidParams(t *testing.T) {
+	server, _ := setupMCPTestServer(t)
+	responses := runMCPRoundTripRequests(t, server,
+		Request{JSONRPC: jsonRPCVersion, ID: 1, Method: "initialize", Params: json.RawMessage(`{}`)},
+		Request{JSONRPC: jsonRPCVersion, Method: "notifications/initialized", Params: json.RawMessage(`{}`)},
+		Request{JSONRPC: jsonRPCVersion, ID: 2, Method: "tools/call", Params: json.RawMessage(`{"name":"inbox"}`)},
+	)
+	resp := decodeResponseMap(t, responses[1])
+	if resp.Error == nil || resp.Error.Code != errInvalidParams {
+		t.Fatalf("resp.Error = %+v, want invalid params", resp.Error)
+	}
+}
+
+func TestMalformedJSONRPCRequestReturnsDecodeError(t *testing.T) {
+	server, _ := setupMCPTestServer(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	inReader, inWriter := io.Pipe()
+	_, outWriter := io.Pipe()
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- server.Run(ctx, inReader, outWriter)
+	}()
+	if _, err := inWriter.Write([]byte("{bad\n")); err != nil {
+		t.Fatalf("Write(malformed) error = %v", err)
+	}
+	if err := inWriter.Close(); err != nil {
+		t.Fatalf("inWriter.Close() error = %v", err)
+	}
+	err := <-errCh
+	if err == nil || !strings.Contains(err.Error(), "decode request") {
+		t.Fatalf("Server.Run() error = %v, want decode request error", err)
+	}
+}
+
 func TestMCPBroadcastExcludesHuman(t *testing.T) {
 	server, database := setupMCPTestServer(t)
 	ctx := context.Background()

@@ -4,16 +4,16 @@
 
 ## 현재 상태
 
-- **Phase**: PH8 MCP surface rebaseline 완료
-- **마지막 작업**: PH8 MCP surface rebaseline 구현 및 `develop` 머지 준비 완료
-- **현재 브랜치**: `feature/PH8-mcp-surface-rebaseline`
+- **Phase**: PH9 targeted test closure 완료
+- **마지막 작업**: PH9 targeted test closure 구현 및 `develop` 머지 준비 완료
+- **현재 브랜치**: `feature/PH9-targeted-test-closure`
 - **현재 버전**: `v0.2.3` 공개 릴리즈 완료
 - **P10 상태**: 구현/문서/테스트 완료, 관련 변경은 현재 브랜치에 포함됨
 - **P11 상태**: 구현 완료, 테스트/수동 QA/README 반영 완료, develop 머지 및 release 대기
 - **P12 상태**: 구현/검증/문서 반영 완료 (user endpoint, pseudo-agent, MCP tools)
 - **계획 문서 상태**: PH10 PRD 최종 통합본 완료 (`.agents/plans/PH10-priority-review-policy-PRD.md`), 6 Phase / 18 Tasks / ~62 Subtasks / ~16h
-- **다음 작업**: PH9 targeted test closure
-- **후속 계획**: `.agents/plans/NEW-NEXT-PHASE-PLAN.md` — PH5~PH8 완료, PH9 (4 tasks, 약 9h 추정)
+- **다음 작업**: PH5~PH9 후속 계획 종료, 필요 시 신규 hardening/release 작업 정의
+- **후속 계획**: `.agents/plans/NEW-NEXT-PHASE-PLAN.md` — PH5~PH9 완료 (남은 태스크 0, 잔여 공수 0h)
 - **PH10 PRD**: `.agents/plans/PH10-priority-review-policy-PRD.md` — priority enforcement + review policy (18 tasks, ~16h, 아키텍처 결정 8건 포함)
 - **PH10 문서 정리**: 기존 산재 문서 4개(`PH10-priority-review-policy.md`, `PH10-architectural-decisions.md`, `PH10-review-system-analysis.md`, `PH10-user-task-approver-design.md`) → 최종 PRD에 통합 후 삭제 완료
 
@@ -31,6 +31,14 @@
 - P10 project column 핵심 구현 완료
 
 ## 이번 세션에서 마무리한 작업
+
+- PH9 targeted test closure 완료
+  - `internal/onboard/huh_prompter_test.go`, `internal/onboard/prompter_test.go`, `internal/onboard/template_definition_test.go`: onboarding 전용 테스트 공백 보강
+  - `internal/task/query_test.go`: `Query` direct coverage 추가
+  - `internal/transport/transport_test.go`, `internal/agent/heartbeat_test.go`: transport/heartbeat lifecycle coverage 추가
+  - `internal/mcp/server_test.go`: empty params / malformed request 등 MCP error matrix 보강
+  - 검증 완료: `go test ./internal/onboard/... -count=1`, `go test ./internal/task/... -count=1`, `go test ./internal/transport/... -count=1`, `go test ./internal/agent/... -count=1`, `go test ./internal/mcp/... -count=1`, `go test ./... -count=1`, `go build ./...`
+  - 수동 QA: 사용자 표면 변경 없음(test-only phase)으로 별도 runtime manual QA는 생략하고 전체 회귀를 근거로 종료
 
 - PH8 MCP surface rebaseline 구현 완료
   - `internal/mcp/tools.go`, `internal/mcp/handler.go`: `inbox`, `health`, `deregister`, `doctor`, `version`, `user_reply` MCP tool schema와 handler wiring 추가
