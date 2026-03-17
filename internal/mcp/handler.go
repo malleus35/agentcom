@@ -5,11 +5,26 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
+	"github.com/malleus35/agentcom/internal/config"
 	"github.com/malleus35/agentcom/internal/db"
 	"github.com/malleus35/agentcom/internal/task"
 )
+
+type invalidParamsError struct {
+	message string
+}
+
+func (e *invalidParamsError) Error() string {
+	return e.message
+}
+
+func newInvalidParamsError(format string, args ...any) error {
+	return &invalidParamsError{message: fmt.Sprintf(format, args...)}
+}
 
 func (s *Server) registerTools() {
 	s.tools["list_agents"] = s.handleListAgents
@@ -19,6 +34,9 @@ func (s *Server) registerTools() {
 	s.tools["broadcast"] = s.handleBroadcast
 	s.tools["create_task"] = s.handleCreateTask
 	s.tools["delegate_task"] = s.handleDelegateTask
+	s.tools["update_task"] = s.handleUpdateTask
+	s.tools["approve_task"] = s.handleApproveTask
+	s.tools["reject_task"] = s.handleRejectTask
 	s.tools["list_tasks"] = s.handleListTasks
 	s.tools["get_status"] = s.handleGetStatus
 }
@@ -297,6 +315,7 @@ func (s *Server) handleCreateTask(ctx context.Context, params json.RawMessage) (
 		Description string   `json:"description"`
 		Project     string   `json:"project"`
 		Priority    string   `json:"priority"`
+		Reviewer    string   `json:"reviewer"`
 		AssignedTo  string   `json:"assigned_to"`
 		CreatedBy   string   `json:"created_by"`
 		BlockedBy   []string `json:"blocked_by"`
@@ -304,20 +323,19 @@ func (s *Server) handleCreateTask(ctx context.Context, params json.RawMessage) (
 
 	var p createTaskParams
 	if err := json.Unmarshal(params, &p); err != nil {
-		return nil, fmt.Errorf("mcp.handleCreateTask: %w", err)
+		return nil, newInvalidParamsError("mcp.handleCreateTask: %v", err)
 	}
 	if strings.TrimSpace(p.Title) == "" {
-		return nil, fmt.Errorf("mcp.handleCreateTask: title is required")
+		return nil, newInvalidParamsError("mcp.handleCreateTask: title is required")
 	}
 
 	project := s.requestedProject(p.Project)
-	priority := strings.TrimSpace(p.Priority)
+	priority := task.NormalizePriority(p.Priority)
 	if priority == "" {
-		priority = "medium"
+		priority = task.PriorityMedium
 	}
-	blockedByJSON, err := json.Marshal(p.BlockedBy)
-	if err != nil {
-		return nil, fmt.Errorf("mcp.handleCreateTask: %w", err)
+	if err := task.ValidatePriority(priority); err != nil {
+		return nil, newInvalidParamsError("mcp.handleCreateTask: %v", err)
 	}
 
 	assignedTo := strings.TrimSpace(p.AssignedTo)
@@ -334,23 +352,22 @@ func (s *Server) handleCreateTask(ctx context.Context, params json.RawMessage) (
 			createdBy = agentRecord.ID
 		}
 	}
-
-	t := &db.Task{
-		Title:       p.Title,
-		Description: p.Description,
-		Status:      "pending",
-		Priority:    priority,
-		AssignedTo:  assignedTo,
-		CreatedBy:   createdBy,
-		BlockedBy:   string(blockedByJSON),
+	policy, err := s.loadActiveTaskReviewPolicy()
+	if err != nil {
+		return nil, fmt.Errorf("mcp.handleCreateTask: %w", err)
 	}
-	if err := s.db.InsertTask(ctx, t); err != nil {
+
+	manager := task.NewManager(s.db)
+	t, err := manager.Create(ctx, p.Title, p.Description, priority, strings.TrimSpace(p.Reviewer), assignedTo, createdBy, p.BlockedBy, policy)
+	if err != nil {
 		return nil, fmt.Errorf("mcp.handleCreateTask: %w", err)
 	}
 
 	return map[string]interface{}{
-		"task_id": t.ID,
-		"status":  t.Status,
+		"task_id":  t.ID,
+		"status":   t.Status,
+		"priority": t.Priority,
+		"reviewer": t.Reviewer,
 	}, nil
 }
 
@@ -370,22 +387,17 @@ func (s *Server) handleDelegateTask(ctx context.Context, params json.RawMessage)
 	}
 
 	project := s.requestedProject(p.Project)
-	t, err := s.db.FindTaskByID(ctx, p.TaskID)
-	if err != nil {
-		return nil, fmt.Errorf("mcp.handleDelegateTask: %w", err)
-	}
-	if err := task.ValidateTransition(t.Status, task.StatusAssigned); err != nil {
-		return nil, fmt.Errorf("mcp.handleDelegateTask: %w", err)
-	}
-
 	agentRecord, err := s.resolveAgentByNameOrID(ctx, p.To, project)
 	if err != nil {
 		return nil, fmt.Errorf("mcp.handleDelegateTask: %w", err)
 	}
 
-	t.AssignedTo = agentRecord.ID
-	t.Status = task.StatusAssigned
-	if err := s.db.UpdateTask(ctx, t); err != nil {
+	manager := task.NewManager(s.db)
+	if err := manager.Delegate(ctx, p.TaskID, agentRecord.ID); err != nil {
+		return nil, fmt.Errorf("mcp.handleDelegateTask: %w", err)
+	}
+	t, err := s.db.FindTaskByID(ctx, p.TaskID)
+	if err != nil {
 		return nil, fmt.Errorf("mcp.handleDelegateTask: %w", err)
 	}
 
@@ -394,6 +406,78 @@ func (s *Server) handleDelegateTask(ctx context.Context, params json.RawMessage)
 		"assigned_to": t.AssignedTo,
 		"status":      t.Status,
 	}, nil
+}
+
+func (s *Server) handleUpdateTask(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	type updateTaskParams struct {
+		TaskID  string `json:"task_id"`
+		Status  string `json:"status"`
+		Result  string `json:"result"`
+		Project string `json:"project"`
+	}
+
+	var p updateTaskParams
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, newInvalidParamsError("mcp.handleUpdateTask: %v", err)
+	}
+	if strings.TrimSpace(p.TaskID) == "" || strings.TrimSpace(p.Status) == "" {
+		return nil, newInvalidParamsError("mcp.handleUpdateTask: task_id and status are required")
+	}
+	manager := task.NewManager(s.db)
+	if err := manager.UpdateStatus(ctx, p.TaskID, strings.TrimSpace(p.Status), p.Result); err != nil {
+		return nil, fmt.Errorf("mcp.handleUpdateTask: %w", err)
+	}
+	updated, err := s.db.FindTaskByID(ctx, p.TaskID)
+	if err != nil {
+		return nil, fmt.Errorf("mcp.handleUpdateTask: %w", err)
+	}
+	return map[string]interface{}{"task_id": updated.ID, "status": updated.Status, "result": updated.Result, "reviewer": updated.Reviewer}, nil
+}
+
+func (s *Server) handleApproveTask(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	type approveTaskParams struct {
+		TaskID string `json:"task_id"`
+		Result string `json:"result"`
+	}
+	var p approveTaskParams
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, newInvalidParamsError("mcp.handleApproveTask: %v", err)
+	}
+	if strings.TrimSpace(p.TaskID) == "" {
+		return nil, newInvalidParamsError("mcp.handleApproveTask: task_id is required")
+	}
+	manager := task.NewManager(s.db)
+	if err := manager.ApproveTask(ctx, p.TaskID, p.Result); err != nil {
+		return nil, fmt.Errorf("mcp.handleApproveTask: %w", err)
+	}
+	updated, err := s.db.FindTaskByID(ctx, p.TaskID)
+	if err != nil {
+		return nil, fmt.Errorf("mcp.handleApproveTask: %w", err)
+	}
+	return map[string]interface{}{"task_id": updated.ID, "status": updated.Status, "result": updated.Result}, nil
+}
+
+func (s *Server) handleRejectTask(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	type rejectTaskParams struct {
+		TaskID string `json:"task_id"`
+		Result string `json:"result"`
+	}
+	var p rejectTaskParams
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, newInvalidParamsError("mcp.handleRejectTask: %v", err)
+	}
+	if strings.TrimSpace(p.TaskID) == "" {
+		return nil, newInvalidParamsError("mcp.handleRejectTask: task_id is required")
+	}
+	manager := task.NewManager(s.db)
+	if err := manager.RejectTask(ctx, p.TaskID, p.Result); err != nil {
+		return nil, fmt.Errorf("mcp.handleRejectTask: %w", err)
+	}
+	updated, err := s.db.FindTaskByID(ctx, p.TaskID)
+	if err != nil {
+		return nil, fmt.Errorf("mcp.handleRejectTask: %w", err)
+	}
+	return map[string]interface{}{"task_id": updated.ID, "status": updated.Status, "result": updated.Result}, nil
 }
 
 func (s *Server) handleListTasks(ctx context.Context, params json.RawMessage) (interface{}, error) {
@@ -568,4 +652,38 @@ func (s *Server) requestedProject(project string) string {
 		return project
 	}
 	return s.project
+}
+
+func (s *Server) loadActiveTaskReviewPolicy() (*task.ReviewPolicy, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("getwd: %w", err)
+	}
+	projectCfg, _, err := config.LoadProjectConfig(cwd)
+	if err != nil {
+		return nil, fmt.Errorf("load project config: %w", err)
+	}
+	if strings.TrimSpace(projectCfg.Template.Active) == "" {
+		return nil, nil
+	}
+	manifestPath := filepath.Join(cwd, ".agentcom", "templates", projectCfg.Template.Active, "template.json")
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read template manifest: %w", err)
+	}
+	var manifest struct {
+		ReviewPolicy *task.ReviewPolicy `json:"review_policy,omitempty"`
+	}
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return nil, fmt.Errorf("unmarshal template manifest: %w", err)
+	}
+	if manifest.ReviewPolicy != nil {
+		if err := manifest.ReviewPolicy.Validate(); err != nil {
+			return nil, fmt.Errorf("validate review policy: %w", err)
+		}
+	}
+	return manifest.ReviewPolicy, nil
 }

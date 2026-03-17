@@ -93,6 +93,7 @@ func AllTools() []ToolDef {
 					"description": map[string]interface{}{"type": "string"},
 					"project":     map[string]interface{}{"type": "string"},
 					"priority":    map[string]interface{}{"type": "string"},
+					"reviewer":    map[string]interface{}{"type": "string"},
 					"assigned_to": map[string]interface{}{"type": "string"},
 					"created_by":  map[string]interface{}{"type": "string"},
 					"blocked_by": map[string]interface{}{
@@ -115,6 +116,49 @@ func AllTools() []ToolDef {
 					"project": map[string]interface{}{"type": "string"},
 				},
 				"required":             []string{"task_id", "to"},
+				"additionalProperties": false,
+			},
+		},
+		{
+			Name:        "update_task",
+			Description: "Update task status with transition validation.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_id": map[string]interface{}{"type": "string"},
+					"status":  map[string]interface{}{"type": "string"},
+					"result":  map[string]interface{}{"type": "string"},
+					"project": map[string]interface{}{"type": "string"},
+				},
+				"required":             []string{"task_id", "status"},
+				"additionalProperties": false,
+			},
+		},
+		{
+			Name:        "approve_task",
+			Description: "Approve a blocked review task.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_id": map[string]interface{}{"type": "string"},
+					"result":  map[string]interface{}{"type": "string"},
+					"project": map[string]interface{}{"type": "string"},
+				},
+				"required":             []string{"task_id"},
+				"additionalProperties": false,
+			},
+		},
+		{
+			Name:        "reject_task",
+			Description: "Reject a blocked review task.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_id": map[string]interface{}{"type": "string"},
+					"result":  map[string]interface{}{"type": "string"},
+					"project": map[string]interface{}{"type": "string"},
+				},
+				"required":             []string{"task_id"},
 				"additionalProperties": false,
 			},
 		},

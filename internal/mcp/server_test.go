@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -121,6 +122,9 @@ func TestServerRunJSONRPCRoundTrip(t *testing.T) {
 	}
 	hasSendToUser := false
 	hasGetUserMessages := false
+	hasUpdateTask := false
+	hasApproveTask := false
+	hasRejectTask := false
 	for _, tool := range tools {
 		toolMap, ok := tool.(map[string]interface{})
 		if !ok {
@@ -131,10 +135,16 @@ func TestServerRunJSONRPCRoundTrip(t *testing.T) {
 			hasSendToUser = true
 		case "get_user_messages":
 			hasGetUserMessages = true
+		case "update_task":
+			hasUpdateTask = true
+		case "approve_task":
+			hasApproveTask = true
+		case "reject_task":
+			hasRejectTask = true
 		}
 	}
-	if !hasSendToUser || !hasGetUserMessages {
-		t.Fatalf("tools/list missing user tools: send_to_user=%v get_user_messages=%v", hasSendToUser, hasGetUserMessages)
+	if !hasSendToUser || !hasGetUserMessages || !hasUpdateTask || !hasApproveTask || !hasRejectTask {
+		t.Fatalf("tools/list missing expected tools: send_to_user=%v get_user_messages=%v update_task=%v approve_task=%v reject_task=%v", hasSendToUser, hasGetUserMessages, hasUpdateTask, hasApproveTask, hasRejectTask)
 	}
 
 	if err := enc.Encode(Request{
@@ -179,6 +189,54 @@ func TestServerRunJSONRPCRoundTrip(t *testing.T) {
 	}
 	if messages[0].Topic != "hello" {
 		t.Fatalf("message topic = %q, want hello", messages[0].Topic)
+	}
+
+	if err := inWriter.Close(); err != nil {
+		t.Fatalf("inWriter.Close() error = %v", err)
+	}
+	if err := <-runErr; err != nil {
+		t.Fatalf("Server.Run() error = %v", err)
+	}
+}
+
+func TestCreateTaskInvalidPriorityReturnsJSONRPCError(t *testing.T) {
+	server, _ := setupMCPTestServer(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	inReader, inWriter := io.Pipe()
+	outReader, outWriter := io.Pipe()
+	runErr := make(chan error, 1)
+	go func() {
+		runErr <- server.Run(ctx, inReader, outWriter)
+	}()
+
+	enc := json.NewEncoder(inWriter)
+	dec := json.NewDecoder(outReader)
+	if err := enc.Encode(Request{JSONRPC: jsonRPCVersion, ID: 1, Method: "initialize", Params: json.RawMessage(`{}`)}); err != nil {
+		t.Fatalf("encode initialize error = %v", err)
+	}
+	var resp Response
+	if err := dec.Decode(&resp); err != nil {
+		t.Fatalf("decode initialize response error = %v", err)
+	}
+	if err := enc.Encode(Request{JSONRPC: jsonRPCVersion, Method: "notifications/initialized", Params: json.RawMessage(`{}`)}); err != nil {
+		t.Fatalf("encode initialized notification error = %v", err)
+	}
+	if err := enc.Encode(Request{JSONRPC: jsonRPCVersion, ID: 2, Method: "tools/call", Params: json.RawMessage(`{
+			"name":"create_task",
+			"arguments":{"title":"bad task","priority":"urgent"}
+		}`)}); err != nil {
+		t.Fatalf("encode tools/call error = %v", err)
+	}
+	if err := dec.Decode(&resp); err != nil {
+		t.Fatalf("decode invalid priority response error = %v", err)
+	}
+	if resp.Error == nil {
+		t.Fatal("resp.Error = nil, want invalid params error")
+	}
+	if resp.Error.Code != errInvalidParams {
+		t.Fatalf("resp.Error.Code = %d, want %d", resp.Error.Code, errInvalidParams)
 	}
 
 	if err := inWriter.Close(); err != nil {
@@ -351,4 +409,99 @@ func TestSendToUserFailsWithoutUserAgent(t *testing.T) {
 	if err.Error() != "mcp.handleSendToUser: no user agent registered; start a session with `agentcom up` first" {
 		t.Fatalf("error = %q", err.Error())
 	}
+}
+
+func TestTaskReviewLifecycleTools(t *testing.T) {
+	server, database := setupMCPTestServer(t)
+	ctx := context.Background()
+	projectDir := t.TempDir()
+	writeMCPReviewPolicyFixture(t, projectDir)
+	withMCPWorkingDir(t, projectDir)
+
+	creator := &db.Agent{Name: "creator", Type: "worker", Project: "project-a", Status: "alive"}
+	if err := database.InsertAgent(ctx, creator); err != nil {
+		t.Fatalf("InsertAgent(creator) error = %v", err)
+	}
+
+	createdRaw, err := server.handleCreateTask(ctx, json.RawMessage(`{"title":"needs review","priority":"high","created_by":"creator"}`))
+	if err != nil {
+		t.Fatalf("handleCreateTask() error = %v", err)
+	}
+	created := createdRaw.(map[string]interface{})
+	taskID, _ := created["task_id"].(string)
+	if created["reviewer"] != "user" {
+		t.Fatalf("reviewer = %v, want user", created["reviewer"])
+	}
+
+	if _, err := server.handleUpdateTask(ctx, json.RawMessage(`{"task_id":"`+taskID+`","status":"in_progress","result":"started"}`)); err != nil {
+		t.Fatalf("handleUpdateTask(in_progress) error = %v", err)
+	}
+	updatedRaw, err := server.handleUpdateTask(ctx, json.RawMessage(`{"task_id":"`+taskID+`","status":"completed","result":"done"}`))
+	if err != nil {
+		t.Fatalf("handleUpdateTask(completed) error = %v", err)
+	}
+	updated := updatedRaw.(map[string]interface{})
+	if updated["status"] != "blocked" {
+		t.Fatalf("status = %v, want blocked", updated["status"])
+	}
+
+	approvedRaw, err := server.handleApproveTask(ctx, json.RawMessage(`{"task_id":"`+taskID+`","result":"approved"}`))
+	if err != nil {
+		t.Fatalf("handleApproveTask() error = %v", err)
+	}
+	approved := approvedRaw.(map[string]interface{})
+	if approved["status"] != "completed" {
+		t.Fatalf("status = %v, want completed", approved["status"])
+	}
+
+	rejectedTask, err := server.handleCreateTask(ctx, json.RawMessage(`{"title":"reject me","reviewer":"user"}`))
+	if err != nil {
+		t.Fatalf("handleCreateTask(rejected) error = %v", err)
+	}
+	rejectedTaskID := rejectedTask.(map[string]interface{})["task_id"].(string)
+	if _, err := server.handleUpdateTask(ctx, json.RawMessage(`{"task_id":"`+rejectedTaskID+`","status":"in_progress"}`)); err != nil {
+		t.Fatalf("handleUpdateTask(rejected in_progress) error = %v", err)
+	}
+	if _, err := server.handleUpdateTask(ctx, json.RawMessage(`{"task_id":"`+rejectedTaskID+`","status":"completed"}`)); err != nil {
+		t.Fatalf("handleUpdateTask(rejected completed) error = %v", err)
+	}
+	rejectedRaw, err := server.handleRejectTask(ctx, json.RawMessage(`{"task_id":"`+rejectedTaskID+`","result":"changes requested"}`))
+	if err != nil {
+		t.Fatalf("handleRejectTask() error = %v", err)
+	}
+	rejected := rejectedRaw.(map[string]interface{})
+	if rejected["status"] != "failed" {
+		t.Fatalf("status = %v, want failed", rejected["status"])
+	}
+}
+
+func writeMCPReviewPolicyFixture(t *testing.T, projectDir string) {
+	t.Helper()
+	if _, err := config.SaveProjectConfig(projectDir, config.ProjectConfig{Project: "project-a", Template: config.ProjectTemplateConfig{Active: "test-template"}}); err != nil {
+		t.Fatalf("SaveProjectConfig() error = %v", err)
+	}
+	templateDir := filepath.Join(projectDir, ".agentcom", "templates", "test-template")
+	if err := os.MkdirAll(templateDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(templateDir) error = %v", err)
+	}
+	manifest := []byte(`{"name":"test-template","review_policy":{"require_review_above":"high","default_reviewer":"user"}}`)
+	if err := os.WriteFile(filepath.Join(templateDir, "template.json"), append(manifest, '\n'), 0o644); err != nil {
+		t.Fatalf("WriteFile(template.json) error = %v", err)
+	}
+}
+
+func withMCPWorkingDir(t *testing.T, dir string) {
+	t.Helper()
+	oldwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldwd); err != nil {
+			t.Fatalf("restore cwd: %v", err)
+		}
+	})
 }
