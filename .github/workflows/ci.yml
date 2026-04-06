@@ -22,7 +22,8 @@ jobs:
           go-version-file: go.mod
       # golangci-lint v1.64.8 was built with go1.24 and refuses to load a
       # config targeting go1.26. Pin to a v2 release built with a newer Go.
-      - uses: golangci/golangci-lint-action@v6
+      # golangci-lint-action@v7 is the first action release that accepts v2.x.
+      - uses: golangci/golangci-lint-action@v7
         with:
           version: v2.4.0
 
