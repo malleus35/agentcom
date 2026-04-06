@@ -407,43 +407,43 @@ Agents under agentcom exchange structured JSON messages over the local
 transport. Address peers by their registered agent name (never by raw
 process id) and keep payloads small enough to fit a single message envelope.
 
-- Use ` + "`agentcom send <to> <text>`" + ` for direct, addressed messages.
-- Use ` + "`agentcom broadcast <text>`" + ` only when every active agent must hear it.
-- Reply to the user pseudo-agent with ` + "`agentcom send user <text>`" + `.
+- Use `+"`agentcom send <to> <text>`"+` for direct, addressed messages.
+- Use `+"`agentcom broadcast <text>`"+` only when every active agent must hear it.
+- Reply to the user pseudo-agent with `+"`agentcom send user <text>`"+`.
 - Never embed unescaped newlines or control characters in a message body.
 
 ## Workflow
 
-Each task moves through a small state machine: ` + "`pending → in_progress → completed`" + `
-(or ` + "`failed`/`cancelled`" + `). Reviewer-aware tasks may transition through
-` + "`blocked`" + ` while waiting for approval. Terminal states can be reopened with
-` + "`agentcom task update <id> --status pending`" + ` when retry is needed.
+Each task moves through a small state machine: `+"`pending → in_progress → completed`"+`
+(or `+"`failed`/`cancelled`"+`). Reviewer-aware tasks may transition through
+`+"`blocked`"+` while waiting for approval. Terminal states can be reopened with
+`+"`agentcom task update <id> --status pending`"+` when retry is needed.
 
-1. Pick up work via ` + "`agentcom task list --assignee <me>`" + `.
-2. Mark a task ` + "`in_progress`" + ` before touching code.
+1. Pick up work via `+"`agentcom task list --assignee <me>`"+`.
+2. Mark a task `+"`in_progress`"+` before touching code.
 3. Send progress updates as direct messages, not broadcasts.
-4. Move to ` + "`completed`" + ` only after verification (tests, build, manual QA).
-5. If blocked, set ` + "`blocked`" + ` with a clear reason and notify the reviewer.
+4. Move to `+"`completed`"+` only after verification (tests, build, manual QA).
+5. If blocked, set `+"`blocked`"+` with a clear reason and notify the reviewer.
 
 ## Examples
 
-A direct message envelope as emitted by ` + "`agentcom send`" + `:
+A direct message envelope as emitted by `+"`agentcom send`"+`:
 
-` + "```json" + `
+`+"```json"+`
 {"from": "planner", "to": "worker", "text": "Investigate flaky test in db package"}
-` + "```" + `
+`+"```"+`
 
-A task creation payload accepted by ` + "`agentcom task create`" + `:
+A task creation payload accepted by `+"`agentcom task create`"+`:
 
-` + "```json" + `
+`+"```json"+`
 {"title": "Fix flaky db test", "assigned_to": "worker", "priority": "high"}
-` + "```" + `
+`+"```"+`
 
-A reviewer approval payload accepted by ` + "`agentcom task approve`" + `:
+A reviewer approval payload accepted by `+"`agentcom task approve`"+`:
 
-` + "```json" + `
+`+"```json"+`
 {"id": "tsk_abc123", "reviewer": "planner", "result": "approved"}
-` + "```" + `
+`+"```"+`
 `, name, description, skillSchemaVersion, bodyTitle, description)
 }
 

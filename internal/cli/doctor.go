@@ -48,14 +48,14 @@ func newDoctorCmd() *cobra.Command {
 // that could leak personal information. The user pastes the JSON into a
 // GitHub issue using the install-failure template — there is no network call.
 type installFailureReport struct {
-	Schema       int    `json:"schema"`
-	AgentcomVer  string `json:"agentcom_version"`
-	GoVersion    string `json:"go_version"`
-	OS           string `json:"os"`
-	Arch         string `json:"arch"`
-	Shell        string `json:"shell,omitempty"`
-	BuildDate    string `json:"build_date,omitempty"`
-	Notes        string `json:"notes"`
+	Schema      int    `json:"schema"`
+	AgentcomVer string `json:"agentcom_version"`
+	GoVersion   string `json:"go_version"`
+	OS          string `json:"os"`
+	Arch        string `json:"arch"`
+	Shell       string `json:"shell,omitempty"`
+	BuildDate   string `json:"build_date,omitempty"`
+	Notes       string `json:"notes"`
 }
 
 // installFailureReportSchema is bumped whenever the JSON shape changes so the
