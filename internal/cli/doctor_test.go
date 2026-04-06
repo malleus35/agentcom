@@ -23,6 +23,73 @@ func TestRootCommandContainsDoctorSubcommand(t *testing.T) {
 	}
 }
 
+// PH11 T4.1.2 — install-failure report shape contract.
+//
+// The report is opt-in and consumed by humans pasting JSON into a GitHub issue
+// template, so its schema must be stable and free of personal information.
+func TestInstallFailureReportShape(t *testing.T) {
+	report := buildInstallFailureReport()
+	if report.Schema != installFailureReportSchema {
+		t.Errorf("Schema = %d, want %d", report.Schema, installFailureReportSchema)
+	}
+	if report.OS == "" {
+		t.Error("OS must be populated from runtime.GOOS")
+	}
+	if report.Arch == "" {
+		t.Error("Arch must be populated from runtime.GOARCH")
+	}
+	if report.GoVersion == "" {
+		t.Error("GoVersion must be populated from runtime.Version()")
+	}
+	if report.Notes == "" {
+		t.Error("Notes must include the issue-template URL hint")
+	}
+
+	// Round-trip through JSON to lock the field shape used by triage tooling.
+	encoded, err := json.MarshalIndent(report, "", "  ")
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	for _, key := range []string{`"schema"`, `"agentcom_version"`, `"go_version"`, `"os"`, `"arch"`, `"notes"`} {
+		if !bytes.Contains(encoded, []byte(key)) {
+			t.Errorf("install-failure JSON is missing required key %s", key)
+		}
+	}
+
+	// Privacy contract: the report must never leak the user's home directory
+	// or hostname. Both env vars are set in this test process so we can detect
+	// accidental inclusion regardless of the host machine.
+	t.Setenv("HOME", "/tmp/agentcom-test-home-should-not-leak")
+	t.Setenv("HOSTNAME", "agentcom-test-host-should-not-leak")
+	encoded, err = json.Marshal(buildInstallFailureReport())
+	if err != nil {
+		t.Fatalf("json.Marshal (privacy): %v", err)
+	}
+	for _, leak := range []string{"agentcom-test-home-should-not-leak", "agentcom-test-host-should-not-leak"} {
+		if bytes.Contains(encoded, []byte(leak)) {
+			t.Errorf("install-failure report leaked %q", leak)
+		}
+	}
+}
+
+func TestDoctorReportInstallFailureFlag(t *testing.T) {
+	root := NewRootCmd()
+	root.SetArgs([]string{"doctor", "--report-install-failure"})
+	var stdout bytes.Buffer
+	root.SetOut(&stdout)
+	root.SetErr(&stdout)
+	if err := root.Execute(); err != nil {
+		t.Fatalf("doctor --report-install-failure error = %v", err)
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal(stdout.Bytes(), &parsed); err != nil {
+		t.Fatalf("output is not JSON: %v\noutput=%s", err, stdout.String())
+	}
+	if got, ok := parsed["schema"].(float64); !ok || int(got) != installFailureReportSchema {
+		t.Errorf("schema field = %v, want %d", parsed["schema"], installFailureReportSchema)
+	}
+}
+
 func TestDoctorOnEmptyProject(t *testing.T) {
 	projectDir := t.TempDir()
 	homeDir := filepath.Join(t.TempDir(), "agentcom-home")

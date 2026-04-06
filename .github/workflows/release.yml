@@ -153,6 +153,43 @@ jobs:
             -o "dist/${{ matrix.output }}" \
             ./cmd/agentcom
 
+      # PH11 T4.3 — post-build smoke test. Only runs for native builds where
+      # the matrix target can execute on the host runner (matrix.cc == '' means
+      # no cross compiler is in play). Cross-built artifacts (linux arm64,
+      # windows arm64) are still produced and uploaded; smoke testing them is
+      # tracked as a Spinoza follow-up.
+      - name: Smoke test built binary (Unix host)
+        if: matrix.cc == '' && runner.os != 'Windows'
+        shell: bash
+        env:
+          BINARY: ${{ matrix.binary }}
+        run: |
+          set -euo pipefail
+          chmod +x "./dist/${BINARY}"
+          "./dist/${BINARY}" --version
+          version_output="$(./dist/${BINARY} version)"
+          expected="${RELEASE_TAG#v}"
+          if ! printf '%s' "$version_output" | grep -qF "$expected"; then
+            echo "smoke test: version output did not contain $expected" >&2
+            printf '%s\n' "$version_output" >&2
+            exit 1
+          fi
+
+      - name: Smoke test built binary (Windows host)
+        if: matrix.cc == '' && runner.os == 'Windows'
+        shell: pwsh
+        env:
+          BINARY: ${{ matrix.binary }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          & "./dist/$env:BINARY" --version
+          $out = & "./dist/$env:BINARY" version
+          $expected = $env:RELEASE_TAG.Substring(1)
+          if (-not ($out -match [regex]::Escape($expected))) {
+            Write-Error "smoke test: version output did not contain $expected"
+            exit 1
+          }
+
       - name: Package tar.gz (Unix)
         if: matrix.archive == 'tar.gz'
         shell: bash
