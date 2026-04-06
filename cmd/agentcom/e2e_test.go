@@ -70,9 +70,7 @@ func TestAgentcomE2EFlow(t *testing.T) {
 	}
 
 	stopRegisterProcess(t, alpha)
-	alpha = nil
 	stopRegisterProcess(t, beta)
-	beta = nil
 
 	waitForAgents(t, binPath, homeDir, "", 0)
 	agents := runAgentcomJSONArray(t, binPath, homeDir, "", "list")
