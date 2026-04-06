@@ -148,7 +148,10 @@ func TestSkillTargetPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Getwd() after chdir error = %v", err)
 	}
+	// os.UserHomeDir() reads HOME on unix but USERPROFILE on windows, so
+	// override both to keep this test hermetic on every runner.
 	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
 
 	tests := []struct {
 		name  string

@@ -13,12 +13,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Match the toolchain declared in go.mod so setup-go installs the exact
+      # version (1.26.1 as of PH11). Hardcoding `go-version: '1.22'` left the
+      # lint step running with a stale Go while the toolchain directive in
+      # go.mod fetched 1.26.1 on demand, which broke golangci-lint.
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version-file: go.mod
+      # golangci-lint v1.64.8 was built with go1.24 and refuses to load a
+      # config targeting go1.26. Pin to a v2 release built with a newer Go.
       - uses: golangci/golangci-lint-action@v6
         with:
-          version: v1.64.8
+          version: v2.4.0
 
   test-and-build:
     strategy:
@@ -31,7 +37,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version-file: go.mod
 
       - name: Setup MinGW (Windows)
         if: runner.os == 'Windows'
