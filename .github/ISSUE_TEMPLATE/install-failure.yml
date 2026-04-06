@@ -1,0 +1,94 @@
+name: Install failure
+description: Report a failure installing or first-running agentcom (PH11 Track 4 — Spinoza safety net)
+title: "[install] <one-line summary>"
+labels: ["install-failure", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report! This template feeds the PH11 install-failure
+        signal channel. The information you fill in here is the only thing
+        that lets us decide whether to invest in CGO removal, alternate
+        distribution channels, or doctor improvements.
+
+        Please redact any local paths, tokens, or hostnames before submitting.
+  - type: input
+    id: version
+    attributes:
+      label: agentcom version
+      description: Output of `agentcom version` (or the release tag you tried to install).
+      placeholder: "v0.3.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: installer
+    attributes:
+      label: Installer / channel
+      description: Where did you get agentcom from?
+      options:
+        - "go install"
+        - "Homebrew (malleus35/tap)"
+        - "Scoop (malleus35/scoop-bucket)"
+        - "GitHub release tarball / zip"
+        - "Built from source"
+        - "Other (describe in steps)"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - "macOS (Apple Silicon)"
+        - "macOS (Intel)"
+        - "Linux (x86_64)"
+        - "Linux (arm64)"
+        - "Windows (x86_64)"
+        - "Windows (arm64)"
+        - "Other"
+    validations:
+      required: true
+  - type: input
+    id: shell
+    attributes:
+      label: Shell
+      placeholder: "zsh 5.9 / bash 5.2 / pwsh 7.4 / cmd"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Exact commands you ran, in order. Include any non-default flags or environment variables.
+      placeholder: |
+        1. brew tap malleus35/tap
+        2. brew install agentcom
+        3. agentcom version
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error output
+      description: Full error output. Redact paths/tokens.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: agentcom doctor output (if the binary runs at all)
+      description: |
+        If you can run `agentcom doctor --report-install-failure --json`,
+        paste the redacted output here. Skip if the binary will not run.
+      render: shell
+    validations:
+      required: false
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Confirmation
+      options:
+        - label: I have removed any sensitive paths, tokens, or hostnames from the output above.
+          required: true
