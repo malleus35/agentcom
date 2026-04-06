@@ -11,6 +11,7 @@ import (
 	"net"
 	"os"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -22,10 +23,27 @@ var (
 	clientWriteTimeout   = 5 * time.Second
 	staleDialTimeout     = 1 * time.Second
 	serverAcceptTimeout  = 1 * time.Second
-	serverReadTimeout    = 30 * time.Second
 	clientRetryBackoffs  = []time.Duration{100 * time.Millisecond, 200 * time.Millisecond, 400 * time.Millisecond}
 	clientRetryJitterMax = 25 * time.Millisecond
 )
+
+// serverReadTimeoutNs is the per-connection read deadline, stored as int64
+// nanoseconds so that the value can be swapped atomically. Previously it was
+// a plain time.Duration global which raced between handleConnection goroutines
+// (readers) and ApplyRuntimeConfig / tests (writers) under go test -race.
+var serverReadTimeoutNs atomic.Int64
+
+func init() {
+	serverReadTimeoutNs.Store(int64(30 * time.Second))
+}
+
+func loadServerReadTimeout() time.Duration {
+	return time.Duration(serverReadTimeoutNs.Load())
+}
+
+func storeServerReadTimeout(d time.Duration) {
+	serverReadTimeoutNs.Store(int64(d))
+}
 
 // MessageHandler handles one decoded JSON payload from a UDS connection.
 type MessageHandler func(data []byte)
@@ -166,7 +184,7 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 		if ctx.Err() != nil {
 			return
 		}
-		if err := conn.SetReadDeadline(time.Now().Add(serverReadTimeout)); err != nil {
+		if err := conn.SetReadDeadline(time.Now().Add(loadServerReadTimeout())); err != nil {
 			slog.Error("failed to set read deadline", "socket_path", s.socketPath, "error", err)
 			return
 		}
@@ -275,7 +293,7 @@ func ApplyRuntimeConfig(runtime config.RuntimeConfig) {
 	clientDialTimeout = runtime.ClientDialTimeout
 	clientWriteTimeout = runtime.ClientWriteTimeout
 	serverAcceptTimeout = runtime.ServerAcceptTimeout
-	serverReadTimeout = runtime.ServerReadTimeout
+	storeServerReadTimeout(runtime.ServerReadTimeout)
 	clientRetryBackoffs = append([]time.Duration(nil), runtime.ClientRetryBackoffs...)
 	clientRetryJitterMax = runtime.ClientRetryJitterMax
 }
