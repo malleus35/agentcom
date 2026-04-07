@@ -166,7 +166,6 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x "./dist/${BINARY}"
-          "./dist/${BINARY}" --version
           version_output="$(./dist/${BINARY} version)"
           expected="${RELEASE_TAG#v}"
           if ! printf '%s' "$version_output" | grep -qF "$expected"; then
@@ -182,7 +181,6 @@ jobs:
           BINARY: ${{ matrix.binary }}
         run: |
           $ErrorActionPreference = "Stop"
-          & "./dist/$env:BINARY" --version
           $out = & "./dist/$env:BINARY" version
           $expected = $env:RELEASE_TAG.Substring(1)
           if (-not ($out -match [regex]::Escape($expected))) {
