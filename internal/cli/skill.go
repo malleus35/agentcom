@@ -385,17 +385,66 @@ func writeSkillFile(path string, content string, mode writeMode) error {
 	}
 }
 
+// skillSchemaVersion is the current SKILL.md frontmatter schema version.
+// doctor's skill drift fixer (PH11 T3.4) only auto-applies when this matches.
+const skillSchemaVersion = 1
+
 func renderSkillContent(name string, description string) string {
 	bodyTitle := titleWords(strings.ReplaceAll(name, "-", " "))
 	return fmt.Sprintf(`---
 name: %s
 description: %s
+schema_version: %d
 ---
 
 # %s
 
-Add your skill instructions here.
-`, name, description, bodyTitle)
+%s
+
+## Communication Protocol
+
+Agents under agentcom exchange structured JSON messages over the local
+transport. Address peers by their registered agent name (never by raw
+process id) and keep payloads small enough to fit a single message envelope.
+
+- Use `+"`agentcom send <to> <text>`"+` for direct, addressed messages.
+- Use `+"`agentcom broadcast <text>`"+` only when every active agent must hear it.
+- Reply to the user pseudo-agent with `+"`agentcom send user <text>`"+`.
+- Never embed unescaped newlines or control characters in a message body.
+
+## Workflow
+
+Each task moves through a small state machine: `+"`pending → in_progress → completed`"+`
+(or `+"`failed`/`cancelled`"+`). Reviewer-aware tasks may transition through
+`+"`blocked`"+` while waiting for approval. Terminal states can be reopened with
+`+"`agentcom task update <id> --status pending`"+` when retry is needed.
+
+1. Pick up work via `+"`agentcom task list --assignee <me>`"+`.
+2. Mark a task `+"`in_progress`"+` before touching code.
+3. Send progress updates as direct messages, not broadcasts.
+4. Move to `+"`completed`"+` only after verification (tests, build, manual QA).
+5. If blocked, set `+"`blocked`"+` with a clear reason and notify the reviewer.
+
+## Examples
+
+A direct message envelope as emitted by `+"`agentcom send`"+`:
+
+`+"```json"+`
+{"from": "planner", "to": "worker", "text": "Investigate flaky test in db package"}
+`+"```"+`
+
+A task creation payload accepted by `+"`agentcom task create`"+`:
+
+`+"```json"+`
+{"title": "Fix flaky db test", "assigned_to": "worker", "priority": "high"}
+`+"```"+`
+
+A reviewer approval payload accepted by `+"`agentcom task approve`"+`:
+
+`+"```json"+`
+{"id": "tsk_abc123", "reviewer": "planner", "result": "approved"}
+`+"```"+`
+`, name, description, skillSchemaVersion, bodyTitle, description)
 }
 
 func titleWords(s string) string {
@@ -446,8 +495,22 @@ func validateProjectSkills() ([]skillValidationReport, error) {
 
 func validateSkillFile(path string, content string) skillValidationReport {
 	report := skillValidationReport{Path: path, Status: "pass"}
-	checks := make([]string, 0, 4)
-	issues := make([]string, 0, 4)
+	checks := make([]string, 0, 5)
+	issues := make([]string, 0, 5)
+
+	// schema_version check (PH11 T1.2.1) — warn-only when missing so existing
+	// pre-PH11 skills keep validating, but mismatch is a hard failure so the
+	// doctor skill_drift fixer (T3.4) can rely on the version contract.
+	if matched, version := extractSkillSchemaVersion(content); matched {
+		if version == skillSchemaVersion {
+			checks = append(checks, fmt.Sprintf("schema_version=%d", skillSchemaVersion))
+		} else {
+			issues = append(issues, fmt.Sprintf("schema_version mismatch: file=%d expected=%d", version, skillSchemaVersion))
+		}
+	} else {
+		checks = append(checks, "schema_version=legacy")
+	}
+
 	lineCount := len(strings.Split(content, "\n"))
 	shared := isSharedSkillPath(path)
 	minLines := 50
@@ -504,6 +567,34 @@ func validateSkillFile(path string, content string) skillValidationReport {
 		report.Checks = checks
 	}
 	return report
+}
+
+// extractSkillSchemaVersion parses the optional `schema_version: N` field
+// from a SKILL.md frontmatter block. Returns (true, n) when present, or
+// (false, 0) when the field is absent (treated as legacy by callers).
+func extractSkillSchemaVersion(content string) (bool, int) {
+	// Only consider the first frontmatter block delimited by leading `---`.
+	if !strings.HasPrefix(content, "---") {
+		return false, 0
+	}
+	end := strings.Index(content[3:], "\n---")
+	if end < 0 {
+		return false, 0
+	}
+	frontmatter := content[3 : 3+end]
+	for _, line := range strings.Split(frontmatter, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "schema_version:") {
+			continue
+		}
+		raw := strings.TrimSpace(strings.TrimPrefix(line, "schema_version:"))
+		var v int
+		if _, err := fmt.Sscanf(raw, "%d", &v); err != nil {
+			return false, 0
+		}
+		return true, v
+	}
+	return false, 0
 }
 
 func isSharedSkillPath(path string) bool {

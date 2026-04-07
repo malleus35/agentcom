@@ -164,9 +164,9 @@ func TestPollerDeliversUnreadMessages(t *testing.T) {
 }
 
 func TestHandleConnectionReturnsAfterReadTimeout(t *testing.T) {
-	originalTimeout := serverReadTimeout
-	serverReadTimeout = 25 * time.Millisecond
-	defer func() { serverReadTimeout = originalTimeout }()
+	originalTimeout := loadServerReadTimeout()
+	storeServerReadTimeout(25 * time.Millisecond)
+	defer storeServerReadTimeout(originalTimeout)
 
 	serverConn, clientConn := net.Pipe()
 	defer clientConn.Close()

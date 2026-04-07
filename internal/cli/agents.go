@@ -728,7 +728,7 @@ func renderContactDetails(role templateRole, allRoles []templateRole) string {
 			if other.Name != contactName {
 				continue
 			}
-			sb.WriteString(fmt.Sprintf("- **%s** (%s): %s\n", other.Name, other.AgentName, other.Description))
+			fmt.Fprintf(&sb, "- **%s** (%s): %s\n", other.Name, other.AgentName, other.Description)
 			break
 		}
 	}
@@ -751,23 +751,23 @@ func renderCollaborationProtocol(role templateRole) string {
 	var sb strings.Builder
 	sb.WriteString("### Request\n\n")
 	sb.WriteString("When you need work from another role, create a task:\n")
-	sb.WriteString(fmt.Sprintf("```\nagentcom task create \"Coordinate dependency\" --creator %s --assign %s --priority medium\n```\n\n", agentName, requestTarget))
+	fmt.Fprintf(&sb, "```\nagentcom task create \"Coordinate dependency\" --creator %s --assign %s --priority medium\n```\n\n", agentName, requestTarget)
 
 	sb.WriteString("### Response\n\n")
 	sb.WriteString("When completing a task assigned to you, update status and notify:\n")
-	sb.WriteString(fmt.Sprintf("```\nagentcom task update task_123 --status completed --result \"verified and ready\"\nagentcom send --from %s %s '{\"type\":\"response\",\"task_id\":\"task_123\",\"status\":\"completed\"}'\n```\n\n", agentName, responseTarget))
+	fmt.Fprintf(&sb, "```\nagentcom task update task_123 --status completed --result \"verified and ready\"\nagentcom send --from %s %s '{\"type\":\"response\",\"task_id\":\"task_123\",\"status\":\"completed\"}'\n```\n\n", agentName, responseTarget)
 
 	sb.WriteString("### Escalation\n\n")
 	if len(escalationTargets) > 0 {
-		sb.WriteString(fmt.Sprintf("When blocked or when decisions exceed your role scope, escalate to %s:\n", strings.Join(escalationTargets, " or ")))
-		sb.WriteString(fmt.Sprintf("```\nagentcom send --from %s %s '{\"type\":\"escalation\",\"blocker\":\"need decision on system boundary\"}'\n```\n\n", agentName, escalationTargets[0]))
+		fmt.Fprintf(&sb, "When blocked or when decisions exceed your role scope, escalate to %s:\n", strings.Join(escalationTargets, " or "))
+		fmt.Fprintf(&sb, "```\nagentcom send --from %s %s '{\"type\":\"escalation\",\"blocker\":\"need decision on system boundary\"}'\n```\n\n", agentName, escalationTargets[0])
 	} else {
 		sb.WriteString("No escalation targets defined for this role. Resolve blockers independently or broadcast for help.\n\n")
 	}
 
 	sb.WriteString("### Report\n\n")
 	sb.WriteString("Broadcast progress updates to the team:\n")
-	sb.WriteString(fmt.Sprintf("```\nagentcom broadcast --from %s --topic progress '{\"status\":\"in_progress\",\"summary\":\"finished first verification pass\"}'\n```\n", agentName))
+	fmt.Fprintf(&sb, "```\nagentcom broadcast --from %s --topic progress '{\"status\":\"in_progress\",\"summary\":\"finished first verification pass\"}'\n```\n", agentName)
 
 	return sb.String()
 }
@@ -777,12 +777,12 @@ func renderRoleSkillContent(definition templateDefinition, role templateRole, ge
 	directTarget := primaryCommunicationTarget(role)
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("---\nname: %s\ndescription: %s\n---\n\n", generatedSkillName, role.Description))
-	sb.WriteString(fmt.Sprintf("# %s\n\n", bodyTitle))
+	fmt.Fprintf(&sb, "---\nname: %s\ndescription: %s\n---\n\n", generatedSkillName, role.Description)
+	fmt.Fprintf(&sb, "# %s\n\n", bodyTitle)
 	sb.WriteString("- Read shared agentcom instructions first: `../SKILL.md`\n")
-	sb.WriteString(fmt.Sprintf("- Read common instructions first: `%s`\n", commonPath))
-	sb.WriteString(fmt.Sprintf("- Template: `%s` (`%s`)\n", definition.Name, definition.Reference))
-	sb.WriteString(fmt.Sprintf("- Agent identity: `%s` / type `%s`\n", role.AgentName, role.AgentType))
+	fmt.Fprintf(&sb, "- Read common instructions first: `%s`\n", commonPath)
+	fmt.Fprintf(&sb, "- Template: `%s` (`%s`)\n", definition.Name, definition.Reference)
+	fmt.Fprintf(&sb, "- Agent identity: `%s` / type `%s`\n", role.AgentName, role.AgentType)
 	sb.WriteString("\n## Responsibilities\n\n")
 	sb.WriteString(renderResponsibilities(role.Responsibilities))
 	sb.WriteString("\n\n")
@@ -798,8 +798,8 @@ func renderRoleSkillContent(definition templateDefinition, role templateRole, ge
 		sb.WriteString("\n\n")
 	}
 	sb.WriteString("### Coordination Commands\n\n")
-	sb.WriteString(fmt.Sprintf("- Direct message: `agentcom send --from %s %s '{\"type\":\"request\",\"subject\":\"coordination\"}'`\n", role.AgentName, directTarget))
-	sb.WriteString(fmt.Sprintf("- Check inbox: `agentcom inbox --agent %s --unread`\n", role.AgentName))
+	fmt.Fprintf(&sb, "- Direct message: `agentcom send --from %s %s '{\"type\":\"request\",\"subject\":\"coordination\"}'`\n", role.AgentName, directTarget)
+	fmt.Fprintf(&sb, "- Check inbox: `agentcom inbox --agent %s --unread`\n", role.AgentName)
 	sb.WriteString("- For template-based teams, use `agentcom up` and `agentcom down` as the default lifecycle.\n")
 	sb.WriteString("- Use `agentcom register` only for advanced standalone sessions.\n\n")
 	sb.WriteString(renderCollaborationProtocol(role))

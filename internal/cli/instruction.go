@@ -318,18 +318,6 @@ func writeAgentMemoryFiles(projectDir string, agentIDs []string, mode writeMode)
 	return generated, nil
 }
 
-func writeProjectAgentsMD(path string) error {
-	projectDir := filepath.Dir(path)
-	generated, err := writeAgentInstructions(projectDir, []string{"codex"}, writeModeAppend)
-	if err != nil {
-		return err
-	}
-	if len(generated) != 1 || generated[0] != path {
-		return fmt.Errorf("unexpected AGENTS.md path %q", strings.Join(generated, ", "))
-	}
-	return nil
-}
-
 func writeInstructionFile(path string, content string, mode writeMode) error {
 	return writeInstructionFileForAgent(path, content, mode, "")
 

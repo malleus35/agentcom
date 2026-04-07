@@ -24,10 +24,6 @@ func newUserError(what, why, how string) *userError {
 	return &userError{What: what, Why: why, How: how}
 }
 
-func wrapUserError(what, why, how string, err error) *userError {
-	return &userError{What: what, Why: why, How: how, err: err}
-}
-
 func commandError(prefix string, err error) error {
 	if err == nil {
 		return nil

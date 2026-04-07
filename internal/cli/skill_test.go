@@ -16,6 +16,91 @@ type skillValidationResult struct {
 	Issues []string `json:"issues,omitempty"`
 }
 
+// PH11 T1.2.5 — schema_version + sections + parseable JSON examples.
+
+func TestSkillSchemaVersionInRenderedContent(t *testing.T) {
+	content := renderSkillContent("my-skill", "demo description")
+	matched, version := extractSkillSchemaVersion(content)
+	if !matched {
+		t.Fatalf("rendered SKILL.md is missing schema_version frontmatter:\n%s", content)
+	}
+	if version != skillSchemaVersion {
+		t.Fatalf("schema_version = %d, want %d", version, skillSchemaVersion)
+	}
+}
+
+func TestSkillSectionsInRenderedContent(t *testing.T) {
+	content := renderSkillContent("my-skill", "demo description")
+	required := []string{"## Communication", "## Workflow", "## Examples"}
+	for _, section := range required {
+		if !strings.Contains(content, section) {
+			t.Errorf("rendered SKILL.md is missing section %q", section)
+		}
+	}
+	if got := len(strings.Split(content, "\n")); got < 50 {
+		t.Errorf("rendered SKILL.md has %d lines, want >= 50 (PRD E5 minimum)", got)
+	}
+	// Validator must accept the rendered content end-to-end (non-shared path).
+	report := validateSkillFile("project/.claude/skills/my-skill/SKILL.md", content)
+	if report.Status != "pass" {
+		t.Errorf("validateSkillFile rejected freshly rendered SKILL.md: %+v", report)
+	}
+}
+
+func TestSkillExamplesParse(t *testing.T) {
+	content := renderSkillContent("my-skill", "demo description")
+	// Extract every fenced ```json ... ``` block and ensure each parses.
+	var blocks []string
+	rest := content
+	for {
+		start := strings.Index(rest, "```json")
+		if start < 0 {
+			break
+		}
+		rest = rest[start+len("```json"):]
+		end := strings.Index(rest, "```")
+		if end < 0 {
+			t.Fatalf("unterminated ```json block in rendered SKILL.md")
+		}
+		blocks = append(blocks, strings.TrimSpace(rest[:end]))
+		rest = rest[end+3:]
+	}
+	if len(blocks) < 3 {
+		t.Fatalf("expected at least 3 JSON example blocks, got %d", len(blocks))
+	}
+	for i, block := range blocks {
+		var parsed map[string]any
+		if err := json.Unmarshal([]byte(block), &parsed); err != nil {
+			t.Errorf("JSON example #%d does not parse: %v\nblock=%s", i+1, err, block)
+		}
+	}
+}
+
+func TestExtractSkillSchemaVersion(t *testing.T) {
+	cases := []struct {
+		name        string
+		content     string
+		wantMatched bool
+		wantVersion int
+	}{
+		{name: "missing", content: "---\nname: x\n---\n", wantMatched: false},
+		{name: "v1", content: "---\nname: x\nschema_version: 1\n---\n", wantMatched: true, wantVersion: 1},
+		{name: "v2", content: "---\nschema_version: 2\nname: x\n---\n", wantMatched: true, wantVersion: 2},
+		{name: "no_frontmatter", content: "# Title\n", wantMatched: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			matched, v := extractSkillSchemaVersion(tc.content)
+			if matched != tc.wantMatched {
+				t.Fatalf("matched = %v, want %v", matched, tc.wantMatched)
+			}
+			if matched && v != tc.wantVersion {
+				t.Fatalf("version = %d, want %d", v, tc.wantVersion)
+			}
+		})
+	}
+}
+
 func TestValidateSkillName(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -63,7 +148,10 @@ func TestSkillTargetPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Getwd() after chdir error = %v", err)
 	}
+	// os.UserHomeDir() reads HOME on unix but USERPROFILE on windows, so
+	// override both to keep this test hermetic on every runner.
 	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
 
 	tests := []struct {
 		name  string
